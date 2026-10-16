@@ -119,7 +119,8 @@ herdr-team dispatch <id>
 
 插件把每个 agent 显示为两行：第一行是 workspace 归属编号、角色与 harness，
 第二行是模型与当前任务 ID。编号与 spaces 区的 `①`、`②` 一一对应，子 worktree
-继承主 workspace 的编号。编号保存在插件 state 中，重命名、排序和恢复不变。
+继承主 workspace 的编号及颜色。编号使用固定的八色循环，颜色与编号绑定。
+编号保存在插件 state 中，重命名、排序和恢复不变。
 任务完成或交棒后清除旧负责人的 ID；常驻角色同时有多个任务时列出全部 ID。
 模型来自角色卡，未配置时显示 `default`，不推测 agent 内部当前选择的模型。
 

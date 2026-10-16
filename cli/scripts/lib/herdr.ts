@@ -98,7 +98,7 @@ export interface Herdr {
   agentStart(name: string, kind: string, paneId: string, args: string[]): void;
   /** 默认只提交输入；dispatch 可选择等待首次 working / blocked，调用上限 8 秒。 */
   agentPrompt(target: string, text: string, options?: { waitForActivity: boolean }): void;
-  reportBadge(scope: "workspace" | "pane", id: string, badge: string | null): void;
+  reportBadge(scope: "workspace" | "pane", id: string, badge: string | null, colorSlot?: number): void;
   reportMetadata(paneId: string, source: string, displayAgent: string, tokens?: Record<string, string | null>): void;
 }
 
@@ -273,9 +273,13 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       run(args);
     },
 
-    reportBadge: (scope, id, badge) => void run([
+    reportBadge: (scope, id, badge, colorSlot = 0) => void run([
       scope, "report-metadata", id, "--source", "herdr-team-badges",
       ...(badge === null ? ["--clear-token", "team_workspace"] : ["--token", `team_workspace=${badge}`]),
+      ...Array.from({ length: 8 }, (_, slot) => slot).flatMap((slot) =>
+        badge !== null && slot === colorSlot
+          ? ["--token", `team_workspace_c${slot}=${badge}`]
+          : ["--clear-token", `team_workspace_c${slot}`]),
     ]),
 
     reportMetadata: (paneId, source, displayAgent, tokens = {}) =>

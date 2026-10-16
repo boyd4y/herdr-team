@@ -205,13 +205,17 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
       state.agents.push({ name, agent: kind, agent_status: "idle", pane_id: paneId });
     },
     agentPrompt: (target, text) => calls.push(`agent prompt ${target} ${text.slice(0, 40)}`),
-    reportBadge: (scope, id, badge) => {
+    reportBadge: (scope, id, badge, colorSlot = 0) => {
       calls.push(`report-badge ${scope} ${id} ${badge}`);
       const target = scope === "workspace" ? state.workspaces.find((w) => w.workspace_id === id) : state.agents.find((a) => a.pane_id === id);
       if (target) {
         target.tokens ??= {};
         if (badge === null) delete target.tokens["team_workspace"];
         else target.tokens["team_workspace"] = badge;
+        for (let slot = 0; slot < 8; slot++) {
+          if (badge !== null && slot === colorSlot) target.tokens[`team_workspace_c${slot}`] = badge;
+          else delete target.tokens[`team_workspace_c${slot}`];
+        }
       }
     },
     reportMetadata: (paneId, source, displayAgent, tokens = {}) => {

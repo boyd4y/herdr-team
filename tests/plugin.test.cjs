@@ -107,7 +107,7 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     else f.put(f.herdrConfig, original);
     f.ok('configure.js', ['--apply', '--reload']);
     const applied = fs.readFileSync(f.herdrConfig, 'utf8');
-    assert(applied.includes('rows = [["state_icon", "$team_workspace", "agent", "$team_harness"]'));
+    assert(applied.includes('{ token = "$team_workspace_c0", fg = "#89b4fa", bold = true, dim = false }'));
     assert(!applied.includes('$harness_logo'));
     assert(applied.includes('key = "prefix+t"'));
     assert(applied.includes('command = "herdr-team watch"'));
@@ -165,7 +165,7 @@ test('upgrade replaces the old sidebar and removes only managed terminal mapping
   const config = fs.readFileSync(f.herdrConfig, 'utf8');
   assert(config.startsWith(original));
   assert(!config.includes('$harness_logo'));
-  assert(config.includes('rows = [["state_icon", "$team_workspace", "agent", "$team_harness"]'));
+  assert(config.includes('{ token = "$team_workspace_c1", fg = "#cba6f7", bold = true, dim = false }'));
   for (const [file, text] of originals) assert.equal(fs.readFileSync(file, 'utf8'), text);
   assert.equal(fs.readFileSync(modified, 'utf8'), 'modified font');
   assert.equal(fs.readFileSync(unrelated, 'utf8'), 'other font');

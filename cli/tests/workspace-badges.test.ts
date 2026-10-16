@@ -63,7 +63,20 @@ describe("稳定的 workspace 归属编号", () => {
       syncWorkspaceBadges(herdr, file);
       herdr.state.agents[0]!.workspace_id = "w2";
       syncWorkspaceBadges(herdr, file);
-      expect(herdr.state.agents[0]!.tokens).toEqual({ team_model: "sol", team_workspace: "②" });
+      expect(herdr.state.agents[0]!.tokens).toEqual({ team_model: "sol", team_workspace: "②", team_workspace_c1: "②" });
+    } finally { cleanup(); }
+  });
+
+  test("旧灰色编号原地补上颜色，保留已有的编号记录", () => {
+    const { root, cleanup } = makeProject();
+    try {
+      const file = join(root, "badges.json");
+      const herdr = fakeHerdr({ workspaces: [{ ...workspace("w1"), tokens: { team_workspace: "①" } }] });
+      writeFileSync(file, JSON.stringify({ next: 2, assignments: { "workspace:w1": 1 } }));
+      expect(syncWorkspaceBadges(herdr, file)).toEqual({ updated: 1, failed: 0 });
+      expect(herdr.state.workspaces[0]!.tokens).toEqual({ team_workspace: "①", team_workspace_c0: "①" });
+      expect(JSON.parse(readFileSync(file, "utf8")).next).toBe(2);
+      expect(syncWorkspaceBadges(herdr, file).updated).toBe(0);
     } finally { cleanup(); }
   });
 
@@ -109,9 +122,11 @@ let result = {};
 if(args[1] === 'list') result = args[0] === 'workspace' ? {workspaces:state.workspaces} : {agents:state.agents};
 else if(args[1] === 'report-metadata') {
  const target = args[0] === 'workspace' ? state.workspaces.find(w=>w.workspace_id===args[2]) : state.agents.find(a=>a.pane_id===args[2]);
- const token = args[args.indexOf('--token')+1];
- const index = token.indexOf('=');
- target.tokens = {...target.tokens, [token.slice(0,index)]:token.slice(index+1)};
+ target.tokens ??= {};
+ for(let i=3;i<args.length;i++) {
+  if(args[i]==='--token') { const token=args[++i]; const index=token.indexOf('='); target.tokens[token.slice(0,index)]=token.slice(index+1); }
+  else if(args[i]==='--clear-token') delete target.tokens[args[++i]];
+ }
 } else throw new Error('Unexpected call');
 fs.writeFileSync(process.env.BADGE_TEST_STATE, JSON.stringify(state));
 process.stdout.write(JSON.stringify({result}));
@@ -129,5 +144,12 @@ process.stdout.write(JSON.stringify({result}));
     expect(second.exitCode).toBe(0);
     expect(JSON.parse(second.stdout.toString())).toEqual({ updated: 0, failed: 0 });
     expect(JSON.parse(readFileSync(state, "utf8")).agents.map((agent: {tokens: Record<string,string>}) => agent.tokens.team_workspace)).toEqual(["①", "②"]);
+    const changed = JSON.parse(readFileSync(state, "utf8"));
+    changed.agents[0].workspace_id = "w2";
+    writeFileSync(state, JSON.stringify(changed));
+    expect(run().exitCode).toBe(0);
+    const moved = JSON.parse(readFileSync(state, "utf8")).agents[0].tokens;
+    expect(moved.team_workspace_c1).toBe("②");
+    expect(moved.team_workspace_c0).toBeUndefined();
   } finally { cleanup(); }
 });

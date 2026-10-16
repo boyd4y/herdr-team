@@ -4,6 +4,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Herdr, WorkspaceInfo } from "./herdr.ts";
 
+export const BADGE_COLOR_COUNT = 8; // Must match the fixed sidebar color slots in bin/configure.js.
+interface Badge { label: string; slot: number }
+
 interface Registry { next: number; assignments: Record<string, number> }
 
 export function badgeLabel(number: number): string {
@@ -29,8 +32,8 @@ function readRegistry(file: string): Registry {
   return data;
 }
 
-function assignBadges(workspaces: WorkspaceInfo[], registry: Registry): Map<string, string> {
-  const badges = new Map<string, string>();
+function assignBadges(workspaces: WorkspaceInfo[], registry: Registry): Map<string, Badge> {
+  const badges = new Map<string, Badge>();
   // Assign a group's parent first, even if a child precedes it in API order.
   const ordered = [...workspaces].sort((a, b) => Number(a.worktree?.is_linked_worktree ?? false) - Number(b.worktree?.is_linked_worktree ?? false));
   for (const workspace of ordered) {
@@ -39,7 +42,7 @@ function assignBadges(workspaces: WorkspaceInfo[], registry: Registry): Map<stri
     const number = (group === undefined ? undefined : registry.assignments[group]) ?? registry.assignments[key] ?? registry.next++;
     registry.assignments[key] = number;
     if (group !== undefined) registry.assignments[group] = number;
-    badges.set(workspace.workspace_id, badgeLabel(number));
+    badges.set(workspace.workspace_id, { label: badgeLabel(number), slot: (number - 1) % BADGE_COLOR_COUNT });
   }
   return badges;
 }
@@ -71,14 +74,15 @@ export function syncWorkspaceBadges(herdr: Herdr, file = badgeStatePath()): { up
       finally { if (existsSync(temp)) unlinkSync(temp); }
     }
     const result = { updated: 0, failed: 0 };
-    const report = (scope: "workspace" | "pane", id: string, previous: string | undefined, badge: string | undefined) => {
-      if (previous === badge) return;
-      try { herdr.reportBadge(scope, id, badge ?? null); result.updated++; }
+    const report = (scope: "workspace" | "pane", id: string, tokens: Record<string, string> = {}, badge: Badge | undefined) => {
+      if (tokens["team_workspace"] === badge?.label && Array.from({ length: BADGE_COLOR_COUNT }, (_, slot) => slot)
+        .every((slot) => tokens[`team_workspace_c${slot}`] === (slot === badge?.slot ? badge.label : undefined))) return;
+      try { herdr.reportBadge(scope, id, badge?.label ?? null, badge?.slot); result.updated++; }
       catch { result.failed++; }
     };
-    for (const workspace of workspaces) report("workspace", workspace.workspace_id, workspace.tokens?.["team_workspace"], badges.get(workspace.workspace_id));
+    for (const workspace of workspaces) report("workspace", workspace.workspace_id, workspace.tokens, badges.get(workspace.workspace_id));
     for (const agent of agents) {
-      if (agent.pane_id && agent.workspace_id) report("pane", agent.pane_id, agent.tokens?.["team_workspace"], badges.get(agent.workspace_id));
+      if (agent.pane_id && agent.workspace_id) report("pane", agent.pane_id, agent.tokens, badges.get(agent.workspace_id));
     }
     return result;
   } finally { closeSync(descriptor); unlinkSync(lock); }

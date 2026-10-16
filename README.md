@@ -40,6 +40,8 @@ herdr-team status
 启动 Herdr 后调用 `configure` 应用配置。
 
 sidebar 保留 Herdr 自带的状态圆点，并为主 workspace 分配 `①`、`②` 等归属编号。
+编号使用固定的八色配色：① 蓝、② 紫、③ 青绿，后续依次分配并循环。workspace 和
+所属 agent 的编号同色，切换运行状态不会改变编号颜色。
 agent 第一行显示编号、角色、harness，第二行显示模型和任务 ID（有任务时）。
 workspace 名称只在 spaces 区显示；子 worktree 和其中的 agent 沿用主 workspace 的编号。
 模型取角色卡的 `model`，未指定时显示 `default`。无需额外字体或环境变量。
