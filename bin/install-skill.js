@@ -38,7 +38,7 @@ function stateDirectory(env = process.env, home = os.homedir()) {
   // Herdr build commands do not receive the action's plugin environment.
   // Match Herdr's Unix state-dir default so build and actions share ownership.
   return path.resolve(env.HERDR_PLUGIN_STATE_DIR || path.join(
-    env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'herdr', 'plugins', 'linxai.herdr-team'));
+    env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'herdr', 'plugins', 'herdr-team'));
 }
 
 function hash(bytes) { return createHash('sha256').update(bytes).digest('hex'); }

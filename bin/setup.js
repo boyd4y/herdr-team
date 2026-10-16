@@ -15,7 +15,7 @@ async function setup() {
   if (process.env.HERDR_ENV === '1') {
     try { reloadConfig(); }
     catch (error) { console.log(`Setup saved. Reload with the configure action: ${error.message}`); }
-  } else console.log('Setup saved. Invoke linxai.herdr-team.configure in a running Herdr session to reload.');
+  } else console.log('Setup saved. Invoke herdr-team.configure in a running Herdr session to reload.');
 }
 
 setup().catch((error) => {

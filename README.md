@@ -14,9 +14,9 @@ CLI 仍是单独的 npm 包。字体和安装脚本均随插件分发，安装 a
 
 ```sh
 herdr plugin link ./herdr-team-plugin
-herdr plugin action invoke linxai.herdr-team.install-skill
-herdr plugin action invoke linxai.herdr-team.configure
-herdr plugin action invoke linxai.herdr-team.install-font
+herdr plugin action invoke herdr-team.install-skill
+herdr plugin action invoke herdr-team.configure
+herdr plugin action invoke herdr-team.install-font
 ```
 
 `link` 只注册插件，不运行 build hook。GitHub 子目录安装源为
@@ -41,20 +41,20 @@ shell 配置或 Herdr 服务器的环境。`lead` 后续正常运行 `up` / `dis
 
 | Action | 行为 |
 | --- | --- |
-| `linxai.herdr-team.configure` | 校验候选配置，写 sidebar 和 popup 托管块，reload 当前会话 |
-| `linxai.herdr-team.unconfigure` | 撤掉 Herdr 托管块并 reload |
-| `linxai.herdr-team.install-font` | 安装用户字体并映射已有 Ghostty / kitty 配置 |
-| `linxai.herdr-team.uninstall-font` | 删除本插件的字体副本及终端托管块 |
-| `linxai.herdr-team.install-skill` | 为 PATH 上已安装的 Claude、Codex、Pi 安装 skill；跳过非本插件拥有的同名目录 |
-| `linxai.herdr-team.uninstall-skill` | 按所有权记录移除未修改、无额外文件的 skill 目录 |
+| `herdr-team.configure` | 校验候选配置，写 sidebar 和 popup 托管块，reload 当前会话 |
+| `herdr-team.unconfigure` | 撤掉 Herdr 托管块并 reload |
+| `herdr-team.install-font` | 安装用户字体并映射已有 Ghostty / kitty 配置 |
+| `herdr-team.uninstall-font` | 删除本插件的字体副本及终端托管块 |
+| `herdr-team.install-skill` | 为 PATH 上已安装的 Claude、Codex、Pi 安装 skill；跳过非本插件拥有的同名目录 |
+| `herdr-team.uninstall-skill` | 按所有权记录移除未修改、无额外文件的 skill 目录 |
 
 卸载前先撤 skill、配置和字体，再解除本地链接：
 
 ```sh
-herdr plugin action invoke linxai.herdr-team.uninstall-skill
-herdr plugin action invoke linxai.herdr-team.unconfigure
-herdr plugin action invoke linxai.herdr-team.uninstall-font
-herdr plugin unlink linxai.herdr-team
+herdr plugin action invoke herdr-team.uninstall-skill
+herdr plugin action invoke herdr-team.unconfigure
+herdr plugin action invoke herdr-team.uninstall-font
+herdr plugin unlink herdr-team
 ```
 
 Herdr 自己的插件日志、config/state 目录由 Herdr 管理；skill 安装的所有权记录和引用文档
@@ -93,7 +93,7 @@ skill 包。
 
 state 优先使用 action 注入的 `HERDR_PLUGIN_STATE_DIR`。build hook 没有该变量时，
 按 Herdr 的 Unix 约定使用
-`${XDG_STATE_HOME:-~/.local/state}/herdr/plugins/linxai.herdr-team`。
+`${XDG_STATE_HOME:-~/.local/state}/herdr/plugins/herdr-team`。
 `skill-paths.json` 记录每个已创建目录的路径、设备号、inode 和正文摘要；每创建一个
 目录就先保存记录，再写正文。内容没变时不重写正文、引用文档或记录。
 

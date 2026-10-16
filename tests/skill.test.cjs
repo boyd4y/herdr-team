@@ -56,8 +56,8 @@ test('discovery maps only installed supported executables and honors homes and e
   assert.deepEqual(targets(env, f.dir), ['.claude', '.codex'].map((kind) => path.join(f.dir, kind, 'skills', 'herdr-team')));
   assert.deepEqual(targets({ ...env, HERDR_TEAM_SKILL_DIRS: '' }, f.dir), []);
   assert.deepEqual(targets(f.env, f.dir), f.directories);
-  assert.equal(stateDirectory({ XDG_STATE_HOME: path.join(f.dir, 'xdg') }, f.dir), path.join(f.dir, 'xdg/herdr/plugins/linxai.herdr-team'));
-  assert.equal(stateDirectory({}, f.dir), path.join(f.dir, '.local/state/herdr/plugins/linxai.herdr-team'));
+  assert.equal(stateDirectory({ XDG_STATE_HOME: path.join(f.dir, 'xdg') }, f.dir), path.join(f.dir, 'xdg/herdr/plugins/herdr-team'));
+  assert.equal(stateDirectory({}, f.dir), path.join(f.dir, '.local/state/herdr/plugins/herdr-team'));
   f.run([], { HERDR_TEAM_SKILL_DIRS: '' });
   assert(!fs.existsSync(f.stateFile));
 });
