@@ -114,7 +114,7 @@ for (const isolated of [false, true]) {
   });
 }
 
-test("up 和 handoff 仍只提交输入，不添加活动等待", () => {
+test("up 不发送输入，handoff 只提交输入、不添加活动等待", () => {
   const { root, cleanup } = makeProject();
   try {
     twoRoles(root);
@@ -125,10 +125,11 @@ test("up 和 handoff 仍只提交输入，不添加活动等待", () => {
       return { code: 0, stdout: "", stderr: "" };
     }).agentPrompt;
     up(loadProject(root), herdr);
+    expect(calls).toHaveLength(0);
     writeTask(root, "0001-a", taskMeta({ status: "doing", handoff: ["docs"] }));
     expect(handoff(loadProject(root), herdr, "0001").prompted).toBe(true);
     expect(loadProject(root).tasks[0]?.status).toBe("review");
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     for (const args of calls) {
       expect(args.slice(0, 3)).toEqual(["agent", "prompt", herdr.state.agents.find((agent) => agent.name === "docs")?.pane_id]);
       expect(args).toHaveLength(4);

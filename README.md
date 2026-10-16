@@ -76,8 +76,9 @@ Herdr 的 agent 名是全局唯一的，若角色名已被另一个项目占用�
 
 `status`、`watch`、`sidebar`、`down` 和 worktree 复用/回收也检查项目归属。
 旧版 agent 只有在实际目录可验证时才会复用；归属不明或同一角色有多个目标时明确拒绝。
-升级后分别在各项目运行一次 `herdr-team up`，可补上绑定；已有 agent 不会重发启动说明。
-在 worktree 或其他目录操作时，用 `--root` 指定启动/派活消息给出的团队根目录。
+升级后分别在各项目运行一次 `herdr-team up`，可补上绑定；`up` 不向 agent 发送消息。
+身份和角色职责随 `dispatch` / `handoff` 的实际任务发送。
+在 worktree 或其他目录操作时，用 `--root` 指定派活/交棒消息给出的团队根目录。
 
 ## Actions 和撤销
 

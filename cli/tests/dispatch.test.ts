@@ -125,6 +125,7 @@ describe("CLI up / dispatch", () => {
       expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "todo"]);
       expect(calls().some((c) => c[0] === "worktree")).toBe(false);
       expect(calls().filter((c) => c[0] === "agent" && c[1] === "start").map((c) => c[2])).toEqual(["docs"]);
+      expect(calls().filter((c) => c[0] === "agent" && c[1] === "prompt")).toEqual([]);
       const assigned = cli("dispatch", "--json");
       expect(assigned.code).toBe(0);
       expect(JSON.parse(assigned.stdout).map((d: { id: string; action: string }) => [d.id, d.action])).toEqual([

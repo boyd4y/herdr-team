@@ -85,7 +85,7 @@ herdr-team role add dev --force --body "你负责实现功能和同步接口文�
 已有角色更新必须加 `--force`；`--kind` 和其他未提供的元数据字段保留，所以只改职责无需重述启动配置。
 省略正文时逐字保留原文；新角色仍必填 `--kind`。
 `init --force` 不更新已有正文，改职责请走 `role add --force --body`。
-角色文件的修改不会自动向运行中的 agent 重发设定，后续启动或派活才会读取新正文。
+角色文件的修改不会自动向运行中的 agent 重发设定，后续派活或交棒才会读取新正文。
 
 `add` 和 `edit` 支持 `--depends-on`：逗号分隔任务 id（如 `0001,0002`），
 `edit` 时替换全部依赖，空串清空，省略则保留。写盘前校验引用与依赖环，
@@ -98,8 +98,11 @@ herdr-team role add dev --force --body "你负责实现功能和同步接口文�
 herdr-team up
 herdr-team dispatch
 # 只派指定的一张 todo 卡：
-herdr-team dispatch <id>
+ herdr-team dispatch <id>
 ```
+
+`up` 只启动或复用 agent、更新归属和侧栏，不发送身份说明或其他消息。
+项目身份与角色职责随 `dispatch` / `handoff` 的实际任务发送。
 
 `dispatch` 按 priority、id 升序处理 `todo` 卡并检查依赖；指定 id 不存在或状态不是 `todo` 时会报错。
 隔离角色在派活时才起 worktree/agent；agent 启动失败后再次派活会复用已有的开放 worktree workspace。
@@ -112,7 +115,7 @@ herdr-team dispatch <id>
 输入可能已送达，不应因这条提示重派。未开工、或回到 `idle` / `done` 却未交棒的 `doing` 卡
 仍会报 `maybe-finished`。`agent_blocked`（输入被拒）、agent 不存在及其他错误仍会报错，
 卡保留 `todo`，不追加派出成功记录；只按返回的 JSON `error.code` 区分，不匹配正文或错误说明。
-`up` 的身份说明和 `handoff` 的交棒提示仍只提交输入，不增加等待。
+`handoff` 的交棒提示只提交输入，不增加等待。
 `up --json` 返回 workspace 和角色启动结果，已移除原来的 `dispatched` 字段；派活结果由 `dispatch --json` 单独返回。
 
 ### 多项目边界

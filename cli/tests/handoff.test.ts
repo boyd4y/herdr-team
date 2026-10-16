@@ -27,12 +27,19 @@ describe("handoff —— 队列非空：交给下一个角色", () => {
       const herdr = fakeHerdr();
       herdr.live("dev");
       herdr.live("docs");
+      const prompts: string[] = [];
+      const send = herdr.agentPrompt;
+      herdr.agentPrompt = (target, text, options) => { prompts.push(text); send(target, text, options); };
 
       const result = handoff(p, herdr, "0001", new Date(2026, 9, 15, 1, 10));
 
       expect(result.from).toBe("dev");
       expect(result.to).toBe("docs");
       expect(result.status).toBe("review");
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toContain("我是谁");
+      expect(prompts[0]).toContain("你是文档");
+      expect(prompts[0]).toContain(join(p.herdrDir, "tasks/0001-a"));
       expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "docs")?.pane_id}`))).toBe(true);
     });
   });

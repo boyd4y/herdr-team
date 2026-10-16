@@ -22,7 +22,7 @@ herdr-team <命令>
 ## 项目边界
 
 任务号和角色名只属于当前项目的 `.herdr/`。不同项目的 `dev`、`lead`、`0001` 不能混用。
-启动/派活消息会给出绝对团队根目录；在 worktree 或其他目录执行命令时，显式传 `--root <团队根目录>`。
+派活/交棒消息会给出绝对团队根目录；在 worktree 或其他目录执行命令时，显式传 `--root <团队根目录>`。
 Herdr agent 内部名称可能包含项目命名空间；不要凭侧栏角色名执行全局 `herdr agent prompt`。
 派活与交棒使用 `herdr-team dispatch` / `handoff`，由 CLI 绑定项目并定位 pane。
 归属不明确时停止并交给用户确认，不按同名 workspace 或同名角色猜测。
@@ -78,7 +78,7 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 | `tasks [<id>]` | 列出任务，或按 id 查看单张任务详情（含正文，不问 Herdr）；列表支持 `--all` / `--role` / `--status` |
 | `status` | 合并「卡片写的」和「Herdr 里真实的」两侧状态 |
 | `watch` | **只读实时看板**（交互式）。给人用的，agent 不要跑 |
-| `up` | 只起常驻角色、纳入新角色，不派活（幂等；要在 Herdr pane 里跑） |
+| `up` | 只起常驻角色、纳入新角色并更新侧栏；不发送消息、不派活（幂等；要在 Herdr pane 里跑） |
 | `dispatch [<id>]` | 派所有 `todo` 任务，或只派指定的一张；按优先级和依赖处理，隔离角色此时才起 worktree/agent（要在 Herdr pane 里跑） |
 | `clean` | 按任务分支回收已结束任务留下的 worktree，不受当前角色是否隔离影响 |
 | `down` | **关停团队的 agent**，不动 workspace（`--workspace` 才连容器一起关） |

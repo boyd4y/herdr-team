@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { HerdrError, type Herdr } from "./herdr.ts";
 import { refreshSidebar, reportRoleSidebar } from "./sidebar.ts";
 import { assertProjectWorkspace, availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents, resolveProjectWorkspace, roleAssignment } from "./team-scope.ts";
-import { appendRecord, assignmentPrompt, stamp, startupPrompt } from "./handoff.ts";
+import { appendRecord, assignmentPrompt, stamp } from "./handoff.ts";
 import { findTask, writeTaskMeta } from "./task.ts";
 import {
   isTerminal,
@@ -147,12 +147,6 @@ export function up(project: Project, herdr: Herdr): UpResult {
     if (!alreadyLive) {
       try {
         herdr.agentStart(availableAgentName(project, herdr, role), role.kind, paneId, role.args ?? []);
-        // 常驻角色不等任务 —— 起来就得知道自己是谁，否则只是个裸 TUI。
-        // （**只在刚起的时候发**；已经在跑的 agent 重发会打断它手头的事。）
-        herdr.agentPrompt(
-          paneId,
-          startupPrompt(readIdentity(project), role.body, role.name) + `\n团队根目录：${project.root}；运行 herdr-team 时使用 --root 指向此目录。`,
-        );
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }

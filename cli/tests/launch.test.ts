@@ -323,14 +323,13 @@ describe("up —— 一个角色起不来不该把整轮带崩", () => {
 
 });
 
-describe("常驻角色起来时要收到自己的身份", () => {
-  test("新起的常驻 agent 会收到 identity + 角色正文，不是裸的", () => {
+describe("up 只启动，不发送消息", () => {
+  test("新起的常驻 agent 不收到身份说明，侧栏信息仍更新", () => {
     withProject(() => {}, (p) => {
       const herdr = fakeHerdr();
-      up(p, herdr);
-      const prompt = herdr.calls.find((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "dev")?.pane_id}`));
-      expect(prompt).toBeDefined();
-      expect(prompt).toContain("你是 dev");
+      const result = up(p, herdr);
+      expect(result.roles.every((role) => role.action === "started" && role.reported)).toBe(true);
+      expect(herdr.calls.some((c) => c.startsWith("agent prompt"))).toBe(false);
     });
   });
 

@@ -40,7 +40,7 @@ describe("两个项目同名角色、同号任务的隔离", () => {
     expect(own.every((agent) => agent.name?.startsWith("ht-") && agent.name.length <= 32)).toBe(true);
     expect(own.map((agent) => agent.display_agent).sort()).toEqual(["dev", "docs"]);
     expect(herdr.state.agents.filter((agent) => agent.workspace_id === "b")).toEqual(foreign);
-    expect(herdr.calls.filter((call) => call.startsWith("agent prompt")).every((call) => call.startsWith("agent prompt a:"))).toBe(true);
+    expect(herdr.calls.some((call) => call.startsWith("agent prompt"))).toBe(false);
     const calls = herdr.calls.length;
     herdr.state.workspaces[0]!.label = "renamed";
     expect(up(a, herdr).roles.every((role) => role.action === "reused")).toBe(true);

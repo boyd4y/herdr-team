@@ -144,7 +144,9 @@ export function handoff(
     };
   }
 
-  herdr.agentPrompt(target, `任务 ${id} 已交付给你。团队根目录：${project.root}\n目录：${join(project.herdrDir, card.dir)}\n读它拿到任务描述和上游的流转记录。执行 herdr-team 时使用 --root 指向上述团队根目录。`);
+  const identityPath = join(project.herdrDir, "identity.md");
+  const identity = existsSync(identityPath) ? readFileSync(identityPath, "utf8") : "";
+  herdr.agentPrompt(target, `任务 ${id} 已交付给你。\n${assignmentPrompt(identity, nextRole!.body, { ...card, role: next, handoff: rest, status }, project.root)}\n团队根目录：${project.root}\n读任务目录拿到任务描述和上游的流转记录。执行 herdr-team 时使用 --root 指向上述团队根目录。`);
   return {
     id,
     from,
@@ -154,22 +156,6 @@ export function handoff(
     prompted: true,
     note: `${id} 已交给 ${nextAgent}（status=${status}）。`,
   };
-}
-
-/**
- * 常驻角色**刚起来**时收到的说明。
- *
- * 他们不等任务（没有任务时的 `lead` 也要知道自己是谁），所以起好就得把
- * identity 和角色正文送进去 —— 否则 agent 就是一个不知道自己角色的裸 TUI。
- */
-export function startupPrompt(identity: string, roleBody: string, roleName: string): string {
-  return [
-    identity.trim(),
-    "",
-    roleBody.trim(),
-    "",
-    `你是 ${roleName}，现在没有派给你的任务。用户会直接跟你说话。`,
-  ].join("\n");
 }
 
 /** 派活说明：identity + 角色正文 + 任务目录 + 交棒要求。顺序固定。 */
