@@ -67,7 +67,7 @@ const DISPATCHER_BODY = [
   "- 写代码的角色才加 `--worktree` —— 那是每个任务一个 git worktree 的隔离。",
   "- `role rm` 被拒绝不是故障：还有没结束的任务引用那个角色，它就会挡住。",
   "",
-  "完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。",
+  "完成后优先运行 `herdr-team handoff <id> --summary \"成果；产物路径；验证；风险与下一步\"` 交棒，长摘要用 --summary-file F。摘要可选，由 CLI 追加到任务正文，不要自己改任务卡。",
 ].join("\n");
 
 const DEVELOPER_BODY = [
@@ -83,7 +83,7 @@ const DEVELOPER_BODY = [
   "",
   "Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git commit`，但不建分支、不合并、不删分支、不碰 main。",
   "",
-  "完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。",
+  "完成后优先运行 `herdr-team handoff <id> --summary \"成果；产物路径；验证；风险与下一步\"` 交棒，长摘要用 --summary-file F。摘要可选，由 CLI 追加到任务正文，不要自己改任务卡。",
 ].join("\n");
 
 const TEST_BODY = [
@@ -101,7 +101,7 @@ const TEST_BODY = [
   "",
   "Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git commit`，但不建分支、不合并、不删分支、不碰 main。",
   "",
-  "完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。",
+  "完成后优先运行 `herdr-team handoff <id> --summary \"成果；产物路径；验证；风险与下一步\"` 交棒，长摘要用 --summary-file F。摘要可选，由 CLI 追加到任务正文，不要自己改任务卡。",
 ].join("\n");
 
 const RESEARCHER_BODY = [
@@ -111,7 +111,7 @@ const RESEARCHER_BODY = [
   "| --- | --- |",
   "| 搜索外网资料；查 X（Twitter）上的信息；在回复中提供调研结论 | 修改任何文件；编造资料或来源 |",
   "",
-  "调研结果通过回复交付；任务流转只通过下述 CLI 完成，不自行修改任务卡。",
+  "调研结果应通过 handoff 的 --summary 或 --summary-file 保存到任务正文，包含结论和来源；不自行修改任务卡。",
   "",
   "给结论时必须附来源链接。查不到就说查不到，不要编。",
   "",
@@ -119,7 +119,7 @@ const RESEARCHER_BODY = [
   "",
   "Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git commit`，但不建分支、不合并、不删分支、不碰 main。",
   "",
-  "完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。",
+  "完成后优先运行 `herdr-team handoff <id> --summary \"成果；产物路径；验证；风险与下一步\"` 交棒，长摘要用 --summary-file F。摘要可选，由 CLI 追加到任务正文，不要自己改任务卡。",
 ].join("\n");
 
 /**

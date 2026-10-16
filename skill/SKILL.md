@@ -101,6 +101,22 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 checkout；Herdr workspace 已关闭时报告 `closed`，Git 拒绝删除时报告 `dirty`，
 不强制删除，保留分支供 lead 合并。
 
+## 交付结果落盘
+
+交付以任务 Markdown 和其中引用的实际产物为准，不默认通过 `herdr agent read` 抓取终端输出。
+交棒时建议携带摘要，由 CLI 追加到当前任务 `task.md` 的“交付”小节：
+
+```bash
+herdr-team handoff <id> --summary "成果；文件/报告路径或提交；验证结果；未解决问题与下一步" --root <团队根目录>
+# 长摘要或完整研究报告可从文件读取：
+herdr-team handoff <id> --summary-file <摘要文件> --root <团队根目录>
+```
+
+摘要可选，旧的裸 `handoff <id>` 仍有效；缺少摘要时 CLI 回执与下游提示会明确标注，
+不能把已流转状态当成交付内容完整。下游先用 `herdr-team tasks <id>` 或读取对应 `task.md`，
+再读摘要引用的产物。信息不足先请上游补充；`herdr agent read` 只用于诊断阻塞、异常或旧任务缺失交付。
+研究角色也通过 CLI 保存结论和来源，不需要手改任务卡。已有旧任务不会自动补写或猜测总结。
+
 ## 硬规则
 
 - **agent 不修改任务卡**；卡只由 CLI 改。角色卡里要写明完成后退 `handoff` 交棒。

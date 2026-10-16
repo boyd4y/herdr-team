@@ -523,17 +523,26 @@ async function cmdWatch(args: string[]): Promise<number> {
 }
 
 function cmdHandoff(args: string[]): number {
-  const parsed = parseArgs(args, ["root"]);
+  const parsed = parseArgs(args, ["root", "summary", "summary-file"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("用法: herdr-team handoff <id> [--root DIR] [--json]\n");
+    process.stdout.write("用法: herdr-team handoff <id> [--summary TEXT | --summary-file FILE] [--root DIR] [--json]\n摘要可选，提供后追加到任务 task.md，再通知下游读取。省略时保持旧的流转行为，并明确标注未提供摘要。\n");
     return 0;
   }
   const id = parsed.pos[0];
   if (id === undefined) throw new UsageError("需要给一个任务 id：herdr-team handoff <id>");
+  if (parsed.pos.length !== 1) throw new UsageError("handoff 只接受一个任务 id");
+  const inline = parsed.values.get("summary");
+  const file = parsed.values.get("summary-file");
+  if (inline !== undefined && file !== undefined) throw new UsageError("--summary 和 --summary-file 不能同时使用");
+  let summary = inline;
+  if (file !== undefined) {
+    try { summary = readFileSync(file, "utf8"); }
+    catch (error) { throw new UsageError(`读取交付摘要失败：${error instanceof Error ? error.message : String(error)}`); }
+  }
 
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
-  const result = handoff(project, herdrClient(), id);
+  const result = handoff(project, herdrClient(), id, new Date(), { summary });
 
   return out(parsed, result, `✓ ${result.note}`);
 }

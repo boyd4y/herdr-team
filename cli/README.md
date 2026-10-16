@@ -218,7 +218,17 @@ cwd 是服务器启动时的目录（通常是你家目录），从那儿往上�
 
 默认编排命令（含 `init`、建卡、改卡、派活、起停团队、增删角色、清理）及 Git 分支的创建、合并、删除都归 `lead`。
 其他角色只能用 `handoff` 交棒，以及 `tasks`、`status`、`validate`、`role list` 只读查询；允许在任务范围内提交，但不碰 main。
-这是提示词约定，CLI 不做角色权限拦截。任务完成后由当前角色运行 `herdr-team handoff <id>` 交接。
+这是提示词约定，CLI 不做角色权限拦截。任务完成后由当前角色交接：
+
+```sh
+herdr-team handoff <id> --summary "成果；产物路径/提交；验证结果；风险与下一步"
+herdr-team handoff <id> --summary-file summary.md
+```
+
+摘要可选，两个参数互斥；提供后由 CLI 追加到任务 `task.md` 的“交付”小节，再通知下游先读正文和引用产物。
+空摘要、文件读取失败在流转前报错；原有描述和历次交付保留。最终 done 或下游未在线时也会保存摘要。
+裸 `handoff <id>` 仍兼容，回执和下游提示明确标记未提供摘要。JSON 包含 `summarySaved` 和绝对 `taskPath`。
+下游通过 `herdr-team tasks <id>`（可加 `--json`）读取交付内容；`herdr agent read` 仅用于排障，不能替代任务产物。
 
 最后一次 `handoff` 到 `done` 时会尝试回收 worktree；`clean` 回收所有
 `done` / `cancelled` 任务留下的 worktree。两者都在任务 `repo`（缺省 `.`）中

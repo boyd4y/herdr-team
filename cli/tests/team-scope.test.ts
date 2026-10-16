@@ -53,11 +53,12 @@ describe("两个项目同名角色、同号任务的隔离", () => {
     const foreignTask = readFileSync(join(b.herdrDir, "tasks/0001-a/.task.yaml"), "utf8");
     herdr.calls.length = 0;
     expect(dispatch(a, herdr, "0001")[0]!.action).toBe("dispatched");
-    expect(handoff(loadProject(a.root), herdr, "0001").prompted).toBe(true);
+    expect(handoff(loadProject(a.root), herdr, "0001", new Date(), { summary: "项目 A 的交付记录。" }).prompted).toBe(true);
     const prompts = herdr.calls.filter((call) => call.startsWith("agent prompt"));
     expect(prompts.map((call) => call.split(" ")[2])).toEqual(["a:p-dev", "a:p-docs"]);
     expect(readFileSync(join(b.herdrDir, "tasks/0001-a/.task.yaml"), "utf8")).toBe(foreignTask);
     expect(loadProject(a.root).tasks[0]!.role).toBe("docs");
+    expect(loadProject(a.root).tasks[0]!.body).toContain("项目 A 的交付记录。");
   }));
 
   test("只存在另一个项目的同名 agent 时，dispatch 不派出、handoff 不误投", () => fixture((a, b, herdr) => {
