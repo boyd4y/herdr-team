@@ -78,13 +78,15 @@ Herdr 自己的插件日志、config/state 目录由 Herdr 管理；skill 安装
 新装 agent 后可重新运行 `install-skill`。如果希望用插件管理旧的手动安装，需先自行
 移走原入口，再运行 action；安装器不会替用户迁移它。
 
-正文直接读取插件根目录的 `SKILL.md`，引用文档和 agent 元数据分别放在插件内的
-`references/` 和 `agents/`，不改源文件。只需分发 `herdr-team-plugin/` 即可安装 skill，
-无需仓库中的其他目录。根目录 `make validate` 已实际验证这种混合目录可被
-`quick_validate.py` 接受，插件内的 skill 仍在 `PACKAGES` 中参与校验。
+内置 skill 独立放在插件的 `skill/` 子目录：正文读取 `skill/SKILL.md`，引用文档和
+agent 元数据分别放在 `skill/references/` 和 `skill/agents/`，不改源文件。
+插件自身的 `bin/`、`assets/`、`tests/` 和 manifest 留在插件根目录。
+只需分发整个 `herdr-team-plugin/` 即可安装 skill，无需仓库中的其他目录。
+根目录 `make validate` 通过 `PACKAGES` 中的 `herdr-team-plugin/skill` 校验独立的
+skill 包。
 
 安装正文与源文件的唯一差异：两个 `references/*.md` 链接改成带尖括号的绝对路径。
-安装器将完整 `references/` 文档复制到插件 state 下
+安装器将完整 `skill/references/` 文档复制到插件 state 下
 `skill-references/<内容摘要>/`，使文档间的相对链接仍可用。Herdr 在 build 后会移动检出，
 不能把临时 build 路径写进 skill。缓存按内容分版本，保留的旧版或用户修改过的 skill
 仍能读取原版引用；移动或移除源码检出也不影响已安装的引用。

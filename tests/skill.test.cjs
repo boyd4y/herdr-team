@@ -87,12 +87,12 @@ test('records every owned directory; repeated install does not rewrite skill, re
   f.run();
   assert.deepEqual(f.records().map((r) => r.dir), f.directories);
   const generated = fs.readFileSync(path.join(f.directories[0], 'SKILL.md'), 'utf8');
-  const original = fs.readFileSync(path.join(root, 'SKILL.md'), 'utf8');
+  const original = fs.readFileSync(path.join(root, 'skill/SKILL.md'), 'utf8');
   const links = [...generated.matchAll(/\]\(<([^>]+)>\)/g)].map((m) => m[1]);
   assert.equal(links.length, 2);
   for (const link of links) {
     assert(link.startsWith(f.env.HERDR_PLUGIN_STATE_DIR + path.sep));
-    assert.equal(fs.readFileSync(link, 'utf8'), fs.readFileSync(path.join(root, 'references', path.basename(link)), 'utf8'));
+    assert.equal(fs.readFileSync(link, 'utf8'), fs.readFileSync(path.join(root, 'skill/references', path.basename(link)), 'utf8'));
   }
   assert.equal(generated.replace(/\]\(<([^>]+)>\)/g, (_, file) => `](references/${path.basename(file)})`), original);
   // The linked how-to's own relative references must also remain reachable.
@@ -147,15 +147,23 @@ test('standalone plugin links survive the build checkout being moved or removed'
   const checkout = path.join(f.dir, 'temporary-checkout');
   const plugin = path.join(checkout, 'herdr-team-plugin');
   fs.cpSync(root, plugin, { recursive: true, filter: (file) => path.basename(file) !== 'tests' });
+  for (const name of ['SKILL.md', 'references', 'agents']) assert(!fs.existsSync(path.join(plugin, name)));
+  assert(fs.existsSync(path.join(plugin, 'skill/SKILL.md')));
   // Build lacks HERDR_PLUGIN_STATE_DIR; the fallback must equal action state.
   const buildState = stateDirectory({ XDG_STATE_HOME: f.env.XDG_STATE_HOME }, f.dir);
   f.run([], { HERDR_PLUGIN_STATE_DIR: '' }, plugin);
+  const installed = f.directories.map((dir) => fs.readFileSync(path.join(dir, 'SKILL.md')));
   const final = path.join(f.dir, 'final-checkout');
   fs.renameSync(checkout, final);
   f.run([], { HERDR_PLUGIN_STATE_DIR: buildState }, path.join(final, 'herdr-team-plugin'));
+  for (const [index, dir] of f.directories.entries()) {
+    assert.deepEqual(fs.readFileSync(path.join(dir, 'SKILL.md')), installed[index]);
+  }
   fs.rmSync(final, { recursive: true });
   const text = fs.readFileSync(path.join(f.directories[0], 'SKILL.md'), 'utf8');
-  for (const [, link] of text.matchAll(/\]\(<([^>]+)>\)/g)) assert(fs.readFileSync(link, 'utf8').length > 0);
+  for (const [, link] of text.matchAll(/\]\(<([^>]+)>\)/g)) {
+    assert.deepEqual(fs.readFileSync(link), fs.readFileSync(path.join(root, 'skill/references', path.basename(link))));
+  }
   f.run(['--uninstall'], { HERDR_PLUGIN_STATE_DIR: buildState });
   for (const dir of f.directories) assert(!fs.existsSync(dir));
 });

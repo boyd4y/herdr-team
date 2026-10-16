@@ -68,7 +68,7 @@ function readState(file) {
 function skillText(stateDir) {
   // The plugin bundles its skill and references for standalone distribution.
   // No npm package, network or installed skill is needed.
-  const source = path.resolve(__dirname, '..');
+  const source = path.resolve(__dirname, '..', 'skill');
   const text = fs.readFileSync(path.join(source, 'SKILL.md'), 'utf8');
   const refs = path.join(source, 'references');
   const documents = fs.readdirSync(refs).sort().map((name) => {
