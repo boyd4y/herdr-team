@@ -12,10 +12,10 @@ description: 用项目内 .herdr/ 的身份、角色卡和任务卡驱动 Herdr 
 校验、算 id、译 slug、状态流转、起团队 —— **全部**由 `herdr-team` CLI 做。
 
 ```bash
-bunx herdr-team <命令>
+herdr-team <命令>
 ```
 
-直接通过 `bunx` 运行，无需全局安装。
+安装 Herdr Team 插件后直接运行 `herdr-team`。
 
 **你不自己算 id、不自己校验引用、不自己拼 frontmatter。** 那些是代码的活；用判断去替代它们就会出错。
 
@@ -33,14 +33,14 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 
 | 用户说 | 你跑 |
 | --- | --- |
-| "加个任务：xxx，给 dev，做完转 test" | `bunx herdr-team add "xxx" --role dev --handoff test` |
-| "这个任务改给 test" | `bunx herdr-team edit <id> --role test` |
-| "起团队" / "拉起 agent" | `bunx herdr-team up` |
-| "派活" / "派指定任务" | `bunx herdr-team dispatch` / `bunx herdr-team dispatch <id>` |
-| "看状态" / "有哪些任务" | `bunx herdr-team status` / `bunx herdr-team tasks` |
-| "xxx 干完了" | `bunx herdr-team handoff <id>` |
-| "把留下的 worktree 收一下" | `bunx herdr-team clean` |
-| "这个任务不要了" | `bunx herdr-team edit <id> --status cancelled` |
+| "加个任务：xxx，给 dev，做完转 test" | `herdr-team add "xxx" --role dev --handoff test` |
+| "这个任务改给 test" | `herdr-team edit <id> --role test` |
+| "起团队" / "拉起 agent" | `herdr-team up` |
+| "派活" / "派指定任务" | `herdr-team dispatch` / `herdr-team dispatch <id>` |
+| "看状态" / "有哪些任务" | `herdr-team status` / `herdr-team tasks` |
+| "xxx 干完了" | `herdr-team handoff <id>` |
+| "把留下的 worktree 收一下" | `herdr-team clean` |
+| "这个任务不要了" | `herdr-team edit <id> --status cancelled` |
 
 字段缺什么就问什么，**不要编**。尤其 `role`：猜错了整张卡就派错人。
 
@@ -53,7 +53,7 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 
 **只有写代码和搞架构才上 `sol`**，其余用便宜档。预设不能替代项目职责的确认。
 
-已有角色改职责由 lead 跑 `bunx herdr-team role add <name> --force --body "<完整的新职责与交棒说明>"`，
+已有角色改职责由 lead 跑 `herdr-team role add <name> --force --body "<完整的新职责与交棒说明>"`，
 长正文可用 `--body-file F`。更新时不必重述 `--kind`，未提供的元数据保留；省略正文则保留原文。
 `init --force` 只重写元数据并保留已有 `prompt.md`，不能用它更新职责。
 
@@ -77,7 +77,7 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 
 `--help` 看每个命令的参数；`--json` 拿机器可读输出。
 `tasks` / `status` / `role list` 的 JSON 列表不带正文 `body`；要读取单张任务正文，
-用 `bunx herdr-team tasks <id>`（可加 `--json` 返回单个完整卡片对象）。
+用 `herdr-team tasks <id>`（可加 `--json` 返回单个完整卡片对象）。
 按 id 也能读取已结束的任务，不存在的 id 会报错；`add` / `edit` 的 JSON 回执仍不带正文。
 
 `add` / `edit` 用 `--depends-on` 声明依赖，值为逗号分隔的任务 id。

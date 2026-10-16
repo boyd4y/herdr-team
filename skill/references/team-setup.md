@@ -35,12 +35,12 @@ test 独立验证并把缺陷反馈给 dev。明确各自不负责的工作，�
 保留所选预设的运行配置，用 `--roles-file F`（或 `--roles '<json>'`）交给 CLI：
 
 ```bash
-bunx herdr-team init --roles-file roles.json
+herdr-team init --roles-file roles.json
 ```
 
 `roles.json` 是确认后的定义输入（形状见下），使用临时文件或用户指定的位置，不往项目中额外创建业务文件。
 `init --help` 会列出每个方案的角色和模型；**只有用户也原样接受预设职责正文**时，才直接运行
-`bunx herdr-team init --plan balanced`，或选择另外两个方案。
+`herdr-team init --plan balanced`，或选择另外两个方案。
 
 已有角色默认跳过；`init --force` 只重写 `.role.yaml`，已有 `prompt.md` 始终保留，缺失时才补齐。
 它不会把输入中的新 `body` 应用到已有正文；改已有角色职责走下方的 `role add --force --body`。
@@ -54,7 +54,7 @@ JSON 形状 —— 一个数组，每项一张角色卡：
     "kind": "claude",
     "model": "ds-flash",
     "env": { "ANTHROPIC_MODEL": "deepseek-flash" },
-    "body": "你负责澄清需求、建卡、派活和 Git 生命周期；实现与测试交给对应角色。任务交付通过 bunx herdr-team handoff <id> 流转，不手改任务卡。"
+    "body": "你负责澄清需求、建卡、派活和 Git 生命周期；实现与测试交给对应角色。任务交付通过 herdr-team handoff <id> 流转，不手改任务卡。"
   },
   {
     "name": "dev",
@@ -62,7 +62,7 @@ JSON 形状 —— 一个数组，每项一张角色卡：
     "model": "sol-6.1",
     "worktree": true,
     "args": ["-m", "gpt-6.1-sol"],
-    "body": "你负责在当前工作树实现功能、同步接口文档、自测并提交；编排和 Git 分支生命周期交给 lead。完成后运行 bunx herdr-team handoff <id> 交棒，不要自己改任务卡。"
+    "body": "你负责在当前工作树实现功能、同步接口文档、自测并提交；编排和 Git 分支生命周期交给 lead。完成后运行 herdr-team handoff <id> 交棒，不要自己改任务卡。"
   }
 ]
 ```
@@ -88,7 +88,7 @@ agent 名变成 `<role>-<id>`。见 [herdr-format.md](herdr-format.md#隔离与�
 先读现有 `prompt.md`，和用户确认完整的新职责、边界和交棒说明，再运行：
 
 ```bash
-bunx herdr-team role add dev --force --body "你负责实现功能和同步接口文档，自测后提交；编排与分支管理交给 lead。完成后运行 bunx herdr-team handoff <id> 交棒，不要自己改任务卡。"
+herdr-team role add dev --force --body "你负责实现功能和同步接口文档，自测后提交；编排与分支管理交给 lead。完成后运行 herdr-team handoff <id> 交棒，不要自己改任务卡。"
 ```
 
 长正文可替换为 `--body-file F`。正文是**整篇替换**，交棒与权限约定也要保留在新正文里。
@@ -107,7 +107,7 @@ bunx herdr-team role add dev --force --body "你负责实现功能和同步接�
 ## 不要做的事
 
 - **不要未经确认就写角色卡。** 可以扫项目、可以提议，但用户没点头之前不落盘。
-- **`init` 不生成任务卡。** 任务是用户的意图，不是从项目结构能推出来的东西。建卡走 `bunx herdr-team add`。
+- **`init` 不生成任务卡。** 任务是用户的意图，不是从项目结构能推出来的东西。建卡走 `herdr-team add`。
 - **不要创建 `.herdr/` 之外的任何文件。**
 
 ## 一个待用户决定的问题

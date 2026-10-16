@@ -18,7 +18,7 @@
 **这三个方案已经内置在 CLI 里**（见 `scripts/lib/plans.ts`），直接：
 
 ```bash
-bunx herdr-team init --plan balanced
+herdr-team init --plan balanced
 ```
 
 `init --help` 会列出每个方案的角色和模型。**下面是给人读的说明**，和 CLI 是同一套东西。
@@ -40,7 +40,7 @@ bunx herdr-team init --plan balanced
 
 | 角色名 | 隔离？ | 说明 |
 | --- | :--: | --- |
-| `lead` | 否 | **常驻主分支**。你跟他说话，他用 `bunx herdr-team` 安排事情 |
+| `lead` | 否 | **常驻主分支**。你跟他说话，他用 `herdr-team` 安排事情 |
 | `dev` | ✅ | 写代码。每个任务一个 worktree workspace |
 | `dev-alt` | ✅ | 并行写代码，避免和 `dev` 抢同一批文件 |
 | `test` | 否 | 编写测试 case、跑验证、审查文档；发现问题交给 `dev` 修改 |
@@ -68,17 +68,17 @@ env:
 
 | 可以 | 不可以 |
 | --- | --- |
-| 跟用户对话；用 `bunx herdr-team` 调度团队 | 写业务代码；修改业务文件；自行修改任务卡（调度状态只由 CLI 写入） |
+| 跟用户对话；用 `herdr-team` 调度团队 | 写业务代码；修改业务文件；自行修改任务卡（调度状态只由 CLI 写入） |
 
 默认只有 `lead` 有权运行编排命令：`init`、`add`、`edit`、`up`、`dispatch`、`clean`、`down`、`role add`、`role rm`；也可运行 `handoff` 和只读查询。Git 生命周期（建 `feat/*` 分支、合并、删分支）同样只归 `lead`。这些是提示词约定，CLI 不做角色权限拦截。
 
 通过 CLI 安排事情：
 
-- 用户说要做什么 → `bunx herdr-team add "<标题>" --role <角色> [--handoff <角色>]`
-- 起常驻团队、纳入新角色 → `bunx herdr-team up`（不派活）
-- 派活 → `bunx herdr-team dispatch`；只派一张 → `bunx herdr-team dispatch <id>`
-- 看进展 → `bunx herdr-team status`
-- 有人说干完了 → `bunx herdr-team handoff <id>`
+- 用户说要做什么 → `herdr-team add "<标题>" --role <角色> [--handoff <角色>]`
+- 起常驻团队、纳入新角色 → `herdr-team up`（不派活）
+- 派活 → `herdr-team dispatch`；只派一张 → `herdr-team dispatch <id>`
+- 看进展 → `herdr-team status`
+- 有人说干完了 → `herdr-team handoff <id>`
 - 拿不准 → 问用户，不要替他决定
 
 角色名和它们的用途见 `.herdr/roles/` 下其他角色的 prompt.md。
@@ -108,7 +108,7 @@ args: ["-m", "gpt-6.1-sol"]
 
 Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git commit`，但不建分支、不合并、不删分支、不碰 main。
 
-完成后运行 `bunx herdr-team handoff <id>` 交棒，不要自己改任务卡。
+完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。
 ```
 
 ### `dev-alt` —— 隔离，并行
@@ -134,7 +134,7 @@ worktree: true
 
 Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git commit`，但不建分支、不合并、不删分支、不碰 main。
 
-完成后运行 `bunx herdr-team handoff <id>` 交棒，不要自己改任务卡。
+完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。
 ```
 
 ### `test` —— 常驻
@@ -163,7 +163,7 @@ env:
 
 Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git commit`，但不建分支、不合并、不删分支、不碰 main。
 
-完成后运行 `bunx herdr-team handoff <id>` 交棒，不要自己改任务卡。
+完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。
 ```
 
 `env` 不能省。Claude Code 的后端由 `ANTHROPIC_MODEL` 决定；不钉住就会连回默认端点，
@@ -192,7 +192,7 @@ args: ["-m", "gpt-6-luna"]
 
 Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git commit`，但不建分支、不合并、不删分支、不碰 main。
 
-完成后运行 `bunx herdr-team handoff <id>` 交棒，不要自己改任务卡。
+完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。
 ```
 
 ### `search` —— 常驻
@@ -219,7 +219,7 @@ model: grok-4.7
 
 Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git commit`，但不建分支、不合并、不删分支、不碰 main。
 
-完成后运行 `bunx herdr-team handoff <id>` 交棒，不要自己改任务卡。
+完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。
 ```
 
 ## 模型短名怎么写

@@ -23,7 +23,7 @@ function checkLogos(source, glyphs = bundledGlyphs()) {
 
 if (require.main === module) {
   try {
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'herdr-team-cli', 'scripts', 'lib', 'logos.ts'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'cli', 'scripts', 'lib', 'logos.ts'), 'utf8');
     console.log(`CLI/font: matched; terminal ranges: ${checkLogos(source).join(', ')}`);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

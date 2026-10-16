@@ -2,5 +2,5 @@
 interface:
   display_name: "Herdr Agent 团队"
   short_description: "用 .herdr/ 的身份、角色卡与任务卡，在 Herdr 中按角色拉起 agent 并派活交接"
-  default_prompt: "使用 bunx herdr-team status 查看当前任务与 agent 状态；需要拉起团队时用 bunx herdr-team up。"
+  default_prompt: "使用 herdr-team status 查看当前任务与 agent 状态；需要拉起团队时用 herdr-team up。"
 ---

@@ -1,0 +1,28 @@
+{
+  "name": "herdr-team",
+  "version": "0.1.2",
+  "description": "Drive a Herdr agent team from a project's .herdr/ directory: identity, role cards and task cards.",
+  "type": "module",
+  "bin": {
+    "herdr-team": "./scripts/cli.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "herdr",
+    "agent",
+    "team",
+    "cli"
+  ],
+  "private": true
+}

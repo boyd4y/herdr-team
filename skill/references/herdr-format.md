@@ -246,7 +246,7 @@ Herdr 更新后这个列表可能变化。**运行时以 `herdr agent start --ki
 
 ## 校验规则
 
-`bunx herdr-team validate` 按下表全量校验。**任一条不过即拒绝并报出位置。**
+`herdr-team validate` 按下表全量校验。**任一条不过即拒绝并报出位置。**
 
 | # | 规则 |
 | --- | --- |

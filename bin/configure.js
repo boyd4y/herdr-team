@@ -9,7 +9,7 @@ const managed = require('./managed');
 const { locations } = require('./paths');
 
 const SIDEBAR = '[ui.sidebar.agents]\nrows = [["state_icon", "$harness_logo", "agent"], ["machine", "workspace", "tab"]]';
-const POPUP = '[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "bunx herdr-team watch"\nwidth = "90%"\nheight = "85%"';
+const POPUP = '[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "herdr-team watch"\nwidth = "90%"\nheight = "85%"';
 
 function herdr(args, env = process.env) {
   const result = spawnSync(env.HERDR_BIN_PATH || 'herdr', args, {
@@ -36,7 +36,7 @@ function existingPopup(text) {
       values.set(match[1], match[3]);
     }
     return values.get('key') === 'prefix+t' && values.get('type') === 'popup' &&
-      values.get('command') === 'bunx herdr-team watch';
+      values.get('command') === 'herdr-team watch';
   });
 }
 

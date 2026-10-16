@@ -14,7 +14,7 @@ const { BASENAME } = require('../bin/install-font');
 const { existingPopup, POPUP } = require('../bin/configure');
 
 const root = path.resolve(__dirname, '..');
-const cliLogos = fs.readFileSync(path.join(root, '..', 'herdr-team-cli/scripts/lib/logos.ts'), 'utf8');
+const cliLogos = fs.readFileSync(path.join(root, 'cli/scripts/lib/logos.ts'), 'utf8');
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'herdr-team-plugin-'));
@@ -45,6 +45,7 @@ if (args.join(' ') === 'config check') {
     HERDR_CONFIG_PATH: herdrConfig, HERDR_BIN_PATH: herdr, HERDR_ENV: '1',
     HERDR_PLUGIN_STATE_DIR: path.join(dir, 'plugin-state'),
     HERDR_TEAM_SKILL_DIRS: path.join(dir, 'agent-skills'),
+    XDG_BIN_HOME: bin,
     TEST_LOG: path.join(dir, 'calls.jsonl'), TEST_REAL_CONFIG: herdrConfig,
     PATH: bin + path.delimiter + process.env.PATH,
   };
@@ -142,7 +143,7 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     const applied = fs.readFileSync(f.herdrConfig, 'utf8');
     assert(applied.includes('"$harness_logo"'));
     assert(applied.includes('key = "prefix+t"'));
-    assert(applied.includes('command = "bunx herdr-team watch"'));
+    assert(applied.includes('command = "herdr-team watch"'));
     assert(applied.startsWith(original || ''));
     f.ok('configure.js', ['--apply', '--reload']);
     assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), applied);
@@ -262,7 +263,7 @@ test('standalone plugin build hook and actions install skill, configuration and 
   f.put(f.herdrConfig, original);
   f.put(f.paths.terminals[0].file, '# ghostty');
   const standalone = path.join(f.dir, 'standalone');
-  fs.cpSync(root, standalone, { recursive: true, filter: (file) => path.basename(file) !== 'tests' });
+  fs.cpSync(root, standalone, { recursive: true, filter: (file) => !['tests', 'node_modules'].includes(path.basename(file)) });
   const setup = () => {
     const result = spawnSync(process.execPath, ['bin/setup.js'], {
       cwd: standalone, env: f.env, encoding: 'utf8', timeout: 10000,
@@ -277,8 +278,9 @@ test('standalone plugin build hook and actions install skill, configuration and 
   setup();
   const manifest = fs.readFileSync(path.join(standalone, 'herdr-plugin.toml'), 'utf8');
   const actions = [...manifest.matchAll(/\[\[actions\]\]\nid = "([^"]+)"\ntitle = "[^"]+"\ncommand = (\[[^\n]+\])/g)];
-  assert.deepEqual(actions.map(([, id]) => id), ['configure', 'unconfigure', 'install-font', 'uninstall-font', 'install-skill', 'uninstall-skill']);
-  for (const id of ['configure', 'install-font', 'install-skill', 'unconfigure', 'uninstall-font', 'uninstall-skill']) {
+  assert.deepEqual(actions.map(([, id]) => id), ['install', 'configure', 'unconfigure', 'install-font', 'uninstall-font', 'install-skill', 'uninstall-skill', 'install-cli', 'uninstall-cli']);
+  assert(fs.existsSync(path.join(f.env.XDG_BIN_HOME, 'herdr-team')));
+  for (const id of ['install', 'configure', 'install-font', 'install-skill', 'install-cli', 'unconfigure', 'uninstall-font', 'uninstall-skill', 'uninstall-cli']) {
     const command = JSON.parse(actions.find((a) => a[1] === id)[2]);
     const result = spawnSync(command[0], command.slice(1), { cwd: standalone, env: f.env, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -286,6 +288,7 @@ test('standalone plugin build hook and actions install skill, configuration and 
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
   assert(!fs.existsSync(path.join(f.paths.fonts, BASENAME)));
   assert(!fs.existsSync(skillFile));
+  assert(!fs.existsSync(path.join(f.env.XDG_BIN_HOME, 'herdr-team')));
   assert(!manifest.includes('[[startup]]'));
   assert(!manifest.includes('[[events]]'));
 });

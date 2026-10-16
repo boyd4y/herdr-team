@@ -2,11 +2,16 @@ id = "herdr-team"
 name = "Herdr Team"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
-description = "Install the team skill, sidebar logos, their font and a prefix+t team board popup."
+description = "Install the team CLI, skill, sidebar logos, their font and a prefix+t team board popup."
 platforms = ["linux", "macos"]
 
 # GitHub installs perform setup once. Local links use the actions below.
 [[build]]
+command = ["node", "bin/setup.js"]
+
+[[actions]]
+id = "install"
+title = "Install team CLI, skill, font and sidebar"
 command = ["node", "bin/setup.js"]
 
 [[actions]]
@@ -38,3 +43,13 @@ command = ["node", "bin/install-skill.js"]
 id = "uninstall-skill"
 title = "Remove plugin-owned team skills"
 command = ["node", "bin/install-skill.js", "--uninstall"]
+
+[[actions]]
+id = "install-cli"
+title = "Install bundled team CLI on PATH"
+command = ["node", "bin/install-cli.js"]
+
+[[actions]]
+id = "uninstall-cli"
+title = "Remove plugin-owned team CLI"
+command = ["node", "bin/install-cli.js", "--uninstall"]

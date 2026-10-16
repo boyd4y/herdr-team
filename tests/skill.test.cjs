@@ -146,7 +146,7 @@ test('standalone plugin links survive the build checkout being moved or removed'
   const f = fixture(t);
   const checkout = path.join(f.dir, 'temporary-checkout');
   const plugin = path.join(checkout, 'herdr-team-plugin');
-  fs.cpSync(root, plugin, { recursive: true, filter: (file) => path.basename(file) !== 'tests' });
+  fs.cpSync(root, plugin, { recursive: true, filter: (file) => !['tests', 'node_modules'].includes(path.basename(file)) });
   for (const name of ['SKILL.md', 'references', 'agents']) assert(!fs.existsSync(path.join(plugin, name)));
   assert(fs.existsSync(path.join(plugin, 'skill/SKILL.md')));
   // Build lacks HERDR_PLUGIN_STATE_DIR; the fallback must equal action state.

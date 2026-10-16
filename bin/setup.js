@@ -4,10 +4,12 @@
 const { planConfigure, applyPlan, reloadConfig } = require('./configure');
 const { installFont } = require('./install-font');
 const { installSkill } = require('./install-skill');
+const { installCLI } = require('./install-cli');
 
 // One-shot install hook: no daemon, no agent orchestration, no downloads.
 async function setup() {
   const plan = planConfigure();
+  await installCLI();
   await installSkill();
   installFont();
   applyPlan(plan);
