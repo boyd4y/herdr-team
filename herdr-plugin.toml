@@ -1,7 +1,7 @@
 id = "herdr-team"
 name = "Herdr Team"
 version = "0.1.0"
-min_herdr_version = "0.9.0"
+min_herdr_version = "0.9.3"
 description = "Install the team CLI, skill, sidebar and a prefix+t team board popup."
 platforms = ["linux", "macos"]
 
@@ -43,3 +43,39 @@ command = ["node", "bin/install-cli.js"]
 id = "uninstall-cli"
 title = "Remove plugin-owned team CLI"
 command = ["node", "bin/install-cli.js", "--uninstall"]
+
+# One-shot metadata updates: no daemon, polling, or agent prompts.
+[[startup]]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+
+[[events]]
+on = "workspace.created"
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+
+[[events]]
+on = "workspace.updated"
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+
+[[events]]
+on = "workspace.closed"
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+
+[[events]]
+on = "worktree.created"
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+
+[[events]]
+on = "worktree.opened"
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+
+[[events]]
+on = "pane.moved"
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+
+[[events]]
+on = "tab.moved"
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]

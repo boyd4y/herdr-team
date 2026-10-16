@@ -9,6 +9,7 @@ import { describePlan, isPlanName, PLAN_NAMES, planRoles } from "./lib/plans.ts"
 import { addRole, describeRole, removeRole, RoleError } from "./lib/role.ts";
 import { realHerdr, type Herdr } from "./lib/herdr.ts";
 import { refreshSidebar } from "./lib/sidebar.ts";
+import { syncWorkspaceBadges } from "./lib/workspace-badges.ts";
 import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/launch.ts";
 import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/status.ts";
 import { createTask, editTask, findTask, TaskError } from "./lib/task.ts";
@@ -57,7 +58,7 @@ const USAGE = `herdr-team —— 用项目内 .herdr/ 驱动 Herdr agent 团队
   dispatch [<id>]              派所有 todo 任务，或只派指定任务（需在 Herdr pane 内）
   clean                        回收已结束任务的 worktree
   down [--workspace]           关停团队的 agent（默认不动 workspace）
-  sidebar                      刷新现有 agent 的两行信息（不启动 agent）
+  sidebar                      刷新归属编号与现有 agent 的两行信息（不启动 agent）
 
 选项:
   --root <DIR>                 项目根（默认从当前目录向上找含 .herdr/ 的目录）
@@ -368,14 +369,16 @@ function cmdInit(args: string[]): number {
 function cmdSidebar(args: string[]): number {
   const parsed = parseArgs(args, ["root"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("用法: herdr-team sidebar [--root DIR] [--json]\n刷新现有 agent 的角色、harness、模型和任务 ID，不启动 agent。\n");
+    process.stdout.write("用法: herdr-team sidebar [--root DIR] [--json] [--badges-only]\n刷新归属编号及现有 agent 的角色、harness、模型和任务 ID，不启动 agent。\n--badges-only 仅同步归属编号，不要求当前目录是团队项目。\n");
     return 0;
   }
-  const project = loadValidated(resolveRoot(parsed.values.get("root")));
+  const project = parsed.flags.has("badges-only") ? null : loadValidated(resolveRoot(parsed.values.get("root")));
   const herdr = herdrClient();
   if (!herdr.envOk()) throw new LaunchError("这个命令要在 Herdr 的 pane 里跑（HERDR_ENV=1）。");
-  const result = refreshSidebar(project, herdr);
-  out(parsed, result, `已刷新 ${result.updated} 个 agent${result.failed ? `；${result.failed} 项上报失败` : ""}`);
+  const badges = syncWorkspaceBadges(herdr);
+  const result = project === null ? badges : refreshSidebar(project, herdr);
+  if (project !== null) result.failed += badges.failed;
+  out(parsed, result, `已刷新 ${result.updated} ${project === null ? "项归属标记" : "个 agent"}${result.failed ? `；${result.failed} 项上报失败` : ""}`);
   return result.failed ? 1 : 0;
 }
 

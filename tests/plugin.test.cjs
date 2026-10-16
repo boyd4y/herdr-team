@@ -107,7 +107,7 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     else f.put(f.herdrConfig, original);
     f.ok('configure.js', ['--apply', '--reload']);
     const applied = fs.readFileSync(f.herdrConfig, 'utf8');
-    assert(applied.includes('rows = [["state_icon", "agent", "$team_harness"]'));
+    assert(applied.includes('rows = [["state_icon", "$team_workspace", "agent", "$team_harness"]'));
     assert(!applied.includes('$harness_logo'));
     assert(applied.includes('key = "prefix+t"'));
     assert(applied.includes('command = "herdr-team watch"'));
@@ -165,7 +165,7 @@ test('upgrade replaces the old sidebar and removes only managed terminal mapping
   const config = fs.readFileSync(f.herdrConfig, 'utf8');
   assert(config.startsWith(original));
   assert(!config.includes('$harness_logo'));
-  assert(config.includes('rows = [["state_icon", "agent", "$team_harness"]'));
+  assert(config.includes('rows = [["state_icon", "$team_workspace", "agent", "$team_harness"]'));
   for (const [file, text] of originals) assert.equal(fs.readFileSync(file, 'utf8'), text);
   assert.equal(fs.readFileSync(modified, 'utf8'), 'modified font');
   assert.equal(fs.readFileSync(unrelated, 'utf8'), 'other font');
@@ -255,6 +255,7 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   assert(!fs.existsSync(path.join(f.paths.fonts, BASENAME)));
   assert(!fs.existsSync(skillFile));
   assert(!fs.existsSync(path.join(f.env.XDG_BIN_HOME, 'herdr-team')));
-  assert(!manifest.includes('[[startup]]'));
-  assert(!manifest.includes('[[events]]'));
+  assert(manifest.includes('[[startup]]'));
+  assert(manifest.includes('on = "workspace.created"'));
+  assert(manifest.includes('on = "pane.agent_detected"'));
 });

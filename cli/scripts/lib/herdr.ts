@@ -34,6 +34,8 @@ export interface TabInfo {
 }
 
 export interface WorkspaceInfo {
+  tokens?: Record<string, string>;
+  worktree?: { repo_key: string; is_linked_worktree: boolean };
   workspace_id: string;
   label: string;
   pane_count: number;
@@ -96,6 +98,7 @@ export interface Herdr {
   agentStart(name: string, kind: string, paneId: string, args: string[]): void;
   /** 默认只提交输入；dispatch 可选择等待首次 working / blocked，调用上限 8 秒。 */
   agentPrompt(target: string, text: string, options?: { waitForActivity: boolean }): void;
+  reportBadge(scope: "workspace" | "pane", id: string, badge: string | null): void;
   reportMetadata(paneId: string, source: string, displayAgent: string, tokens?: Record<string, string | null>): void;
 }
 
@@ -132,7 +135,7 @@ function errorCode(output: string): string | undefined {
 }
 
 export const defaultSpawn: SpawnFn = (args) => {
-  const proc = Bun.spawnSync(["herdr", ...args], { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawnSync([process.env["HERDR_BIN_PATH"] || "herdr", ...args], { stdout: "pipe", stderr: "pipe" });
   return {
     code: proc.exitCode,
     stdout: proc.stdout.toString(),
@@ -269,6 +272,11 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       }
       run(args);
     },
+
+    reportBadge: (scope, id, badge) => void run([
+      scope, "report-metadata", id, "--source", "herdr-team-badges",
+      ...(badge === null ? ["--clear-token", "team_workspace"] : ["--token", `team_workspace=${badge}`]),
+    ]),
 
     reportMetadata: (paneId, source, displayAgent, tokens = {}) =>
       void run([

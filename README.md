@@ -1,9 +1,9 @@
 # Herdr Team plugin
 
-一次安装 `herdr-team` skill、内置 CLI、Herdr sidebar 配置，并把 `prefix+t` 绑定到 `herdr-team watch` popup。只有一次性安装脚本，
+一次安装 `herdr-team` skill、内置 CLI、Herdr sidebar 配置，并把 `prefix+t` 绑定到 `herdr-team watch` popup。安装与同步均为一次性脚本，
 无 daemon、无运行时 npm 依赖，不起 agent，也不改项目的 `.herdr/`。
 
-需要 Herdr 0.9.0+、Node 18+、Bun 1.2+，支持 macOS / Linux。CLI、skill 和安装脚本
+需要 Herdr 0.9.3+、Node 18+、Bun 1.2+，支持 macOS / Linux。CLI、skill 和安装脚本
 均随插件分发，安装 action 不联网，不再通过 npm 分发 CLI。
 
 ## 安装
@@ -39,13 +39,28 @@ herdr-team status
 `status` 需在已有 `.herdr/` 团队配置的项目中运行。没有运行中的 Herdr 时安装仍可完成，
 启动 Herdr 后调用 `configure` 应用配置。
 
-sidebar 保留 Herdr 自带的状态圆点；agent 第一行显示角色、harness，第二行显示模型和
-任务 ID（有任务时）。不再重复 machine、workspace、tab。模型取角色卡的 `model`，
-未指定时显示 `default`。无需额外字体或环境变量。
-`up`、`dispatch`、`handoff` 和 `edit` 会更新显示；升级后可在项目的 Herdr pane 中运行
-`herdr-team sidebar` 刷新现有 agent，不启动或重启 agent。随后在 Herdr 菜单里选择
-`reload config` 应用布局。
-原生圆点颜色由 Herdr 的运行状态决定；插件不支持按 workspace hash 动态配色。
+sidebar 保留 Herdr 自带的状态圆点，并为主 workspace 分配 `①`、`②` 等归属编号。
+agent 第一行显示编号、角色、harness，第二行显示模型和任务 ID（有任务时）。
+workspace 名称只在 spaces 区显示；子 worktree 和其中的 agent 沿用主 workspace 的编号。
+模型取角色卡的 `model`，未指定时显示 `default`。无需额外字体或环境变量。
+
+编号绑定 workspace ID，保存在插件 state 的 `workspace-badges/` 中，按 Herdr socket
+区分会话；重命名、排序和恢复已有 workspace 时不变，旧编号不回收，新建继续递增。
+超过 50 时用 `[51]` 等形式。删除 state 会重置编号，所以需要稳定编号时请保留它。
+
+启动和 workspace / worktree / agent 生命周期事件会触发一次 metadata 同步，无后台
+轮询；metadata 上报不会再次触发这些事件钩子。重新链接插件会加载新增的事件钩子：
+
+```sh
+herdr plugin link /path/to/herdr-team
+herdr plugin action invoke herdr-team.configure
+```
+
+在项目的 Herdr pane 中运行 `herdr-team sidebar`，可同时刷新编号和角色、模型、任务 ID。
+`herdr-team sidebar --badges-only` 不要求 `.herdr/` 项目，仅刷新所有 workspace 和 agent
+的归属编号。从 Herdr 菜单选择 `reload config` 应用 sidebar 布局。
+原生圆点仍表达运行状态，插件不会更改它的状态或颜色。
+
 升级安装或运行 `configure` 时，会移除旧版插件添加的终端字体映射，以及内容未修改的
 插件字体副本；其他字体和终端配置保留。旧版图标 token 不再显示，并按原 TTL 到期。
 
@@ -153,7 +168,7 @@ Herdr 配置修改都在 `# >>> herdr-team:config` / `# <<< herdr-team:config` �
 
 已有常规 `[[keys.command]]` 的 `prefix+t` popup，且 command 同为
 `herdr-team watch` 时会直接复用，卸载时保留。其他键位冲突、已有
-`[ui.sidebar.agents]`（包括 inline / dotted 定义）造成的 TOML 冲突，由 Herdr 的
+`[ui.sidebar.agents]` 或 `[ui.sidebar.spaces]`（包括 inline / dotted 定义）造成的 TOML 冲突，由 Herdr 的
 校验拒绝；用户先自行整理冲突后重跑，不会覆盖别的插件。复杂 TOML 写法的已有
 popup 可能无法识别为可复用，仍由 Herdr 校验阻止重复绑定。
 

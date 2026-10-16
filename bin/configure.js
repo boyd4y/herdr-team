@@ -9,7 +9,7 @@ const managed = require('./managed');
 const { locations } = require('./paths');
 const { cleanupIcons } = require('./cleanup-icons');
 
-const SIDEBAR = '[ui.sidebar.agents]\nrows = [["state_icon", "agent", "$team_harness"], ["$team_model", "$team_task"]]';
+const SIDEBAR = '[ui.sidebar.agents]\nrows = [["state_icon", "$team_workspace", "agent", "$team_harness"], ["$team_model", "$team_task"]]\n\n[ui.sidebar.spaces]\nrows = [["state_icon", "$team_workspace", "workspace"], ["branch", "git_status"]]';
 const POPUP = '[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "herdr-team watch"\nwidth = "90%"\nheight = "85%"';
 
 function herdr(args, env = process.env) {
@@ -61,7 +61,7 @@ function planConfigure(uninstall = false, file = locations().herdr) {
   const body = uninstall ? null : (reuse ? SIDEBAR : `${POPUP}\n\n${SIDEBAR}`);
   const after = managed.edit(before, 'config', body);
   if (after.exists) validate(after.text);
-  return { file, before, after, reuse };
+  return { file, before, after, reuse, uninstall };
 }
 
 function applyPlan(plan, reload = false) {
@@ -72,7 +72,11 @@ function applyPlan(plan, reload = false) {
   cleanupIcons();
   managed.write(plan.file, plan.before, plan.after);
   console.log(`config: ${plan.file}${plan.reuse ? ' (reusing existing prefix+t popup)' : ''}`);
-  if (reload) reloadConfig();
+  if (reload) {
+    reloadConfig();
+    const result = plan.uninstall ? { status: 0 } : spawnSync('bun', [path.join(__dirname, '..', 'cli', 'scripts', 'cli.ts'), 'sidebar', '--badges-only'], { env: process.env, encoding: 'utf8', timeout: 30000 });
+    if (result.status !== 0) console.log('Refresh workspace numbers inside Herdr with: herdr-team sidebar --badges-only');
+  }
 }
 
 function reloadConfig() {
