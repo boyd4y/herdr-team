@@ -259,4 +259,6 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   assert(manifest.includes('[[startup]]'));
   assert(manifest.includes('on = "workspace.created"'));
   assert(manifest.includes('on = "pane.agent_detected"'));
+  assert(manifest.includes('"sidebar", "--auto"'));
+  assert(!manifest.includes('"sidebar", "--badges-only"'));
 });

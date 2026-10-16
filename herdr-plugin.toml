@@ -46,36 +46,36 @@ command = ["node", "bin/install-cli.js", "--uninstall"]
 
 # One-shot metadata updates: no daemon, polling, or agent prompts.
 [[startup]]
-command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
 
 [[events]]
 on = "workspace.created"
-command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
 
 [[events]]
 on = "workspace.updated"
-command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
 
 [[events]]
 on = "workspace.closed"
-command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
 
 [[events]]
 on = "worktree.created"
-command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
 
 [[events]]
 on = "worktree.opened"
-command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
 
 [[events]]
 on = "pane.agent_detected"
-command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
 
 [[events]]
 on = "pane.moved"
-command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
 
 [[events]]
 on = "tab.moved"
-command = ["bun", "cli/scripts/cli.ts", "sidebar", "--badges-only"]
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]

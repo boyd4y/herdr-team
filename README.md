@@ -51,8 +51,8 @@ workspace 名称只在 spaces 区显示；子 worktree 和其中的 agent 沿用
 区分会话；重命名、排序和恢复已有 workspace 时不变，旧编号不回收，新建继续递增。
 超过 50 时用 `[51]` 等形式。删除 state 会重置编号，所以需要稳定编号时请保留它。
 
-启动和 workspace / worktree / agent 生命周期事件会触发一次 metadata 同步，无后台
-轮询；metadata 上报不会再次触发这些事件钩子。重新链接插件会加载新增的事件钩子：
+启动和 workspace / worktree / agent 生命周期事件会触发一次 metadata 同步，自动发现
+会话内各项目，补齐已有 agent 的角色、harness、模型和任务 ID，无后台轮询；metadata 上报不会再次触发这些事件钩子。重新链接插件会加载新增的事件钩子：
 
 ```sh
 herdr plugin link /path/to/herdr-team
@@ -60,6 +60,7 @@ herdr plugin action invoke herdr-team.configure
 ```
 
 在项目的 Herdr pane 中运行 `herdr-team sidebar`，可同时刷新编号和角色、模型、任务 ID。
+`herdr-team sidebar --auto` 可从任意目录自动刷新会话内的团队项目，旧 agent 也会补齐字段。
 `herdr-team sidebar --badges-only` 不要求 `.herdr/` 项目，仅刷新所有 workspace 和 agent
 的归属编号。从 Herdr 菜单选择 `reload config` 应用 sidebar 布局。
 原生圆点仍表达运行状态，插件不会更改它的状态或颜色。

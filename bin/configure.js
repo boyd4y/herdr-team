@@ -77,9 +77,13 @@ function applyPlan(plan, reload = false) {
   console.log(`config: ${plan.file}${plan.reuse ? ' (reusing existing prefix+t popup)' : ''}`);
   if (reload) {
     reloadConfig();
-    const result = plan.uninstall ? { status: 0 } : spawnSync('bun', [path.join(__dirname, '..', 'cli', 'scripts', 'cli.ts'), 'sidebar', '--badges-only'], { env: process.env, encoding: 'utf8', timeout: 30000 });
-    if (result.status !== 0) console.log('Refresh workspace numbers inside Herdr with: herdr-team sidebar --badges-only');
+    if (!plan.uninstall) refreshSidebar();
   }
+}
+
+function refreshSidebar() {
+  const result = spawnSync('bun', [path.join(__dirname, '..', 'cli', 'scripts', 'cli.ts'), 'sidebar', '--auto'], { env: process.env, encoding: 'utf8', timeout: 30000 });
+  if (result.status !== 0) console.log('Refresh team sidebar inside Herdr with: herdr-team sidebar --auto');
 }
 
 function reloadConfig() {
@@ -101,4 +105,4 @@ function main(args) {
 if (require.main === module) {
   try { main(process.argv.slice(2)); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { planConfigure, applyPlan, reloadConfig, existingPopup, SIDEBAR, POPUP };
+module.exports = { planConfigure, applyPlan, reloadConfig, refreshSidebar, existingPopup, SIDEBAR, POPUP };

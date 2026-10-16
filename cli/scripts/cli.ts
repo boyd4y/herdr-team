@@ -9,7 +9,7 @@ import { init, InitError, parseRoleSpecs, readRolesFile } from "./lib/init.ts";
 import { describePlan, isPlanName, PLAN_NAMES, planRoles } from "./lib/plans.ts";
 import { addRole, describeRole, removeRole, RoleError } from "./lib/role.ts";
 import { realHerdr, type Herdr } from "./lib/herdr.ts";
-import { refreshSidebar } from "./lib/sidebar.ts";
+import { refreshSessionSidebar, refreshSidebar } from "./lib/sidebar.ts";
 import { syncWorkspaceBadges } from "./lib/workspace-badges.ts";
 import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/launch.ts";
 import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/status.ts";
@@ -370,16 +370,18 @@ function cmdInit(args: string[]): number {
 function cmdSidebar(args: string[]): number {
   const parsed = parseArgs(args, ["root"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("用法: herdr-team sidebar [--root DIR] [--json] [--badges-only]\n刷新归属编号及现有 agent 的角色、harness、模型和任务 ID，不启动 agent。\n--badges-only 仅同步归属编号，不要求当前目录是团队项目。\n");
+    process.stdout.write("用法: herdr-team sidebar [--root DIR] [--json] [--auto | --badges-only]\n刷新归属编号及现有 agent 的角色、harness、模型和任务 ID，不启动 agent。\n--auto 自动发现会话内的团队项目并刷新，不依赖当前目录。\n--badges-only 仅同步归属编号，不要求当前目录是团队项目。\n");
     return 0;
   }
-  const project = parsed.flags.has("badges-only") ? null : loadValidated(resolveRoot(parsed.values.get("root")));
+  if (parsed.flags.has("auto") && parsed.flags.has("badges-only")) throw new UsageError("--auto 和 --badges-only 不能同时使用");
+  const automatic = parsed.flags.has("auto");
+  const project = parsed.flags.has("badges-only") || automatic ? null : loadValidated(resolveRoot(parsed.values.get("root")));
   const herdr = herdrClient();
   if (!herdr.envOk()) throw new LaunchError("这个命令要在 Herdr 的 pane 里跑（HERDR_ENV=1）。");
   const badges = syncWorkspaceBadges(herdr);
-  const result = project === null ? badges : refreshSidebar(project, herdr);
-  if (project !== null) result.failed += badges.failed;
-  out(parsed, result, `已刷新 ${result.updated} ${project === null ? "项归属标记" : "个 agent"}${result.failed ? `；${result.failed} 项上报失败` : ""}`);
+  const result = automatic ? refreshSessionSidebar(herdr) : project === null ? badges : refreshSidebar(project, herdr);
+  if (project !== null || automatic) result.failed += badges.failed;
+  out(parsed, result, `已刷新 ${result.updated} ${project === null && !automatic ? "项归属标记" : "个 agent"}${result.failed ? `；${result.failed} 项上报失败` : ""}`);
   return result.failed ? 1 : 0;
 }
 

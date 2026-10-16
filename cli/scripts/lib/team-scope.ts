@@ -75,17 +75,19 @@ export function projectAgents(project: Project, herdr: Herdr, agents = herdr.age
 export function roleAssignment(project: Project, agent: AgentInfo): { role: RoleCard; taskId?: string } | null {
   if (agent.tokens?.team_project !== undefined && agent.tokens.team_project !== projectKey(project)) return null;
   const declaredRole = agent.tokens?.team_role;
+  // Older panes may retain a display label after the process's live name was lost.
+  const name = agent.name ?? agent.display_agent;
   const roles = declaredRole === undefined ? project.roles : project.roles.filter((role) => role.name === declaredRole);
   for (const role of roles) {
     if (!role.worktree) {
-      if (agent.name === role.name || agent.name === scopedAgentName(project, role.name) ||
+      if (name === role.name || name === scopedAgentName(project, role.name) ||
         (agent.tokens?.team_role === role.name && !agent.tokens.team_task_id)) return { role };
     } else {
-      if (agent.name === role.name) return { role }; // Owned legacy resident after enabling worktree mode.
+      if (name === role.name) return { role }; // Owned legacy resident after enabling worktree mode.
       const prefix = `${role.name}-`;
       const scopedPrefix = `${scopedAgentName(project, role.name)}-`;
-      const suffix = agent.name?.startsWith(prefix) ? agent.name.slice(prefix.length)
-        : agent.name?.startsWith(scopedPrefix) ? agent.name.slice(scopedPrefix.length) : undefined;
+      const suffix = name?.startsWith(prefix) ? name.slice(prefix.length)
+        : name?.startsWith(scopedPrefix) ? name.slice(scopedPrefix.length) : undefined;
       const taskId = agent.tokens?.team_role === role.name ? agent.tokens.team_task_id : undefined;
       const id = taskId ?? (suffix === undefined ? undefined : /^([0-9]{4})(?:-|$)/.exec(suffix)?.[1]);
       if (id && /^[0-9]{4}$/.test(id)) return { role, taskId: id };

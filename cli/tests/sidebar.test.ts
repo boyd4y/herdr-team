@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { loadProject } from "../scripts/lib/config.ts";
 import { dispatch, up } from "../scripts/lib/launch.ts";
 import { handoff } from "../scripts/lib/handoff.ts";
-import { refreshSidebar } from "../scripts/lib/sidebar.ts";
+import { refreshSessionSidebar, refreshSidebar } from "../scripts/lib/sidebar.ts";
 import { fakeHerdr, makeProject, roleMeta, runningWorkspace, taskMeta, twoResidentRoles, writeRole, writeTask } from "./helpers.ts";
 
 describe("agent sidebar 的两行信息", () => {
@@ -67,5 +67,41 @@ describe("agent sidebar 的两行信息", () => {
       refreshSidebar(loadProject(root), herdr);
       expect(herdr.state.agents[0]!.tokens?.team_model).toBe("new-model");
     } finally { cleanup(); }
+  });
+});
+
+describe("plugin 自动刷新旧 agent", () => {
+  test("跨项目补齐 arch 的 codex/model；无 live name 时用原显示角色，但不覆盖显式其他名称", () => {
+    const a = makeProject("same"), b = makeProject("same");
+    try {
+      writeRole(a.root, "arch", roleMeta({ model: "sol-6.1" }));
+      writeRole(b.root, "arch", roleMeta({ kind: "claude", model: "other-model" }));
+      const herdr = fakeHerdr({
+        workspaces: ["a", "b"].map((id) => ({ workspace_id: id, label: "same", pane_count: 1, tab_count: 1 })),
+        panes: [["a", a.root], ["b", b.root]].map(([id, cwd]) => ({ workspace_id: id!, tab_id: `${id}:t1`, pane_id: `${id}:p1`, cwd })),
+        agents: [
+          { display_agent: "arch", agent: "codex", workspace_id: "a", pane_id: "a:p1" },
+          { display_agent: "arch", agent: "claude", workspace_id: "b", pane_id: "b:p1" },
+          { name: "outsider", display_agent: "arch", agent: "codex", workspace_id: "a", pane_id: "a:p2" },
+        ],
+      });
+      expect(refreshSessionSidebar(herdr)).toEqual({ updated: 2, failed: 0 });
+      expect(herdr.state.agents[0]!.tokens).toMatchObject({ team_harness: "codex", team_model: "sol-6.1" });
+      expect(herdr.state.agents[1]!.tokens).toMatchObject({ team_harness: "claude", team_model: "other-model" });
+      expect(herdr.state.agents[2]!.tokens).toBeUndefined();
+      expect(herdr.calls.some((call) => call.startsWith("agent start") || call.startsWith("agent prompt"))).toBe(false);
+    } finally { a.cleanup(); b.cleanup(); }
+  });
+
+  test("非团队目录、缺失 cwd 或不在 Herdr 中不猜归属", () => {
+    const herdr = fakeHerdr({
+      panes: [{ workspace_id: "a", tab_id: "a:t1", pane_id: "a:p1", cwd: "/nonexistent/herdr-team-sidebar-test" }],
+      agents: [{ name: "arch", agent: "codex", pane_id: "a:p1", workspace_id: "a" }],
+    });
+    expect(refreshSessionSidebar(herdr)).toEqual({ updated: 0, failed: 0 });
+    expect(herdr.calls).toEqual([]);
+    herdr.paneList = () => { throw new Error("must not query outside Herdr"); };
+    herdr.state.envOk = false;
+    expect(refreshSessionSidebar(herdr)).toEqual({ updated: 0, failed: 0 });
   });
 });

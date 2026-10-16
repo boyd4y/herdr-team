@@ -1,4 +1,4 @@
-import { loadProject } from "./config.ts";
+import { findRoot, loadProject } from "./config.ts";
 import { projectKey, projectAgents, roleAssignment } from "./team-scope.ts";
 import type { Herdr } from "./herdr.ts";
 import type { Project, RoleCard } from "./types.ts";
@@ -35,6 +35,28 @@ export function refreshSidebar(project: Project, herdr: Herdr): { updated: numbe
       try {
         reportRoleSidebar(fresh, herdr, agent.pane_id, assignment.role, assignment.taskId);
         result.updated++;
+      } catch { result.failed++; }
+    }
+  } catch { result.failed++; }
+  return result;
+}
+
+/** One-shot session refresh for plugin hooks, independent of the caller's cwd. */
+export function refreshSessionSidebar(herdr: Herdr): { updated: number; failed: number } {
+  const result = { updated: 0, failed: 0 };
+  if (!herdr.envOk()) return result;
+  try {
+    const roots = new Set<string>();
+    for (const pane of herdr.paneList()) {
+      if (!pane.cwd) continue;
+      const root = findRoot(pane.cwd);
+      if (root) roots.add(root);
+    }
+    for (const root of roots) {
+      try {
+        const refreshed = refreshSidebar(loadProject(root), herdr);
+        result.updated += refreshed.updated;
+        result.failed += refreshed.failed;
       } catch { result.failed++; }
     }
   } catch { result.failed++; }
