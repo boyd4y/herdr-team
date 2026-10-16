@@ -43,6 +43,8 @@ if (args.join(' ') === 'config check') {
   const env = {
     ...process.env, HOME: dir, XDG_CONFIG_HOME: config, XDG_DATA_HOME: path.join(dir, 'data'),
     HERDR_CONFIG_PATH: herdrConfig, HERDR_BIN_PATH: herdr, HERDR_ENV: '1',
+    HERDR_PLUGIN_STATE_DIR: path.join(dir, 'plugin-state'),
+    HERDR_TEAM_SKILL_DIRS: path.join(dir, 'agent-skills'),
     TEST_LOG: path.join(dir, 'calls.jsonl'), TEST_REAL_CONFIG: herdrConfig,
     PATH: bin + path.delimiter + process.env.PATH,
   };
@@ -254,7 +256,7 @@ test('writes preserve dotfile symlinks and reject non-UTF8 config', (t) => {
   assert(!fs.existsSync(absent));
 });
 
-test('build hook performs one-shot configuration and font setup; actions are standalone', (t) => {
+test('build hook installs skill, configuration and font; actions work in a full checkout', (t) => {
   const f = fixture(t);
   const original = '# before setup\n[ui]\n';
   f.put(f.herdrConfig, original);
@@ -262,20 +264,24 @@ test('build hook performs one-shot configuration and font setup; actions are sta
   f.ok('setup.js');
   assert(fs.readFileSync(f.herdrConfig, 'utf8').includes('$harness_logo'));
   assert(fs.existsSync(path.join(f.paths.fonts, BASENAME)));
+  const skillFile = path.join(f.env.HERDR_TEAM_SKILL_DIRS, 'herdr-team', 'SKILL.md');
+  assert(fs.readFileSync(skillFile, 'utf8').includes('name: herdr-team'));
   f.ok('setup.js');
-  // Copy only the distributable plugin, remove the checkout relationship.
+  // GitHub subdirectory installs retain the sibling skill in their checkout.
   const standalone = path.join(f.dir, 'standalone');
   fs.cpSync(root, standalone, { recursive: true, filter: (file) => path.basename(file) !== 'tests' });
+  fs.cpSync(path.join(root, '..', 'herdr-team'), path.join(f.dir, 'herdr-team'), { recursive: true });
   const manifest = fs.readFileSync(path.join(standalone, 'herdr-plugin.toml'), 'utf8');
   const actions = [...manifest.matchAll(/\[\[actions\]\]\nid = "([^"]+)"\ntitle = "[^"]+"\ncommand = (\[[^\n]+\])/g)];
-  assert.deepEqual(actions.map(([, id]) => id), ['configure', 'unconfigure', 'install-font', 'uninstall-font']);
-  for (const id of ['configure', 'install-font', 'unconfigure', 'uninstall-font']) {
+  assert.deepEqual(actions.map(([, id]) => id), ['configure', 'unconfigure', 'install-font', 'uninstall-font', 'install-skill', 'uninstall-skill']);
+  for (const id of ['configure', 'install-font', 'install-skill', 'unconfigure', 'uninstall-font', 'uninstall-skill']) {
     const command = JSON.parse(actions.find((a) => a[1] === id)[2]);
     const result = spawnSync(command[0], command.slice(1), { cwd: standalone, env: f.env, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
   assert(!fs.existsSync(path.join(f.paths.fonts, BASENAME)));
+  assert(!fs.existsSync(skillFile));
   assert(!manifest.includes('[[startup]]'));
   assert(!manifest.includes('[[events]]'));
 });

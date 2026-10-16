@@ -1,7 +1,7 @@
 # Herdr Team plugin
 
-给 Herdr 的 sidebar agent 行加 `$harness_logo`，安装配套字体及 Ghostty / kitty
-码点映射，并把 `prefix+t` 绑定到 `bunx herdr-team watch` popup。只有一次性安装脚本，
+安装 `herdr-team` skill，给 Herdr 的 sidebar agent 行加 `$harness_logo`，安装配套字体及
+Ghostty / kitty 码点映射，并把 `prefix+t` 绑定到 `bunx herdr-team watch` popup。只有一次性安装脚本，
 无 daemon、无运行时 npm 依赖，不起 agent，也不改项目的 `.herdr/`。
 
 需要 Herdr 0.9.0+、Node 18+，支持 macOS / Linux。运行团队和 popup 另需 Bun 1.2+，
@@ -14,13 +14,15 @@ CLI 仍是单独的 npm 包。字体和安装脚本均随插件分发，安装 a
 
 ```sh
 herdr plugin link ./herdr-team-plugin
+herdr plugin action invoke linxai.herdr-team.install-skill
 herdr plugin action invoke linxai.herdr-team.configure
 herdr plugin action invoke linxai.herdr-team.install-font
 ```
 
 `link` 只注册插件，不运行 build hook。GitHub 子目录安装源为
-`linxai/dev-skills/herdr-team-plugin`；GitHub 安装会运行 `bin/setup.js`，一次装字体、
-终端映射及 Herdr 配置，尝试 reload 当前会话。当前仓库是私有的；此任务不发布、
+`linxai/dev-skills/herdr-team-plugin`；GitHub 安装会运行 `bin/setup.js`，一次装 skill、
+字体、终端映射及 Herdr 配置，尝试 reload 当前会话，无需再用 `npx skills add`。
+当前仓库是私有的；此任务不发布、
 不 push，也不保证 Herdr 的 GitHub 下载流程有私库访问权限。使用本地 link 即可。
 没有运行中的 Herdr 时安装仍可完成，启动 Herdr 后调用 `configure` 应用配置。
 
@@ -43,17 +45,69 @@ shell 配置或 Herdr 服务器的环境。`lead` 后续正常运行 `up` / `dis
 | `linxai.herdr-team.unconfigure` | 撤掉 Herdr 托管块并 reload |
 | `linxai.herdr-team.install-font` | 安装用户字体并映射已有 Ghostty / kitty 配置 |
 | `linxai.herdr-team.uninstall-font` | 删除本插件的字体副本及终端托管块 |
+| `linxai.herdr-team.install-skill` | 为 PATH 上已安装的 Claude、Codex、Pi 安装 skill；跳过非本插件拥有的同名目录 |
+| `linxai.herdr-team.uninstall-skill` | 按所有权记录移除未修改、无额外文件的 skill 目录 |
 
-卸载前先撤配置和字体，再解除本地链接：
+卸载前先撤 skill、配置和字体，再解除本地链接：
 
 ```sh
+herdr plugin action invoke linxai.herdr-team.uninstall-skill
 herdr plugin action invoke linxai.herdr-team.unconfigure
 herdr plugin action invoke linxai.herdr-team.uninstall-font
 herdr plugin unlink linxai.herdr-team
 ```
 
-Herdr 自己的插件日志、config/state 目录由 Herdr 管理；本插件不写额外的备份或状态。
+Herdr 自己的插件日志、config/state 目录由 Herdr 管理；skill 安装的所有权记录和引用文档
+缓存保存在插件 state 目录中，配置与字体仍只用托管块，不写备份。
 `unconfigure` 不清除 CLI 的 token；撤掉模板后它们不再显示，并按 CLI 的 TTL 到期。
+
+## Skill 的安装位置与所有权
+
+只检测 PATH 上的可执行文件，不运行 agent、不根据配置目录猜安装状态。
+目前支持与参考实现相同的三个已知 skills 目录；不从 Grok 等程序的 trust 文件路径
+推导 skills 目录。
+
+| kind / 可执行文件 | 默认 skills 目录 | 程序目录覆盖 |
+| --- | --- | --- |
+| `claude` | `~/.claude/skills` | `$CLAUDE_CONFIG_DIR/skills` |
+| `codex` | `~/.codex/skills` | `$CODEX_HOME/skills` |
+| `pi` | `~/.pi/agent/skills` | `$PI_CODING_AGENT_DIR/skills` |
+
+每个目标中只创建 `herdr-team/SKILL.md`。已有的同名目录、普通文件及符号链接
+（包括旧的手动安装链接）都跳过，不接管、不覆盖；输出会列出跳过的路径。
+新装 agent 后可重新运行 `install-skill`。如果希望用插件管理旧的手动安装，需先自行
+移走原入口，再运行 action；安装器不会替用户迁移它。
+
+正文直接读取同一检出中的 `../herdr-team/SKILL.md`，不改源文件。
+[Herdr v0.9.3 安装器](https://github.com/herdrdev/herdr/blob/v0.9.3/src/cli/plugin.rs)
+的 `git_checkout` / `manifest_root` 保留整仓库，仅将插件根指向子目录，因此 sibling
+skill 可达；离线测试也使用这个整仓库布局。不能只分发 `herdr-team-plugin/` 后安装 skill，
+需要保留相邻的 `herdr-team/`；缺少源文件时明确报错。
+
+安装正文与源文件的唯一差异：两个 `references/*.md` 链接改成带尖括号的绝对路径。
+安装器将完整 `references/` 文档复制到插件 state 下
+`skill-references/<内容摘要>/`，使文档间的相对链接仍可用。Herdr 在 build 后会移动检出，
+不能把临时 build 路径写进 skill。缓存按内容分版本，保留的旧版或用户修改过的 skill
+仍能读取原版引用；移动或移除源码检出也不影响已安装的引用。
+
+state 优先使用 action 注入的 `HERDR_PLUGIN_STATE_DIR`。build hook 没有该变量时，
+按 Herdr 的 Unix 约定使用
+`${XDG_STATE_HOME:-~/.local/state}/herdr/plugins/linxai.herdr-team/`。
+`skill-paths.json` 记录每个已创建目录的路径、设备号、inode 和正文摘要；每创建一个
+目录就先保存记录，再写正文。内容没变时不重写正文、引用文档或记录。
+
+安装和撤销共用 `skill.lock` 排他写锁，最长等 15 秒，超时不进行 skill 写入。
+正常完成或报错都会释放锁；进程被强制终止后可能留下锁，此时确认没有安装 action
+运行后，手动移除插件 state 中的 `skill.lock` 再重试。
+
+撤销只查记录，不依赖当前 PATH 或目录覆盖；只删除仍是原目录、正文未修改且目录里
+只有 `SKILL.md`（或为空）的条目。加过任何文件或子目录、修改过正文、换成符号链接的
+条目都会整目录保留，并继续记在记录中，便于用户整理后再撤销。引用缓存保留在插件
+自己的 state 中，供这些保留的 skill 使用；不要在仍需它们时清除插件 state。
+Herdr 没有自动调用此 action 的卸载 hook，解除链接或卸载插件前应先运行撤销 action。
+
+实现参考 [herdr-projects 的 extras](https://github.com/eliasstravik/herdr-projects/blob/main/crates/flow/src/extras.rs)
+和 [agent adapter](https://github.com/eliasstravik/herdr-projects/blob/main/crates/core/src/agents/adapter.rs)。
 
 ## 配置边界
 
@@ -104,6 +158,12 @@ node --test tests/*.test.cjs
 仓库根目录的 `make plugin-test` 运行同一组检查，`make verify` 已包含它。
 检查直接解析 TTF 的 cmap、post、family 与轮廓索引，将厂商名字和码点逐个与
 `herdr-team-cli/scripts/lib/logos.ts` 比较；增减、换位、缺字或字体族名变化都会失败。
-跨包一致性检查仅在开发验证时读 CLI 源码，四个安装 action 可独立运行。
+跨包一致性检查仅在开发验证时读 CLI 源码；字体和配置 action 可独立分发，
+skill 安装另需整仓库检出中的 sibling skill，skill 撤销只需所有权记录。
 测试用临时 HOME、XDG 目录及假的 Herdr / font cache 命令，验证精确回滚、幂等、
 独立分发和冲突拒绝，不依赖网络或活 workspace。
+
+skill 测试另外显式设置 `HERDR_TEAM_SKILL_DIRS`，以系统路径分隔符（macOS / Linux
+为 `:`）指定临时 skills 根目录列表；该变量完全替代 agent 发现，空值表示禁用安装。
+测试同时隔离 agent home 和插件 state，绝不写真实 agent 目录。覆盖所有权四条规则、
+用户修改、并发锁、build/action 共用记录和检出移动后的引用可达性。
