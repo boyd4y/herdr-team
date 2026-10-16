@@ -1,3 +1,4 @@
+import { projectKey } from "../scripts/lib/team-scope.ts";
 import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -914,6 +915,7 @@ describe("formatStatusLine", () => {
   const working = (name = "dev"): FakeHerdr => {
     const herdr = fakeHerdr();
     herdr.live(name);
+    herdr.state.agents.at(-1)!.tokens = { team_project: projectKey(projectOf([])) };
     const agent = herdr.state.agents.at(-1);
     if (agent !== undefined) agent.agent_status = "working";
     return herdr;
@@ -959,6 +961,7 @@ describe("formatStatusLine", () => {
     // live() 默认 idle
     const idle = fakeHerdr();
     idle.live("dev");
+    idle.state.agents.at(-1)!.tokens = { team_project: projectKey(projectOf([])) };
     expect(line([task("0001", "a", "A", "P2", "doing", "dev")], idle)).toBe(
       "team: 1 doing · 1 blocked",
     );

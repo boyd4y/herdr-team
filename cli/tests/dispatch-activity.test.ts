@@ -37,7 +37,7 @@ for (const isolated of [false, true]) {
         // 不依赖调用方内存里的旧 TaskCard，也不需要真实 agent 或计时等待。
         f.herdr.agentPrompt = realHerdr((args) => {
           calls.push(args);
-          expect(args[2]).toBe(isolated ? "dev-0001" : "dev");
+          expect(args[2]).toBe(f.herdr.state.agents.find((agent) => agent.name === (isolated ? "dev-0001" : "dev"))?.pane_id);
           expect(args.slice(4)).toEqual(ACTIVITY_FLAGS);
           expect(f.herdr.state.agents[0]?.agent_status).toBe("idle");
           expect(f.load().tasks[0]?.status).toBe("todo");
@@ -130,7 +130,7 @@ test("up 和 handoff 仍只提交输入，不添加活动等待", () => {
     expect(loadProject(root).tasks[0]?.status).toBe("review");
     expect(calls).toHaveLength(2);
     for (const args of calls) {
-      expect(args.slice(0, 3)).toEqual(["agent", "prompt", "docs"]);
+      expect(args.slice(0, 3)).toEqual(["agent", "prompt", herdr.state.agents.find((agent) => agent.name === "docs")?.pane_id]);
       expect(args).toHaveLength(4);
     }
   } finally {

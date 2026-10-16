@@ -31,7 +31,7 @@ if (command === "workspace" && sub === "list") {
 } else if (command === "tab" && sub === "list") {
   result = { tabs: [{ workspace_id: "w1", tab_id: "w1:t1", label: "docs" }] };
 } else if (command === "pane" && sub === "list") {
-  result = { panes: [{ workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1" }] };
+  result = { panes: [{ workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", cwd: process.env.HERDR_TEST_ROOT }] };
 } else if (command === "agent" && sub === "list") {
   result = { agents: state.agents };
 } else if (command === "worktree" && sub === "list") {
@@ -42,8 +42,16 @@ if (command === "workspace" && sub === "list") {
   state.trees.push({ branch, path: "/unused/" + branch, open_workspace_id: id });
   result = { workspace: { workspace_id: id }, tab: { tab_id: id + ":t1" }, root_pane: { pane_id: id + ":p1" } };
 } else if (command === "agent" && sub === "start") {
-  state.agents.push({ name: args[2], pane_id: args[args.indexOf("--pane") + 1] });
-} else if (!((command === "agent" && sub === "prompt") || (command === "pane" && sub === "report-metadata"))) {
+  const pane = args[args.indexOf("--pane") + 1];
+  state.agents.push({ name: args[2], pane_id: pane, workspace_id: pane.split(":")[0] });
+} else if (["pane", "workspace"].includes(command) && sub === "report-metadata") {
+  if(command === "pane") {
+    const agent = state.agents.find(a=>a.pane_id===args[2]);
+    if(agent) for(let i=3;i<args.length;i++) if(args[i]==="--token") {
+      const token=args[++i], split=token.indexOf("="); agent.tokens={...agent.tokens,[token.slice(0,split)]:token.slice(split+1)};
+    }
+  }
+} else if (!((command === "agent" && sub === "prompt") || (["pane", "workspace"].includes(command) && sub === "report-metadata"))) {
   throw new Error("Unexpected Herdr call: " + args.join(" "));
 }
 writeFileSync(path, JSON.stringify(state));
@@ -57,7 +65,7 @@ process.stdout.write(JSON.stringify({ result }));
     const cli = (...args: string[]) => {
       const proc = Bun.spawnSync([join(bin, "herdr-team"), ...args], {
         cwd: root,
-        env: { ...process.env, HERDR_ENV: "1", HERDR_TEAM_LOGOS: logos, HERDR_TEST_STATE: stateFile,
+        env: { ...process.env, HERDR_ENV: "1", HERDR_TEAM_LOGOS: logos, HERDR_TEST_STATE: stateFile, HERDR_TEST_ROOT: root,
           HERDR_TEST_PROMPT_ERROR: promptError, PATH: `${bin}${delimiter}${process.env.PATH}` },
         stdout: "pipe", stderr: "pipe",
       });

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { HerdrError, type Herdr } from "./herdr.ts";
 import { refreshSidebar, reportRoleSidebar } from "./sidebar.ts";
+import { assertProjectWorkspace, availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents, resolveProjectWorkspace, roleAssignment } from "./team-scope.ts";
 import { appendRecord, assignmentPrompt, stamp, startupPrompt } from "./handoff.ts";
 import { findTask, writeTaskMeta } from "./task.ts";
 import {
@@ -49,21 +50,10 @@ export function workspaceLabelFor(project: Project): string {
   return basename(project.root);
 }
 
-/** 一个任务该由谁做：常驻角色用角色名，隔离角色用 `<role>-<id>`。 */
+/** 逻辑角色标识，仅供显示；发送目标必须通过项目归属定位到 pane。 */
 export function agentNameFor(project: Project, card: TaskCard): string {
   const role = project.roles.find((r) => r.name === card.role);
   return role?.worktree === true ? isolatedAgentName(card.role, card.id) : card.role;
-}
-
-function resolveWorkspace(herdr: Herdr, label: string): string | null {
-  const matches = herdr.workspaceList().filter((w) => w.label === label);
-  if (matches.length > 1) {
-    const ids = matches.map((m) => m.workspace_id).join(", ");
-    throw new LaunchError(
-      `有 ${matches.length} 个 label 为 "${label}" 的 workspace（${ids}）。停下来问用户，不要猜。`,
-    );
-  }
-  return matches[0]?.workspace_id ?? null;
 }
 
 /** 常驻角色在项目 workspace 里的 pane。先按 tab label 找，找不到就建。 */
@@ -90,10 +80,6 @@ function residentPane(
   return { paneId: made.paneId, tabId: made.tabId };
 }
 
-function liveAgentNames(herdr: Herdr): Set<string> {
-  return new Set(herdr.agentList().map((a) => a.name).filter((n): n is string => n !== undefined));
-}
-
 export function up(project: Project, herdr: Herdr): UpResult {
   if (!herdr.envOk()) {
     throw new LaunchError(
@@ -106,7 +92,7 @@ export function up(project: Project, herdr: Herdr): UpResult {
   if (roles.length === 0) throw new LaunchError("没有角色，先跑 init");
 
   const label = workspaceLabelFor(project);
-  const existing = resolveWorkspace(herdr, label);
+  const existing = resolveProjectWorkspace(project, herdr);
 
   let workspaceId: string;
   let workspaceAction: "created" | "reused";
@@ -123,7 +109,8 @@ export function up(project: Project, herdr: Herdr): UpResult {
     workspaceAction = "reused";
   }
 
-  const live = liveAgentNames(herdr);
+  bindProjectWorkspace(project, herdr, workspaceId, true);
+  const live = projectAgents(project, herdr);
   const outcomes: RoleOutcome[] = [];
   let residentIndex = 0;
 
@@ -134,10 +121,18 @@ export function up(project: Project, herdr: Herdr): UpResult {
       continue;
     }
 
+    const existingAgent = findRoleAgent(project, live, role);
+    if (existingAgent && !existingAgent.pane_id) {
+      outcomes.push({ role: role.name, tab: null, paneId: null, action: "failed", reported: null,
+        failure: "项目内 agent 缺少 pane ID，拒绝猜测发送目标" });
+      continue;
+    }
     let paneId: string;
-    let tabId: string;
-    if (residentIndex === 0 && createdRoot !== null) {
-      // workspace create 自带的 root tab 直接给第一个常驻角色，省一个 tab。
+    let tabId: string | null;
+    if (existingAgent?.pane_id) {
+      paneId = existingAgent.pane_id;
+      tabId = existingAgent.tab_id ?? null;
+    } else if (residentIndex === 0 && createdRoot !== null) {
       tabId = createdRoot.tabId;
       paneId = createdRoot.paneId;
       herdr.tabRename(tabId, role.name);
@@ -147,19 +142,16 @@ export function up(project: Project, herdr: Herdr): UpResult {
       tabId = got.tabId;
     }
     residentIndex += 1;
-
-    // **一个角色起不来不该把整个 up 崩掉。** Herdr 有时会说 pane "不是可用的 shell"
-    // （比如刚关停完、状态还没跟上）—— 记下来继续，让用户自己决定怎么办。
-    const alreadyLive = live.has(role.name);
+    const alreadyLive = existingAgent !== undefined;
     let failure: string | undefined;
     if (!alreadyLive) {
       try {
-        herdr.agentStart(role.name, role.kind, paneId, role.args ?? []);
+        herdr.agentStart(availableAgentName(project, herdr, role), role.kind, paneId, role.args ?? []);
         // 常驻角色不等任务 —— 起来就得知道自己是谁，否则只是个裸 TUI。
         // （**只在刚起的时候发**；已经在跑的 agent 重发会打断它手头的事。）
         herdr.agentPrompt(
-          role.name,
-          startupPrompt(readIdentity(project), role.body, role.name),
+          paneId,
+          startupPrompt(readIdentity(project), role.body, role.name) + `\n团队根目录：${project.root}；运行 herdr-team 时使用 --root 指向此目录。`,
         );
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
@@ -200,7 +192,7 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
   }
   if (!herdr.envOk()) throw new LaunchError("这个命令要在 Herdr 的 pane 里跑（HERDR_ENV=1）。");
 
-  const live = liveAgentNames(herdr);
+  const live = projectAgents(project, herdr);
   const done = new Set(project.tasks.filter((t) => isTerminal(t.status)).map((t) => t.id));
 
   const pending = project.tasks
@@ -226,6 +218,7 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
     }
 
     let agentName = task.role;
+    let targetPaneId = findRoleAgent(project, live, role, role.worktree ? task.id : undefined)?.pane_id;
     let branch: string | undefined;
     let workspaceId: string | undefined;
 
@@ -239,7 +232,7 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
       }
 
       agentName = isolatedAgentName(task.role, task.id);
-      if (!live.has(agentName)) {
+      if (!targetPaneId) {
         try {
           // workspace 的名字用**分支名**（= feature 名），不是任务标题 ——
           // 侧边栏里一眼就知道这是哪个 feature 的工作区。
@@ -251,6 +244,7 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
             // 上次 agent 启动失败可能已留下 checkout；复用它，不能再建同名分支。
             const open = existing.open_workspace_id;
             if (!open) throw new LaunchError(`${branch} 的 worktree 已存在但 workspace 已关闭，请 lead 重新打开后再 dispatch`);
+            assertProjectWorkspace(project, herdr, open);
             workspaceId = open;
             const pane = herdr.paneList(open).sort((a, b) => a.pane_id.localeCompare(b.pane_id))[0];
             if (pane === undefined) throw new LaunchError(`${branch} 的 workspace 没有 pane，请 lead 检查`);
@@ -261,7 +255,10 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
             paneId = made.paneId;
           }
 
+          bindProjectWorkspace(project, herdr, workspaceId, false);
+          agentName = availableAgentName(project, herdr, role, task.id);
           herdr.agentStart(agentName, role.kind, paneId, role.args ?? []);
+          targetPaneId = paneId;
           try {
             reportRoleSidebar(project, herdr, paneId, role, task.id);
           } catch {
@@ -274,7 +271,7 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
           continue;
         }
       }
-    } else if (!live.has(agentName)) {
+    } else if (!targetPaneId) {
       out.push({ id: task.id, role: task.role, action: "no-agent", reason: `角色 ${task.role} 没有存活 agent` });
       continue;
     }
@@ -283,7 +280,7 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
     // 观察超时不代表输入被拒；不重发，照常记派出，并把未确认告知调用方。
     let reason: string | undefined;
     try {
-      herdr.agentPrompt(agentName, assignmentPrompt(readIdentity(project), role.body, task), { waitForActivity: true });
+      herdr.agentPrompt(targetPaneId!, assignmentPrompt(readIdentity(project), role.body, task, project.root) + `\n团队根目录：${project.root}\n任务目录：${join(project.herdrDir, task.dir)}\n运行 herdr-team 时使用 --root 指向此目录。`, { waitForActivity: true });
     } catch (error) {
       if (!(error instanceof HerdrError) ||
           (error.code !== "agent_prompt_stalled" && error.code !== "timeout")) throw error;
@@ -319,26 +316,6 @@ export interface DownResult {
 }
 
 /**
- * 哪个角色的 agent 叫这个名字？
- *
- * 常驻角色就是角色名；隔离角色形如 `<role>-<id>`。**只认这两种** ——
- * 认不出来的一律不碰，那多半是用户自己的 agent。
- */
-function roleOwning(project: Project, agentName: string): string | null {
-  for (const role of project.roles) {
-    if (role.name === agentName) return role.name;
-    if (role.worktree && agentName.startsWith(`${role.name}-`)) {
-      // 后半段得是 4 位任务 id，别把 `dev-something` 误认成我们的
-      const suffix = agentName.slice(role.name.length + 1);
-      if (/^[0-9]{4}$/.test(suffix)) return role.name;
-      // 也认 `<role>-<id>-<slug>` 这种带后缀的写法
-      if (/^[0-9]{4}-/.test(suffix)) return role.name;
-    }
-  }
-  return null;
-}
-
-/**
  * 关停团队的 agent。
  *
  * **不动 workspace。** 那是用户的项目容器，里面可能有他自己的 tab 和 pane ——
@@ -350,12 +327,13 @@ export function down(project: Project, herdr: Herdr): DownResult {
   const stopped: StoppedAgent[] = [];
   const skipped: string[] = [];
 
-  for (const agent of herdr.agentList()) {
+  for (const agent of projectAgents(project, herdr)) {
     const name = agent.name;
     if (name === undefined || name === null) continue;
 
-    const role = roleOwning(project, name);
-    if (role === null) continue; // 不是我们的，别碰
+    const assignment = roleAssignment(project, agent);
+    const role = assignment?.role.name;
+    if (role === undefined) continue; // 不是我们的，别碰
 
     const paneId = agent.pane_id;
     if (paneId === undefined || paneId === null) {

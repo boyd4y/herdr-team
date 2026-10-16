@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { resolveProjectWorkspace, TeamScopeError } from "./lib/team-scope.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cleanupAll } from "./lib/cleanup.ts";
@@ -597,6 +598,7 @@ function cmdDown(args: string[]): number {
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
   const herdr = herdrClient();
+  const teamWorkspace = parsed.flags.has("workspace") ? resolveProjectWorkspace(project, herdr) : null;
   const result = down(project, herdr);
 
   const lines: string[] = [];
@@ -613,11 +615,10 @@ function cmdDown(args: string[]): number {
   let workspaceId: string | null = null;
   if (parsed.flags.has("workspace")) {
     const label = workspaceLabelFor(project);
-    const found = herdr.workspaceList().find((w) => w.label === label);
-    if (found !== undefined) {
-      herdr.workspaceCloseGroup(found.workspace_id);
-      workspaceId = found.workspace_id;
-      lines.push(`\n⚠ 连 workspace "${label}"（${found.workspace_id}）一起关了 —— 里面的 tab 也没了。`);
+    if (teamWorkspace !== null) {
+      herdr.workspaceCloseGroup(teamWorkspace);
+      workspaceId = teamWorkspace;
+      lines.push(`\n⚠ 连 workspace "${label}"（${teamWorkspace}）一起关了 —— 里面的 tab 也没了。`);
     }
   }
 
@@ -825,6 +826,7 @@ try {
     error instanceof TaskError ||
     error instanceof LaunchError ||
     error instanceof InitError ||
+    error instanceof TeamScopeError ||
     error instanceof RoleError
   ) {
     process.stderr.write(`${error.message}\n`);

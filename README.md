@@ -66,6 +66,19 @@ herdr plugin action invoke herdr-team.configure
 升级安装或运行 `configure` 时，会移除旧版插件添加的终端字体映射，以及内容未修改的
 插件字体副本；其他字体和终端配置保留。旧版图标 token 不再显示，并按原 TTL 到期。
 
+## 多项目隔离
+
+不同目录的 `.herdr/` 是不同团队，允许各自使用 `dev`、`lead` 和 `0001` 等相同名称。
+团队身份按规范化的项目根路径生成，并绑定到 workspace / agent metadata。
+`up` 通过绑定或实际 pane 目录寻找 workspace，不按显示名称猜测；重名的项目目录也可区分。
+Herdr 的 agent 名是全局唯一的，若角色名已被另一个项目占用，新 agent 使用项目命名空间，
+侧栏仍显示原角色名。派活、交棒通过本项目的具体 pane ID 发送。
+
+`status`、`watch`、`sidebar`、`down` 和 worktree 复用/回收也检查项目归属。
+旧版 agent 只有在实际目录可验证时才会复用；归属不明或同一角色有多个目标时明确拒绝。
+升级后分别在各项目运行一次 `herdr-team up`，可补上绑定；已有 agent 不会重发启动说明。
+在 worktree 或其他目录操作时，用 `--root` 指定启动/派活消息给出的团队根目录。
+
 ## Actions 和撤销
 
 | Action | 行为 |

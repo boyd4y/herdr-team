@@ -1,3 +1,4 @@
+import { findRoleAgent, projectAgents } from "./team-scope.ts";
 import type { AgentInfo, Herdr } from "./herdr.ts";
 import { padTo, truncate } from "./text.ts";
 import {
@@ -32,9 +33,9 @@ export interface StatusReport {
   inconsistencies: Inconsistency[];
 }
 
-function loadAgents(herdr: Herdr): AgentInfo[] {
+function loadAgents(project: Project, herdr: Herdr): AgentInfo[] {
   try {
-    return herdr.agentList();
+    return projectAgents(project, herdr);
   } catch {
     // Herdr 没跑不算致命 —— 仍然报任务侧，只是角色侧空着。
     return [];
@@ -53,7 +54,7 @@ export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleSta
       // 隔离角色的 agent 跟着任务走，没有常驻的那个。
       return { role: role.name, agent: null, herdrStatus: "per-task", paneId: null, worktree: true };
     }
-    const live = agents.find((a) => a.name === role.name);
+    const live = findRoleAgent(project, agents, role);
     return {
       role: role.name,
       agent: live?.name ?? null,
@@ -65,24 +66,23 @@ export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleSta
 }
 
 export function roleStatuses(project: Project, herdr: Herdr): RoleStatus[] {
-  return roleStatusesFrom(project, loadAgents(herdr));
+  return roleStatusesFrom(project, loadAgents(project, herdr));
 }
 
 /** 任务写的状态 和 Herdr 里真实状态 对不上的地方。 */
 export function findInconsistencies(
-  tasks: TaskCard[],
-  roles: RoleCard[],
+  project: Project,
   agents: AgentInfo[],
 ): Inconsistency[] {
   const out: Inconsistency[] = [];
 
-  for (const task of tasks) {
+  for (const task of project.tasks) {
     if (isTerminal(task.status)) continue;
-    const role = roles.find((r) => r.name === task.role);
+    const role = project.roles.find((r) => r.name === task.role);
     if (role === undefined) continue;
 
     const agentName = role.worktree ? isolatedAgentName(role.name, task.id) : task.role;
-    const live = agents.find((a) => a.name === agentName);
+    const live = findRoleAgent(project, agents, role, role.worktree ? task.id : undefined);
     const status = live?.agent_status ?? "absent";
 
     if (task.status === "doing") {
@@ -117,9 +117,9 @@ export function buildReport(project: Project, herdr: Herdr, includeTerminal: boo
     .filter((t) => includeTerminal || !isTerminal(t.status))
     .sort((a, b) => (a.priority === b.priority ? a.id.localeCompare(b.id) : a.priority.localeCompare(b.priority)));
   // 只问 Herdr 一次 —— 下面两处都用这同一份列表。
-  const agents = loadAgents(herdr);
+  const agents = loadAgents(project, herdr);
   const roles = roleStatusesFrom(project, agents);
-  return { tasks, roles, inconsistencies: findInconsistencies(project.tasks, project.roles, agents) };
+  return { tasks, roles, inconsistencies: findInconsistencies(project, agents) };
 }
 
 /** 超宽时截断，再补齐到指定显示宽度。宽度口径统一在 text.ts。 */

@@ -127,7 +127,7 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
       const herdr = fakeHerdr();
       dispatch(p, herdr);
       expect(herdr.calls.some((c) => c.startsWith("agent start dev-0001"))).toBe(true);
-      expect(herdr.calls.some((c) => c.startsWith("agent prompt dev-0001"))).toBe(true);
+      expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "dev-0001")?.pane_id}`))).toBe(true);
     });
   });
 
@@ -173,7 +173,7 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
         herdr.live("docs");
         dispatch(p, herdr);
         expect(herdr.calls.some((c) => c.startsWith("worktree create"))).toBe(false);
-        expect(herdr.calls.some((c) => c.startsWith("agent prompt docs"))).toBe(true);
+        expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "docs")?.pane_id}`))).toBe(true);
       },
     );
   });
@@ -201,7 +201,7 @@ describe("handoff 到隔离角色", () => {
         const result = handoff(p, herdr, "0001");
 
         expect(result.to).toBe("dev");
-        expect(herdr.calls.some((c) => c.startsWith("agent prompt dev-0001"))).toBe(true);
+        expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "dev-0001")?.pane_id}`))).toBe(true);
       },
     );
   });

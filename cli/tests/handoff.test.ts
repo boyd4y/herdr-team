@@ -33,7 +33,7 @@ describe("handoff —— 队列非空：交给下一个角色", () => {
       expect(result.from).toBe("dev");
       expect(result.to).toBe("docs");
       expect(result.status).toBe("review");
-      expect(herdr.calls.some((c) => c.startsWith("agent prompt docs"))).toBe(true);
+      expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "docs")?.pane_id}`))).toBe(true);
     });
   });
 

@@ -44,7 +44,7 @@ describe("agent sidebar 的两行信息", () => {
       writeTask(root, "0002-b", taskMeta());
       const herdr = fakeHerdr();
       dispatch(loadProject(root), herdr);
-      expect(herdr.state.agents.map((agent) => [agent.name, agent.display_agent, agent.tokens])).toEqual([
+      expect(herdr.state.agents.map((agent) => [agent.name, agent.display_agent, agent.tokens])).toMatchObject([
         ["dev-0001", "dev", { team_harness: "codex", team_model: "sol-6.1", team_task: "#0001" }],
         ["dev-0002", "dev", { team_harness: "codex", team_model: "sol-6.1", team_task: "#0002" }],
       ]);
@@ -61,8 +61,8 @@ describe("agent sidebar 的两行信息", () => {
       const herdr = runningWorkspace();
       herdr.live("outsider", "w1:p3");
       refreshSidebar(loadProject(root), herdr);
-      expect(herdr.state.agents[0]!.tokens).toEqual({ team_harness: "codex", team_model: "default", team_task: "#0001, #0002" });
-      expect(herdr.state.agents.find((agent) => agent.name === "outsider")!.tokens).toBeUndefined();
+      expect(herdr.state.agents[0]!.tokens).toMatchObject({ team_harness: "codex", team_model: "default", team_task: "#0001, #0002" });
+      expect(herdr.state.agents.find((agent) => agent.name === "outsider")!.tokens?.team_harness).toBeUndefined();
       writeRole(root, "dev", roleMeta({ model: "new-model" }));
       refreshSidebar(loadProject(root), herdr);
       expect(herdr.state.agents[0]!.tokens?.team_model).toBe("new-model");

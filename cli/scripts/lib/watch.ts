@@ -1,3 +1,4 @@
+import { projectAgents } from "./team-scope.ts";
 /**
  * `herdr-team watch` —— 只读实时看板。
  *
@@ -241,7 +242,7 @@ export function buildModel(
   let agents: AgentInfo[] = [];
   let herdrOk = true;
   try {
-    agents = herdr.agentList();
+    agents = projectAgents(project, herdr);
   } catch {
     herdrOk = false;
   }
@@ -264,7 +265,7 @@ export function buildModel(
     openCount,
     totalCount: project.tasks.length,
     roles: roleStatusesFrom(project, agents),
-    inconsistencies: herdrOk ? findInconsistencies(project.tasks, project.roles, agents) : [],
+    inconsistencies: herdrOk ? findInconsistencies(project, agents) : [],
     problems: validateProject(project).map((p) => `${p.file} [rule ${p.rule}] ${p.message}`),
     herdrOk,
     loadError: state.loadError,

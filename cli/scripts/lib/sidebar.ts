@@ -1,4 +1,5 @@
 import { loadProject } from "./config.ts";
+import { projectKey, projectAgents, roleAssignment } from "./team-scope.ts";
 import type { Herdr } from "./herdr.ts";
 import type { Project, RoleCard } from "./types.ts";
 
@@ -12,6 +13,9 @@ export function reportRoleSidebar(
     .map((task) => task.id)
     .sort();
   herdr.reportMetadata(paneId, "herdr-team", role.name, {
+    team_project: projectKey(project),
+    team_role: role.name,
+    team_task_id: isolatedTaskId ?? null,
     team_harness: role.kind,
     team_model: role.model ?? "default",
     team_task: tasks.length ? tasks.map((id) => `#${id}`).join(", ") : null,
@@ -24,19 +28,14 @@ export function refreshSidebar(project: Project, herdr: Herdr): { updated: numbe
   if (!herdr.envOk()) return result;
   try {
     const fresh = loadProject(project.root);
-    for (const agent of herdr.agentList()) {
-      if (!agent.name || !agent.pane_id) continue;
-      for (const role of fresh.roles) {
-        const taskId = role.worktree && agent.name.startsWith(`${role.name}-`)
-          ? /^([0-9]{4})(?:-|$)/.exec(agent.name.slice(role.name.length + 1))?.[1]
-          : undefined;
-        if (agent.name !== role.name && taskId === undefined) continue;
-        try {
-          reportRoleSidebar(fresh, herdr, agent.pane_id, role, taskId);
-          result.updated++;
-        } catch { result.failed++; }
-        break;
-      }
+    for (const agent of projectAgents(fresh, herdr)) {
+      if (!agent.pane_id) continue;
+      const assignment = roleAssignment(fresh, agent);
+      if (!assignment) continue;
+      try {
+        reportRoleSidebar(fresh, herdr, agent.pane_id, assignment.role, assignment.taskId);
+        result.updated++;
+      } catch { result.failed++; }
     }
   } catch { result.failed++; }
   return result;

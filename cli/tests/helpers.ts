@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { projectKey } from "../scripts/lib/team-scope.ts";
 import { ROLE_BODY, ROLE_META, TASK_BODY, TASK_META } from "../scripts/lib/types.ts";
 import { emitYaml } from "../scripts/lib/yaml.ts";
 import type { AgentInfo, Herdr, PaneInfo, TabInfo, WorkspaceInfo } from "../scripts/lib/herdr.ts";
@@ -13,6 +14,8 @@ import type { AgentInfo, Herdr, PaneInfo, TabInfo, WorkspaceInfo } from "../scri
  * 在导入期就把覆盖目录指到临时处。
  */
 process.env["HERDR_TEAM_TRUST_HOME"] = mkdtempSync(join(tmpdir(), "herdr-team-trusthome-"));
+
+let fixtureProjectRoot = "/tmp/myproj";
 
 const ROLE_ORDER = ["kind", "model", "worktree", "cwd", "args", "env"];
 const TASK_ORDER = ["title", "priority", "status", "role", "handoff", "depends_on", "repo"];
@@ -28,6 +31,7 @@ export function makeProject(dirName = "myproj", withIdentity = true): Fixture {
   const root = join(base, dirName);
   mkdirSync(join(root, ".herdr"), { recursive: true });
   if (withIdentity) writeFileSync(join(root, ".herdr", "identity.md"), "# 我是谁\n");
+  fixtureProjectRoot = root;
   return { root, cleanup: () => rmSync(base, { recursive: true, force: true }) };
 }
 
@@ -121,8 +125,10 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
     envOk: true,
     ...partial,
   };
+  const projectRoot = fixtureProjectRoot;
   const calls: string[] = [];
   const branches = new Map<string, string>();
+  const repositories = new Map<string, string>();
   let counter = 100;
 
   return {
@@ -130,7 +136,7 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
     state,
     branches,
     live(name, paneId = `w1:p${state.agents.length + 1}`) {
-      state.agents.push({ name, agent_status: "idle", pane_id: paneId });
+      state.agents.push({ name, agent_status: "idle", pane_id: paneId, tokens: { team_project: projectKey({ root: projectRoot }) } });
     },
     envOk: () => state.envOk,
     workspaceList: () => state.workspaces,
@@ -139,6 +145,8 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
       counter += 1;
       const id = `w${counter}`;
       state.workspaces.push({ workspace_id: id, label, pane_count: 1, tab_count: 1 });
+      state.tabs.push({ tab_id: `${id}:t1`, workspace_id: id, label: "1", pane_count: 1 });
+      state.panes.push({ pane_id: `${id}:p1`, tab_id: `${id}:t1`, workspace_id: id, cwd });
       return { workspaceId: id, tabId: `${id}:t1`, paneId: `${id}:p1` };
     },
     workspaceClose: (id) => calls.push(`workspace close ${id}`),
@@ -148,6 +156,7 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
       counter += 1;
       const tabId = `${ws}:t${counter}`;
       state.tabs.push({ tab_id: tabId, workspace_id: ws, label, pane_count: 1 });
+      state.panes.push({ pane_id: `${ws}:p${counter}`, tab_id: tabId, workspace_id: ws, cwd });
       return { tabId, paneId: `${ws}:p${counter}` };
     },
     worktreeCreate: (repoPath, branch, label) => {
@@ -157,13 +166,14 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
       // worktree 是挂在源 workspace 下的一个普通 workspace
       state.workspaces.push({ workspace_id: id, label, pane_count: 1, tab_count: 1 });
       state.tabs.push({ tab_id: `${id}:t1`, workspace_id: id, label, pane_count: 1 });
-      state.panes.push({ pane_id: `${id}:p1`, tab_id: `${id}:t1`, workspace_id: id });
+      state.panes.push({ pane_id: `${id}:p1`, tab_id: `${id}:t1`, workspace_id: id, cwd: repoPath });
       branches.set(id, branch);
+      repositories.set(id, repoPath);
       return { workspaceId: id, tabId: `${id}:t1`, paneId: `${id}:p1` };
     },
-    worktreeList: () => {
+    worktreeList: (repoPath) => {
       // 只管我们自己建的那几个 —— 主 checkout 不参与。
-      return [...branches.entries()].map(([workspaceId, branch]) => ({
+      return [...branches.entries()].filter(([id]) => !repositories.has(id) || repositories.get(id) === repoPath).map(([workspaceId, branch]) => ({
         branch,
         path: `/tmp/worktrees/${branch}`,
         is_linked_worktree: true,
@@ -202,9 +212,17 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
     agentList: () => state.agents,
     agentStart: (name, kind, paneId, args) => {
       calls.push(`agent start ${name} kind=${kind} pane=${paneId} args=${JSON.stringify(args)}`);
-      state.agents.push({ name, agent: kind, agent_status: "idle", pane_id: paneId });
+      state.agents.push({ name, agent: kind, agent_status: "idle", pane_id: paneId,
+        workspace_id: state.panes.find((p) => p.pane_id === paneId)?.workspace_id,
+        tab_id: state.panes.find((p) => p.pane_id === paneId)?.tab_id,
+        tokens: { team_project: projectKey({ root: projectRoot }) } });
     },
     agentPrompt: (target, text) => calls.push(`agent prompt ${target} ${text.slice(0, 40)}`),
+    reportWorkspaceMetadata: (id, tokens) => {
+      calls.push(`report-workspace ${id}`);
+      const workspace = state.workspaces.find((w) => w.workspace_id === id);
+      if (workspace) workspace.tokens = { ...workspace.tokens, ...tokens };
+    },
     reportBadge: (scope, id, badge, colorSlot = 0) => {
       calls.push(`report-badge ${scope} ${id} ${badge}`);
       const target = scope === "workspace" ? state.workspaces.find((w) => w.workspace_id === id) : state.agents.find((a) => a.pane_id === id);
@@ -242,8 +260,8 @@ export function runningWorkspace(label = "myproj"): FakeHerdr {
       { tab_id: "w1:t2", workspace_id: "w1", label: "docs", pane_count: 1 },
     ],
     panes: [
-      { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" },
-      { pane_id: "w1:p2", tab_id: "w1:t2", workspace_id: "w1" },
+      { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1", cwd: fixtureProjectRoot },
+      { pane_id: "w1:p2", tab_id: "w1:t2", workspace_id: "w1", cwd: fixtureProjectRoot },
     ],
   });
   herdr.live("dev", "w1:p1");

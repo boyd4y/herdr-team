@@ -94,6 +94,15 @@ describe("herdr 客户端 —— 参数拼装", () => {
     realHerdr(fn).workspaceClose("w1");
     expect(calls[0]).toEqual(["workspace", "close", "w1"]);
   });
+
+  test("项目归属标记写到明确 workspace，保留其他 metadata", () => {
+    const { fn, calls } = recordingSpawn(WRAP({}));
+    realHerdr(fn).reportWorkspaceMetadata("w2", { team_project: "project-key", team_root: "1" });
+    expect(calls[0]).toEqual([
+      "workspace", "report-metadata", "w2", "--source", "herdr-team",
+      "--token", "team_project=project-key", "--token", "team_root=1",
+    ]);
+  });
 });
 
 describe("herdr 客户端 —— 解析与报错", () => {

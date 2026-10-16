@@ -115,6 +115,16 @@ herdr-team dispatch <id>
 `up` 的身份说明和 `handoff` 的交棒提示仍只提交输入，不增加等待。
 `up --json` 返回 workspace 和角色启动结果，已移除原来的 `dispatched` 字段；派活结果由 `dispatch --json` 单独返回。
 
+### 多项目边界
+
+角色名和任务号只在本项目的 `.herdr/` 内解释。不同项目可以同时存在 `dev`、`lead`、
+`0001`，CLI 会通过项目身份查找 agent，并向具体 pane ID 发送消息。
+另一个项目占用同名 agent 时，新 agent 自动使用内部命名空间，显示名仍是角色名。
+不要用 Herdr 全局的裸角色名代替 `herdr-team dispatch` / `handoff`。
+workspace 复用按项目绑定或可验证的目录判断，不按相同的文件夹名称合并。
+归属不明确时拒绝操作；旧团队可在自己的项目目录运行 `up` 补上绑定。
+跨目录操作时使用消息中的绝对团队根目录：`herdr-team handoff <id> --root <团队根目录>`。
+
 ### Agent 列表
 
 插件把每个 agent 显示为两行：第一行是 workspace 归属编号、角色与 harness，

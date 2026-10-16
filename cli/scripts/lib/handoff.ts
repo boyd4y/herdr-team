@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { cleanupIfDone, type CleanupResult } from "./cleanup.ts";
 import type { Herdr } from "./herdr.ts";
 import { refreshSidebar } from "./sidebar.ts";
+import { findRoleAgent, projectAgents } from "./team-scope.ts";
 import { findTask, TaskError, writeTaskMeta } from "./task.ts";
 import { TASK_BODY, isTerminal, isolatedAgentName, type Project, type TaskCard } from "./types.ts";
 
@@ -51,7 +52,7 @@ export function appendRecord(project: Project, card: TaskCard, line: string): vo
 }
 
 /**
- * 这个任务现在的负责人是谁的 agent。
+ * 任务负责人的逻辑名称（显示用途，不能直接作为跨项目发送目标）。
  *
  * 常驻角色 → 名字就是角色名；隔离角色 → `<role>-<id>`（每个任务一个 worktree、
  * 一个 agent）。所以同一个角色可以同时在多个任务上，互不打架。
@@ -59,13 +60,6 @@ export function appendRecord(project: Project, card: TaskCard, line: string): vo
 export function agentNameForTask(project: Project, card: TaskCard): string {
   const role = project.roles.find((r) => r.name === card.role);
   return role?.worktree === true ? isolatedAgentName(card.role, card.id) : card.role;
-}
-
-function liveAgentFor(herdr: Herdr, agentName: string): string | null {
-  for (const agent of herdr.agentList()) {
-    if (agent.name === agentName) return agentName;
-  }
-  return null;
 }
 
 /**
@@ -85,6 +79,8 @@ export function handoff(
   if (isTerminal(card.status)) {
     throw new TaskError(`${id} 已是终态（${card.status}），不能再流转`);
   }
+
+  if (!herdr.envOk()) throw new TaskError("handoff 要在 Herdr 的 pane 里跑（HERDR_ENV=1）。");
 
   const from = card.role;
   const previousStatus = card.status;
@@ -121,16 +117,17 @@ export function handoff(
   const rest = card.handoff.slice(1);
   const status = "review";
 
-  writeTaskMeta(project, card, { role: next, handoff: rest, status });
-  appendRecord(project, card, `- ${stamp(now)}  → ${next}  (${previousStatus} → ${status})`);
-  refreshSidebar(project, herdr);
-
   // 下一个负责人是常驻角色还是隔离角色，决定了它的 agent 叫什么。
   const nextRole = project.roles.find((r) => r.name === next);
   const nextAgent = nextRole?.worktree === true ? isolatedAgentName(next, card.id) : next;
 
-  const target = liveAgentFor(herdr, nextAgent);
-  if (target === null) {
+  const target = nextRole === undefined ? undefined : findRoleAgent(project, projectAgents(project, herdr), nextRole, nextRole.worktree ? card.id : undefined)?.pane_id;
+
+  writeTaskMeta(project, card, { role: next, handoff: rest, status });
+  appendRecord(project, card, `- ${stamp(now)}  → ${next}  (${previousStatus} → ${status})`);
+  refreshSidebar(project, herdr);
+
+  if (target === undefined) {
     // 不启动新 agent —— 卡记录的是"该谁做了"，不是"agent 在不在"。
     const hint =
       nextRole?.worktree === true
@@ -147,7 +144,7 @@ export function handoff(
     };
   }
 
-  herdr.agentPrompt(target, `任务 ${id} 已交付给你。目录：.herdr/${card.dir}\n读它拿到任务描述和上游的流转记录。`);
+  herdr.agentPrompt(target, `任务 ${id} 已交付给你。团队根目录：${project.root}\n目录：${join(project.herdrDir, card.dir)}\n读它拿到任务描述和上游的流转记录。执行 herdr-team 时使用 --root 指向上述团队根目录。`);
   return {
     id,
     from,
@@ -157,11 +154,6 @@ export function handoff(
     prompted: true,
     note: `${id} 已交给 ${nextAgent}（status=${status}）。`,
   };
-}
-
-/** 这个角色现在有存活的 agent 吗？launch 派活前要问。 */
-export function hasLiveAgent(herdr: Herdr, role: string): boolean {
-  return liveAgentFor(herdr, role) !== null;
 }
 
 /**
@@ -181,14 +173,14 @@ export function startupPrompt(identity: string, roleBody: string, roleName: stri
 }
 
 /** 派活说明：identity + 角色正文 + 任务目录 + 交棒要求。顺序固定。 */
-export function assignmentPrompt(identity: string, roleBody: string, card: TaskCard): string {
+export function assignmentPrompt(identity: string, roleBody: string, card: TaskCard, root?: string): string {
   return [
     identity.trim(),
     "",
     roleBody.trim(),
     "",
     `你现在负责任务 ${card.id}：${card.title}`,
-    `目录：.herdr/${card.dir}（.task.yaml 是元数据，${TASK_BODY} 是描述和流转记录）`,
+    `目录：${root === undefined ? `.herdr/${card.dir}` : join(root, ".herdr", card.dir)}（.task.yaml 是元数据，${TASK_BODY} 是描述和流转记录）`,
     "",
     `完成后运行 \`herdr-team handoff ${card.id}\` 交棒，不要自己改任务卡。`,
   ].join("\n");

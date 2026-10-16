@@ -1,3 +1,4 @@
+import { assertProjectWorkspace } from "./team-scope.ts";
 import { join } from "node:path";
 import type { Herdr } from "./herdr.ts";
 import { isTerminal, worktreeBranch, type Project, type TaskCard } from "./types.ts";
@@ -13,7 +14,8 @@ export type CleanupAction =
   /** checkout 还在，但 Herdr 里已经关掉了。 */
   | "closed"
   /** Git 拒绝删 —— 多半有未提交的东西。 */
-  | "dirty";
+  | "dirty"
+  | "foreign";
 
 export interface CleanupResult {
   id: string;
@@ -56,6 +58,11 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
       action: "closed",
       note: `${branch} 的 checkout 还在 ${found.path}，但 Herdr 里已经关掉了 —— 手动 \`git worktree remove\` 收`,
     };
+  }
+
+  try { assertProjectWorkspace(project, herdr, found.open_workspace_id); }
+  catch (error) {
+    return { id: card.id, branch, action: "foreign", note: `${branch} 不能安全回收：${error instanceof Error ? error.message : String(error)}` };
   }
 
   try {

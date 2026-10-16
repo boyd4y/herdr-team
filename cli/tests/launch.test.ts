@@ -43,12 +43,16 @@ describe("up —— 幂等：先找后建", () => {
     });
   });
 
-  test("多个同名 workspace 时停下来问，不猜", () => {
+  test("同一项目目录的多个 workspace 无法确定归属时拒绝，不猜", () => {
     withProject(() => {}, (p) => {
       const herdr = fakeHerdr({
         workspaces: [
           { workspace_id: "w1", label: "myproj", pane_count: 1, tab_count: 1 },
           { workspace_id: "w2", label: "myproj", pane_count: 1, tab_count: 1 },
+        ],
+        panes: [
+          { workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", cwd: p.root },
+          { workspace_id: "w2", tab_id: "w2:t1", pane_id: "w2:p1", cwd: p.root },
         ],
       });
       expect(() => up(p, herdr)).toThrow(/不要猜/);
@@ -235,7 +239,7 @@ describe("派活", () => {
       (p) => {
         const herdr = runningWorkspace();
         dispatch(p, herdr);
-        expect(herdr.calls.some((c) => c.startsWith("agent prompt dev"))).toBe(true);
+        expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "dev")?.pane_id}`))).toBe(true);
       },
     );
   });
@@ -324,7 +328,7 @@ describe("常驻角色起来时要收到自己的身份", () => {
     withProject(() => {}, (p) => {
       const herdr = fakeHerdr();
       up(p, herdr);
-      const prompt = herdr.calls.find((c) => c.startsWith("agent prompt dev"));
+      const prompt = herdr.calls.find((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "dev")?.pane_id}`));
       expect(prompt).toBeDefined();
       expect(prompt).toContain("你是 dev");
     });

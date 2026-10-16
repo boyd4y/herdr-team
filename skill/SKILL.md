@@ -19,6 +19,14 @@ herdr-team <命令>
 
 **你不自己算 id、不自己校验引用、不自己拼 frontmatter。** 那些是代码的活；用判断去替代它们就会出错。
 
+## 项目边界
+
+任务号和角色名只属于当前项目的 `.herdr/`。不同项目的 `dev`、`lead`、`0001` 不能混用。
+启动/派活消息会给出绝对团队根目录；在 worktree 或其他目录执行命令时，显式传 `--root <团队根目录>`。
+Herdr agent 内部名称可能包含项目命名空间；不要凭侧栏角色名执行全局 `herdr agent prompt`。
+派活与交棒使用 `herdr-team dispatch` / `handoff`，由 CLI 绑定项目并定位 pane。
+归属不明确时停止并交给用户确认，不按同名 workspace 或同名角色猜测。
+
 ## 命令归属
 
 默认只有 `lead` 有权运行编排命令：`init`、`add`、`edit`、`up`、`dispatch`、`clean`、`down`、`role add`、`role rm`；也可运行 `handoff` 和只读查询。Git 生命周期（建 `feat/*` 分支、合并、删分支）同样只归 `lead`。这些是提示词约定，CLI 不做角色权限拦截。
