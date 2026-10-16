@@ -19,6 +19,8 @@ describe("稳定的 workspace 归属编号", () => {
       expect(syncWorkspaceBadges(herdr, join(root, "badges.json"))).toEqual({ updated: 5, failed: 0 });
       expect(herdr.state.workspaces.map((w) => w.tokens?.team_workspace)).toEqual(["①", "②"]);
       expect(herdr.state.agents.map((a) => a.tokens?.team_workspace)).toEqual(["①", "①", "②"]);
+      expect(herdr.state.workspaces[0]!.tokens?.team_workspace_c0).toBe("① w1");
+      expect(herdr.state.agents[0]!.tokens?.team_workspace_c0).toBe("① arch");
       const calls = herdr.calls.length;
       expect(syncWorkspaceBadges(herdr, join(root, "badges.json")).updated).toBe(0);
       expect(herdr.calls.length).toBe(calls);
@@ -33,6 +35,7 @@ describe("稳定的 workspace 归属编号", () => {
       const restored = fakeHerdr({ workspaces: [workspace("w2", "renamed"), workspace("w1")] });
       syncWorkspaceBadges(restored, file);
       expect(restored.state.workspaces.map((w) => w.tokens?.team_workspace)).toEqual(["②", "①"]);
+      expect(restored.state.workspaces[0]!.tokens?.team_workspace_c1).toBe("② renamed");
       restored.state.workspaces = [workspace("w2"), workspace("w3")];
       syncWorkspaceBadges(restored, file);
       expect(restored.state.workspaces.map((w) => w.tokens?.team_workspace)).toEqual(["②", "③"]);
@@ -51,11 +54,14 @@ describe("稳定的 workspace 归属编号", () => {
       syncWorkspaceBadges(herdr, file);
       expect(herdr.state.workspaces.map((w) => w.tokens?.team_workspace)).toEqual([undefined, "②"]);
       expect(herdr.state.workspaces[0]!.tokens?.team_workspace_c1).toBeUndefined();
+      expect(herdr.state.workspaces[0]!.tokens?.team_label).toBe("w3");
       expect(herdr.state.agents[0]!.tokens?.team_workspace).toBe("②");
       expect(syncWorkspaceBadges(herdr, file).updated).toBe(0);
       herdr.state.workspaces = [child];
       syncWorkspaceBadges(herdr, file);
       expect(child.tokens?.team_workspace).toBe("②"); // Standalone worktree still needs an identity.
+      expect(child.tokens?.team_workspace_c1).toBe("② w3");
+      expect(child.tokens?.team_label).toBeUndefined();
     } finally { cleanup(); }
   });
 
@@ -69,7 +75,7 @@ describe("稳定的 workspace 归属编号", () => {
       syncWorkspaceBadges(herdr, file);
       herdr.state.agents[0]!.workspace_id = "w2";
       syncWorkspaceBadges(herdr, file);
-      expect(herdr.state.agents[0]!.tokens).toEqual({ team_model: "sol", team_workspace: "②", team_workspace_c1: "②" });
+      expect(herdr.state.agents[0]!.tokens).toEqual({ team_model: "sol", team_workspace: "②", team_workspace_c1: "② agent" });
     } finally { cleanup(); }
   });
 
@@ -80,7 +86,7 @@ describe("稳定的 workspace 归属编号", () => {
       const herdr = fakeHerdr({ workspaces: [{ ...workspace("w1"), tokens: { team_workspace: "①" } }] });
       writeFileSync(file, JSON.stringify({ next: 2, assignments: { "workspace:w1": 1 } }));
       expect(syncWorkspaceBadges(herdr, file)).toEqual({ updated: 1, failed: 0 });
-      expect(herdr.state.workspaces[0]!.tokens).toEqual({ team_workspace: "①", team_workspace_c0: "①" });
+      expect(herdr.state.workspaces[0]!.tokens).toEqual({ team_workspace: "①", team_workspace_c0: "① w1" });
       expect(JSON.parse(readFileSync(file, "utf8")).next).toBe(2);
       expect(syncWorkspaceBadges(herdr, file).updated).toBe(0);
     } finally { cleanup(); }
@@ -155,7 +161,7 @@ process.stdout.write(JSON.stringify({result}));
     writeFileSync(state, JSON.stringify(changed));
     expect(run().exitCode).toBe(0);
     const moved = JSON.parse(readFileSync(state, "utf8")).agents[0].tokens;
-    expect(moved.team_workspace_c1).toBe("②");
+    expect(moved.team_workspace_c1).toBe("② agent");
     expect(moved.team_workspace_c0).toBeUndefined();
   } finally { cleanup(); }
 });

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { projectKey } from "../scripts/lib/team-scope.ts";
 import { ROLE_BODY, ROLE_META, TASK_BODY, TASK_META } from "../scripts/lib/types.ts";
 import { emitYaml } from "../scripts/lib/yaml.ts";
-import type { AgentInfo, Herdr, PaneInfo, TabInfo, WorkspaceInfo } from "../scripts/lib/herdr.ts";
+import { badgeTokens, type AgentInfo, type Herdr, type PaneInfo, type TabInfo, type WorkspaceInfo } from "../scripts/lib/herdr.ts";
 
 /**
  * **测试绝不能碰用户真实的信任表。**
@@ -223,16 +223,14 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
       const workspace = state.workspaces.find((w) => w.workspace_id === id);
       if (workspace) workspace.tokens = { ...workspace.tokens, ...tokens };
     },
-    reportBadge: (scope, id, badge, colorSlot = 0) => {
+    reportBadge: (scope, id, badge, colorSlot = 0, label) => {
       calls.push(`report-badge ${scope} ${id} ${badge}`);
       const target = scope === "workspace" ? state.workspaces.find((w) => w.workspace_id === id) : state.agents.find((a) => a.pane_id === id);
       if (target) {
         target.tokens ??= {};
-        if (badge === null) delete target.tokens["team_workspace"];
-        else target.tokens["team_workspace"] = badge;
-        for (let slot = 0; slot < 8; slot++) {
-          if (badge !== null && slot === colorSlot) target.tokens[`team_workspace_c${slot}`] = badge;
-          else delete target.tokens[`team_workspace_c${slot}`];
+        for (const [key, value] of Object.entries(badgeTokens(badge, colorSlot, label))) {
+          if (value === null) delete target.tokens[key];
+          else target.tokens[key] = value;
         }
       }
     },

@@ -112,6 +112,9 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     assert(!applied.includes('$harness_logo'));
     assert(applied.includes('key = "prefix+t"'));
     assert(applied.includes('command = "herdr-team watch"'));
+    assert(applied.includes('"$team_label", "$team_harness"'));
+    assert(!applied.includes('"agent", "$team_harness"'));
+    assert(!applied.includes(', "workspace"]'));
     assert(applied.startsWith(original || ''));
     f.ok('configure.js', ['--apply', '--reload']);
     assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), applied);

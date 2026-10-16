@@ -43,6 +43,7 @@ herdr-team status
 sidebar 保留 Herdr 自带的状态圆点，并为主 workspace 分配 `①`、`②` 等归属编号。
 编号使用固定的八色配色：① 蓝、② 紫、③ 青绿，后续依次分配并循环。workspace 和
 所属 agent 的编号同色，切换运行状态不会改变编号颜色。
+编号与名称合并为一个字段（如 `① arch`、`④ agrid`），整段使用归属颜色，去掉编号后的分隔点。
 agent 第一行显示编号、角色、harness，第二行显示模型和任务 ID（有任务时）。
 workspace 名称只在 spaces 区显示；树形子 worktree 不重复显示编号，其中的 agent 沿用主 workspace 的编号。
 主 workspace 未打开、worktree 单独显示时仍保留编号。Herdr 原生状态点目前无法只对子节点隐藏。

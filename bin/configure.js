@@ -9,10 +9,10 @@ const managed = require('./managed');
 const { locations } = require('./paths');
 const { cleanupIcons } = require('./cleanup-icons');
 
-// Eight stable color slots; metadata selects exactly one for each numbered badge.
+// Eight stable color slots; each token holds the compact badge + name label.
 const BADGE_COLORS = ['#89b4fa', '#cba6f7', '#94e2d5', '#fab387', '#f5c2e7', '#a6e3a1', '#74c7ec', '#f9e2af'];
 const BADGE_TOKENS = BADGE_COLORS.map((fg, slot) => `{ token = "$team_workspace_c${slot}", fg = "${fg}", bold = true, dim = false }`).join(', ');
-const SIDEBAR = `[ui.sidebar.agents]\nrows = [["state_icon", ${BADGE_TOKENS}, "agent", "$team_harness"], ["$team_model", "$team_task"]]\n\n[ui.sidebar.spaces]\nrows = [["state_icon", ${BADGE_TOKENS}, "workspace"], ["branch", "git_status"]]`;
+const SIDEBAR = `[ui.sidebar.agents]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label", "$team_harness"], ["$team_model", "$team_task"]]\n\n[ui.sidebar.spaces]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label"], ["branch", "git_status"]]`;
 const POPUP = '[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "herdr-team watch"\nwidth = "90%"\nheight = "85%"';
 
 function herdr(args, env = process.env) {

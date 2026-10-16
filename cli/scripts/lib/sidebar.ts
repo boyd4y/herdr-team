@@ -1,6 +1,6 @@
 import { findRoot, loadProject } from "./config.ts";
 import { projectKey, projectAgents, roleAssignment } from "./team-scope.ts";
-import type { Herdr } from "./herdr.ts";
+import { badgeTokens, type Herdr } from "./herdr.ts";
 import type { Project, RoleCard } from "./types.ts";
 
 /** Keep display fields separate from the unique name used to address an agent. */
@@ -12,7 +12,14 @@ export function reportRoleSidebar(
     .filter((task) => isolatedTaskId === undefined || task.id === isolatedTaskId)
     .map((task) => task.id)
     .sort();
+  const agent = herdr.agentList().find((agent) => agent.pane_id === paneId);
+  const badge = agent?.tokens?.team_workspace;
+  const slot = badge === undefined ? -1 : Array.from({ length: 8 }, (_, slot) => slot)
+    .find((slot) => agent?.tokens?.[`team_workspace_c${slot}`] !== undefined) ?? -1;
+  const labels = slot < 0 ? {} : badgeTokens(badge!, slot, role.name);
+  delete labels.team_workspace; // The badge registry owns the stable number.
   herdr.reportMetadata(paneId, "herdr-team", role.name, {
+    ...labels,
     team_project: projectKey(project),
     team_role: role.name,
     team_task_id: isolatedTaskId ?? null,

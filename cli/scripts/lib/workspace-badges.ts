@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, openSync, closeSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Herdr, WorkspaceInfo } from "./herdr.ts";
+import { badgeTokens, type Herdr, type WorkspaceInfo } from "./herdr.ts";
 
 export const BADGE_COLOR_COUNT = 8; // Must match the fixed sidebar color slots in bin/configure.js.
 interface Badge { label: string; slot: number }
@@ -74,20 +74,21 @@ export function syncWorkspaceBadges(herdr: Herdr, file = badgeStatePath()): { up
       finally { if (existsSync(temp)) unlinkSync(temp); }
     }
     const result = { updated: 0, failed: 0 };
-    const report = (scope: "workspace" | "pane", id: string, tokens: Record<string, string> = {}, badge: Badge | undefined) => {
-      if (tokens["team_workspace"] === badge?.label && Array.from({ length: BADGE_COLOR_COUNT }, (_, slot) => slot)
-        .every((slot) => tokens[`team_workspace_c${slot}`] === (slot === badge?.slot ? badge.label : undefined))) return;
-      try { herdr.reportBadge(scope, id, badge?.label ?? null, badge?.slot); result.updated++; }
+    const report = (scope: "workspace" | "pane", id: string, tokens: Record<string, string> = {}, badge: Badge | undefined, label: string) => {
+      if (Object.entries(badgeTokens(badge?.label ?? null, badge?.slot, label))
+        .every(([key, value]) => tokens[key] === (value ?? undefined))) return;
+      try { herdr.reportBadge(scope, id, badge?.label ?? null, badge?.slot, label); result.updated++; }
       catch { result.failed++; }
     };
     const parentRepos = new Set(workspaces.filter((workspace) => workspace.worktree && !workspace.worktree.is_linked_worktree)
       .map((workspace) => workspace.worktree!.repo_key));
     for (const workspace of workspaces) {
       const nested = workspace.worktree?.is_linked_worktree && parentRepos.has(workspace.worktree.repo_key);
-      report("workspace", workspace.workspace_id, workspace.tokens, nested ? undefined : badges.get(workspace.workspace_id));
+      report("workspace", workspace.workspace_id, workspace.tokens, nested ? undefined : badges.get(workspace.workspace_id), workspace.label);
     }
     for (const agent of agents) {
-      if (agent.pane_id && agent.workspace_id) report("pane", agent.pane_id, agent.tokens, badges.get(agent.workspace_id));
+      if (agent.pane_id) report("pane", agent.pane_id, agent.tokens, agent.workspace_id ? badges.get(agent.workspace_id) : undefined,
+        agent.tokens?.team_role ?? agent.display_agent ?? agent.name ?? agent.agent ?? "agent");
     }
     return result;
   } finally { closeSync(descriptor); unlinkSync(lock); }
