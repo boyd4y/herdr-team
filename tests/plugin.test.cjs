@@ -10,6 +10,7 @@ const { read, edit } = require('../bin/managed');
 const { locations } = require('../bin/paths');
 const { cleanupIcons, BASENAME } = require('../bin/cleanup-icons');
 const { existingPopup, POPUP } = require('../bin/configure');
+const { installNpxStub } = require('./skills-fixture.cjs');
 
 const root = path.resolve(__dirname, '..');
 
@@ -34,11 +35,11 @@ if (args.join(' ') === 'config check') {
   fs.chmodSync(herdr, 0o755);
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(bin);
+  installNpxStub(bin);
   const env = {
     ...process.env, HOME: dir, XDG_CONFIG_HOME: config, XDG_DATA_HOME: path.join(dir, 'data'),
     HERDR_CONFIG_PATH: herdrConfig, HERDR_BIN_PATH: herdr, HERDR_ENV: '1',
     HERDR_PLUGIN_STATE_DIR: path.join(dir, 'plugin-state'),
-    HERDR_TEAM_SKILL_DIRS: path.join(dir, 'agent-skills'),
     XDG_BIN_HOME: bin,
     TEST_LOG: path.join(dir, 'calls.jsonl'), TEST_REAL_CONFIG: herdrConfig,
     PATH: bin + path.delimiter + process.env.PATH,
@@ -239,7 +240,7 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   assert(!fs.readFileSync(f.herdrConfig, 'utf8').includes('$harness_logo'));
   assert(!fs.existsSync(path.join(f.paths.fonts, BASENAME)));
   assert.equal(fs.readFileSync(terminal, 'utf8'), '# ghostty');
-  const skillFile = path.join(f.env.HERDR_TEAM_SKILL_DIRS, 'herdr-team', 'SKILL.md');
+  const skillFile = path.join(f.dir, '.agents/skills/herdr-team/SKILL.md');
   assert(fs.readFileSync(skillFile, 'utf8').includes('name: herdr-team'));
   setup();
   const manifest = fs.readFileSync(path.join(standalone, 'herdr-plugin.toml'), 'utf8');

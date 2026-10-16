@@ -6,32 +6,24 @@ const os = require('node:os');
 const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
+const { spawnSync } = require('node:child_process');
 
 const NAME = 'herdr-team';
-// Only adapters with a known user-level skills directory. Do not infer a
-// skills format from another program's trust/config directory (e.g. grok).
-const AGENTS = [
-  { kind: 'claude', variable: 'CLAUDE_CONFIG_DIR', home: ['.claude'] },
-  { kind: 'codex', variable: 'CODEX_HOME', home: ['.codex'] },
-  { kind: 'pi', variable: 'PI_CODING_AGENT_DIR', home: ['.pi', 'agent'] },
-];
+// The upstream CLI owns skill placement, copies, agent links and removal.
+const SKILLS_PACKAGE = 'skills@1.7.2';
+const AGENTS = { claude: 'claude-code', codex: 'codex', pi: 'pi', grok: 'grok' };
+
+function installedAgents(env = process.env) {
+  return Object.entries(AGENTS).filter(([command]) => (env.PATH || '').split(path.delimiter).some((bin) => {
+    const file = path.join(bin, command);
+    try { return fs.statSync(file).isFile() && (fs.accessSync(file, fs.constants.X_OK), true); }
+    catch { return false; }
+  })).map(([, agent]) => agent);
+}
 
 function stat(file) {
   try { return fs.lstatSync(file); }
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
-}
-
-function targets(env = process.env, home = os.homedir()) {
-  if (env.HERDR_TEAM_SKILL_DIRS !== undefined) {
-    // An explicit empty value disables discovery as well as installation.
-    return [...new Set(env.HERDR_TEAM_SKILL_DIRS.split(path.delimiter).filter(Boolean)
-      .map((dir) => path.resolve(dir, NAME)))];
-  }
-  return [...new Set(AGENTS.filter(({ kind }) => (env.PATH || '').split(path.delimiter).some((bin) => {
-    const executable = path.join(bin, kind);
-    try { return fs.statSync(executable).isFile() && (fs.accessSync(executable, fs.constants.X_OK), true); }
-    catch { return false; }
-  })).map((agent) => path.resolve(env[agent.variable] || path.join(home, ...agent.home), 'skills', NAME)))];
 }
 
 function stateDirectory(env = process.env, home = os.homedir()) {
@@ -65,27 +57,6 @@ function readState(file) {
   return records;
 }
 
-function skillText(stateDir) {
-  // The plugin bundles its skill and references for standalone distribution.
-  // No npm package, network or installed skill is needed.
-  const source = path.resolve(__dirname, '..', 'skill');
-  const text = fs.readFileSync(path.join(source, 'SKILL.md'), 'utf8');
-  const refs = path.join(source, 'references');
-  const documents = fs.readdirSync(refs).sort().map((name) => {
-    if (!stat(path.join(refs, name))?.isFile()) throw new Error(`Expected reference file: ${name}`);
-    return [name, fs.readFileSync(path.join(refs, name), 'utf8')];
-  });
-  // Immutable versions keep retained/user-edited skills' old references valid.
-  // A build checkout is moved after the hook, so never link to __dirname here.
-  const destination = path.join(stateDir, 'skill-references', hash(JSON.stringify(documents)));
-  fs.mkdirSync(destination, { recursive: true });
-  for (const [name, contents] of documents) atomicWrite(path.join(destination, name), contents);
-  return text.replace(/\]\(references\/([^\s)]+)\)/g, (_, name) => {
-    if (!documents.some(([file]) => file === name)) throw new Error(`Missing skill reference: ${name}`);
-    return `](<${path.join(destination, name).replaceAll('>', '%3E')}>)`;
-  });
-}
-
 function owned(record) {
   const directory = stat(record.dir);
   if (!directory?.isDirectory() || directory.dev !== record.dev || directory.ino !== record.ino) return false;
@@ -114,43 +85,52 @@ async function installSkill(uninstall = false, env = process.env) {
     const file = path.join(stateDir, 'skill-paths.json');
     let records = readState(file);
     const save = () => atomicWrite(file, JSON.stringify(records, null, 2) + '\n');
-    if (uninstall) {
-      // Use recorded paths even after PATH, HOME overrides or agent discovery change.
-      for (const record of [...records]) {
-        if (!stat(record.dir)) {
-          records = records.filter((r) => r !== record); save(); continue;
-        }
-        if (!owned(record) || fs.readdirSync(record.dir).some((name) => name !== 'SKILL.md')) {
-          console.log(`Kept modified skill: ${record.dir}`); continue;
-        }
-        fs.rmSync(path.join(record.dir, 'SKILL.md'), { force: true });
-        fs.rmdirSync(record.dir);
-        records = records.filter((r) => r !== record); save();
-        console.log(`Removed skill: ${record.dir}`);
+    const source = path.resolve(__dirname, '..', 'skill');
+    const agents = uninstall ? [] : installedAgents(env);
+    if (!uninstall && !agents.length) throw new Error('No supported agent found on PATH (claude, codex, pi, grok)');
+    const args = ['--yes', SKILLS_PACKAGE, ...(uninstall
+      ? ['remove', NAME, '--global', '--yes']
+      : ['add', source, '--skill', NAME, '--global', '--yes', '--json', '--agent', ...agents])];
+    console.log(`Skill ${uninstall ? 'removal' : 'installation'}: npx ${args.join(' ')}`);
+    const result = spawnSync('npx', args, {
+      env, encoding: 'utf8', timeout: 120000, maxBuffer: 4 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.error || result.status !== 0) throw new Error(
+      `Skill ${uninstall ? 'removal' : 'installation'} failed: ${result.error?.message || `npx exited ${result.status}`}`,
+    );
+    let installedPath;
+    if (!uninstall) {
+      let installed;
+      try { installed = JSON.parse(result.stdout); } catch { throw new Error('skills returned invalid installation JSON'); }
+      const skill = Array.isArray(installed) && installed.find((item) => item.name === NAME && item.status === 'installed');
+      if (!skill || !Array.isArray(skill.agents) || !skill.agents.length || typeof skill.path !== 'string' ||
+          !path.isAbsolute(skill.path) || !stat(path.join(skill.path, 'SKILL.md'))?.isFile() ||
+          fs.readFileSync(path.join(skill.path, 'SKILL.md'), 'utf8') !== fs.readFileSync(path.join(source, 'SKILL.md'), 'utf8')) {
+        throw new Error('skills did not confirm a readable herdr-team installation; old skills retained');
       }
-      return;
+      installedPath = path.resolve(skill.path);
+      console.log(`Skill installed: ${skill.path} (${skill.agents.join(', ')})`);
     }
-    const directories = targets(env);
-    if (!directories.length) { console.log('No supported installed agent programs; no skills installed.'); return; }
-    const text = skillText(stateDir);
-    for (const dir of directories) {
-      let record = records.find((r) => r.dir === dir);
-      if (stat(dir)) {
-        if (!record || !owned(record)) { console.log(`Skipped existing skill: ${dir}`); continue; }
-      } else {
-        fs.mkdirSync(path.dirname(dir), { recursive: true });
-        try { fs.mkdirSync(dir); }
-        catch (error) { if (error.code === 'EEXIST') { console.log(`Skipped existing skill: ${dir}`); continue; } throw error; }
-        const info = stat(dir);
-        records = records.filter((r) => r.dir !== dir);
-        record = { dir, hash: null, dev: info.dev, ino: info.ino };
-        records.push(record);
-        save(); // Record ownership before writing any skill content.
+    // One-time migration: only remove untouched copies left by the old installer,
+    // after the standard CLI has succeeded. It now owns any replaced agent links.
+    for (const record of [...records]) {
+      if (path.resolve(record.dir) === installedPath) {
+        records = records.filter((r) => r !== record); save(); continue;
       }
-      atomicWrite(path.join(dir, 'SKILL.md'), text);
-      record.hash = hash(text);
-      save();
-      console.log(`Installed skill: ${dir}`);
+      const directory = stat(record.dir);
+      if (!directory || !directory.isDirectory() || directory.dev !== record.dev || directory.ino !== record.ino) {
+        records = records.filter((r) => r !== record); save(); continue;
+      }
+      if (!owned(record) || fs.readdirSync(record.dir).some((name) => name !== 'SKILL.md')) {
+        console.log(`Kept modified legacy skill: ${record.dir}`); continue;
+      }
+      fs.rmSync(path.join(record.dir, 'SKILL.md'), { force: true });
+      fs.rmdirSync(record.dir);
+      records = records.filter((r) => r !== record); save();
+      console.log(`Removed legacy skill copy: ${record.dir}`);
     }
   } finally { fs.closeSync(fd); fs.unlinkSync(lock); }
 }
@@ -164,4 +144,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { AGENTS, targets, stateDirectory, installSkill };
+module.exports = { SKILLS_PACKAGE, installedAgents, stateDirectory, installSkill };

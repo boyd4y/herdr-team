@@ -3,8 +3,9 @@
 一次安装 `herdr-team` skill、内置 CLI、Herdr sidebar 配置，并把 `prefix+t` 绑定到 `herdr-team watch` popup。安装与同步均为一次性脚本，
 无 daemon、无运行时 npm 依赖，不起 agent，也不改项目的 `.herdr/`。
 
-需要 Herdr 0.9.3+、Node 18+、Bun 1.2+，支持 macOS / Linux。CLI、skill 和安装脚本
-均随插件分发，安装 action 不联网，不再通过 npm 分发 CLI。
+需要 Herdr 0.9.3+、Node 22.20+（含 npm/npx）、Bun 1.2+，支持 macOS / Linux。
+CLI、skill 和安装脚本均随插件分发。skill 通过 `npx skills@1.7.2` 安装插件自带的本地目录；
+首次获取 Skills CLI 可能需要联网，skill 内容无需从 GitHub 下载。团队 CLI 仍使用内置版本。
 
 ## 安装
 
@@ -89,8 +90,8 @@ Herdr 的 agent 名是全局唯一的，若角色名已被另一个项目占用�
 | `herdr-team.uninstall-cli` | 按所有权记录移除未修改的 shim |
 | `herdr-team.configure` | 校验候选配置，写 sidebar 和 popup 托管块，reload 当前会话 |
 | `herdr-team.unconfigure` | 撤掉 Herdr 托管块并 reload |
-| `herdr-team.install-skill` | 为 PATH 上已安装的 Claude、Codex、Pi 安装 skill；跳过非本插件拥有的同名目录 |
-| `herdr-team.uninstall-skill` | 按所有权记录移除未修改、无额外文件的 skill 目录 |
+| `herdr-team.install-skill` | 通过 `npx skills` 安装随插件分发的本地 skill，日志列出状态、路径和 agent |
+| `herdr-team.uninstall-skill` | 通过 `npx skills remove herdr-team --global --yes` 撤销 skill |
 
 卸载前先撤 skill、配置和 CLI，再解除本地链接：
 
@@ -101,13 +102,12 @@ herdr plugin action invoke herdr-team.uninstall-cli
 herdr plugin unlink herdr-team
 ```
 
-Herdr 自己的插件日志、config/state 目录由 Herdr 管理；skill 安装的所有权记录和引用文档
-缓存保存在插件 state 目录中，配置只用托管块，不写备份。
+Herdr 自己的插件日志、config/state 目录由 Herdr 管理；skill 的目录与链接由 Skills CLI 管理，配置只用托管块，不写备份。
 
 ## CLI 的安装位置与所有权
 
 CLI 源码只维护在 `cli/`，入口为 `cli/scripts/cli.ts`。安装器用 Bun shim 调用它，
-不编译二进制、不运行 npm。与 skill 引用缓存相同，运行所需的 `package.json` 与
+CLI 安装不编译二进制、不运行 npm。运行所需的 `package.json` 与
 `scripts/` 按内容摘要复制到插件 state 的 `cli-runtime/<内容摘要>/`；不复制测试或
 开发依赖。shim 引用稳定缓存路径，Herdr 在 build 后移动检出也不会让它失效。
 
@@ -122,54 +122,46 @@ CLI 源码只维护在 `cli/`，入口为 `cli/scripts/cli.ts`。安装器用 Bu
 供保留下来的 shim 继续使用；仍需这些命令时不要清除 state。
 Herdr 没有自动卸载 hook，先运行 `uninstall-cli` 再 unlink / 卸载插件。
 
-## Skill 的安装位置与所有权
+## Skill 安装
 
-只检测 PATH 上的可执行文件，不运行 agent、不根据配置目录猜安装状态。
-目前支持与参考实现相同的三个已知 skills 目录；不从 Grok 等程序的 trust 文件路径
-推导 skills 目录。
+统一的 `herdr-team.install` action 会调用 Skills CLI，从插件自带的本地 `skill/` 目录安装：
 
-| kind / 可执行文件 | 默认 skills 目录 | 程序目录覆盖 |
-| --- | --- | --- |
-| `claude` | `~/.claude/skills` | `$CLAUDE_CONFIG_DIR/skills` |
-| `codex` | `~/.codex/skills` | `$CODEX_HOME/skills` |
-| `pi` | `~/.pi/agent/skills` | `$PI_CODING_AGENT_DIR/skills` |
+```sh
+npx --yes skills@1.7.2 add /path/to/herdr-team/skill --skill herdr-team --global --yes --json --agent codex claude-code pi grok
+```
 
-每个目标中只创建名为 `herdr-team` 的目录及其中的 `SKILL.md`。已有的同名目录、普通文件及符号链接
-（包括旧的手动安装链接）都跳过，不接管、不覆盖；输出会列出跳过的路径。
-新装 agent 后可重新运行 `install-skill`。如果希望用插件管理旧的手动安装，需先自行
-移走原入口，再运行 action；安装器不会替用户迁移它。
+本地开发也可在插件根目录手动执行：
 
-内置 skill 独立放在插件的 `skill/` 子目录：正文读取 `skill/SKILL.md`，引用文档和
-agent 元数据分别放在 `skill/references/` 和 `skill/agents/`，不改源文件。
-插件自身的 `bin/`、`tests/` 和 manifest 留在插件根目录。
-只需分发整个插件目录即可安装 CLI、skill 和配置，无需仓库中的其他目录。
-根目录 `make validate` 通过 `PACKAGES` 中的 `herdr-team-plugin/skill` 校验独立的
-skill 包。
+```sh
+npx skills add ./skill --skill herdr-team --global --yes --agent codex claude-code pi
+npx skills list --global
+```
 
-安装正文与源文件的唯一差异：两个 `references/*.md` 链接改成带尖括号的绝对路径。
-安装器将完整 `skill/references/` 文档复制到插件 state 下
-`skill-references/<内容摘要>/`，使文档间的相对链接仍可用。Herdr 在 build 后会移动检出，
-不能把临时 build 路径写进 skill。缓存按内容分版本，保留的旧版或用户修改过的 skill
-仍能读取原版引用；移动或移除源码检出也不影响已安装的引用。
+不需要先发布到 GitHub。源文件、`references/` 和 `agents/` 一起安装，正文与相对链接保留。
+默认由 Skills CLI 将内容复制到 `~/.agents/skills/herdr-team`，并为需要独立目录的 agent
+建立链接；Codex、Pi 使用共享 skills 目录，Claude Code 等使用 Skills CLI 管理的链接。
+已安装内容不依赖插件检出的临时路径，移动插件或 Herdr build 检出后仍可读取。
+插件按 PATH 选择已安装的 Claude、Codex、Pi、Grok，显式传 `--agent`；不会启动 agent。
+目录选择和更新同名 skill 的行为由 Skills CLI 管理。
 
-state 优先使用 action 注入的 `HERDR_PLUGIN_STATE_DIR`。build hook 没有该变量时，
-按 Herdr 的 Unix 约定使用
-`${XDG_STATE_HOME:-~/.local/state}/herdr/plugins/herdr-team`。
-`skill-paths.json` 记录每个已创建目录的路径、设备号、inode 和正文摘要；每创建一个
-目录就先保存记录，再写正文。内容没变时不重写正文、引用文档或记录。
+插件固定使用 `skills@1.7.2`，通过 `--yes` 非交互安装并解析 `--json` 结果。
+显式指定 agent 避免上游自动列表包含不支持全局安装的条目。
+日志明确输出安装状态、实际目录和 agent；命令失败、返回失败结果或安装文件不可读时，
+action 报错。首次下载 Skills CLI 需要 npm 网络访问，之后可使用 npm 缓存。
+不再使用自定义的 `HERDR_TEAM_SKILL_DIRS` 安装目录规则。
 
-安装和撤销共用 `skill.lock` 排他写锁，最长等 15 秒，超时不进行 skill 写入。
-正常完成或报错都会释放锁；进程被强制终止后可能留下锁，此时确认没有安装 action
-运行后，手动移除插件 state 中的 `skill.lock` 再重试。
+升级时先完成 npx 安装，再按旧 `skill-paths.json` 清理旧安装器留下的未修改副本。
+用户修改、附加文件及替换链接保留；新安装失败时不清理旧副本。
+旧引用缓存保留，供仍被保留的旧版 skill 使用。
+安装与撤销使用插件 state 的 `skill.lock`，避免同时操作。
 
-撤销只查记录，不依赖当前 PATH 或目录覆盖；只删除仍是原目录、正文未修改且目录里
-只有 `SKILL.md`（或为空）的条目。加过任何文件或子目录、修改过正文、换成符号链接的
-条目都会整目录保留，并继续记在记录中，便于用户整理后再撤销。引用缓存保留在插件
-自己的 state 中，供这些保留的 skill 使用；不要在仍需它们时清除插件 state。
-Herdr 没有自动调用此 action 的卸载 hook，解除链接或卸载插件前应先运行撤销 action。
+撤销命令为：
 
-实现参考 [herdr-projects 的 extras](https://github.com/eliasstravik/herdr-projects/blob/main/crates/flow/src/extras.rs)
-和 [agent adapter](https://github.com/eliasstravik/herdr-projects/blob/main/crates/core/src/agents/adapter.rs)。
+```sh
+npx --yes skills@1.7.2 remove herdr-team --global --yes
+```
+
+Herdr 没有自动卸载 hook，解除链接或卸载插件前先执行 `herdr-team.uninstall-skill`。
 
 ## 配置边界
 
@@ -200,8 +192,7 @@ node --test tests/*.test.cjs
 测试使用临时 HOME、XDG 目录和假的 Herdr 命令，验证精确回滚、幂等、独立分发、
 冲突拒绝，以及旧版图标配置的清理，不依赖网络或活 workspace。
 
-skill 测试另外显式设置 `HERDR_TEAM_SKILL_DIRS`，以系统路径分隔符（macOS / Linux
-为 `:`）指定临时 skills 根目录列表；该变量完全替代 agent 发现，空值表示禁用安装。
+Skill 安装测试使用临时 HOME、插件 state 和 npx 子进程替身，覆盖安装参数、失败传播、
+旧版副本迁移、相对引用、检出移动和并发锁，不访问真实 agent 目录或网络。
+真实 Skills CLI 的本地安装与撤销另在隔离的临时 HOME 中验证。
 CLI 测试还隔离用户 bin，覆盖新 shell 直接调用、检出移动、升级及精确卸载。
-测试同时隔离 agent home 和插件 state，绝不写真实 agent 目录。覆盖所有权四条规则、
-用户修改、并发锁、build/action 共用记录和检出移动后的引用可达性。

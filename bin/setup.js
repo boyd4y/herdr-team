@@ -5,7 +5,7 @@ const { planConfigure, applyPlan, reloadConfig } = require('./configure');
 const { installSkill } = require('./install-skill');
 const { installCLI } = require('./install-cli');
 
-// One-shot install hook: no daemon, no agent orchestration, no downloads.
+// One-shot install hook: npx installs the bundled local skill; no daemon or agent startup.
 async function setup() {
   const plan = planConfigure();
   await installCLI();
