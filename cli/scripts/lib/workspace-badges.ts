@@ -80,7 +80,12 @@ export function syncWorkspaceBadges(herdr: Herdr, file = badgeStatePath()): { up
       try { herdr.reportBadge(scope, id, badge?.label ?? null, badge?.slot); result.updated++; }
       catch { result.failed++; }
     };
-    for (const workspace of workspaces) report("workspace", workspace.workspace_id, workspace.tokens, badges.get(workspace.workspace_id));
+    const parentRepos = new Set(workspaces.filter((workspace) => workspace.worktree && !workspace.worktree.is_linked_worktree)
+      .map((workspace) => workspace.worktree!.repo_key));
+    for (const workspace of workspaces) {
+      const nested = workspace.worktree?.is_linked_worktree && parentRepos.has(workspace.worktree.repo_key);
+      report("workspace", workspace.workspace_id, workspace.tokens, nested ? undefined : badges.get(workspace.workspace_id));
+    }
     for (const agent of agents) {
       if (agent.pane_id && agent.workspace_id) report("pane", agent.pane_id, agent.tokens, badges.get(agent.workspace_id));
     }

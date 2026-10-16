@@ -44,7 +44,8 @@ sidebar 保留 Herdr 自带的状态圆点，并为主 workspace 分配 `①`、
 编号使用固定的八色配色：① 蓝、② 紫、③ 青绿，后续依次分配并循环。workspace 和
 所属 agent 的编号同色，切换运行状态不会改变编号颜色。
 agent 第一行显示编号、角色、harness，第二行显示模型和任务 ID（有任务时）。
-workspace 名称只在 spaces 区显示；子 worktree 和其中的 agent 沿用主 workspace 的编号。
+workspace 名称只在 spaces 区显示；树形子 worktree 不重复显示编号，其中的 agent 沿用主 workspace 的编号。
+主 workspace 未打开、worktree 单独显示时仍保留编号。Herdr 原生状态点目前无法只对子节点隐藏。
 模型取角色卡的 `model`，未指定时显示 `default`。无需额外字体或环境变量。
 
 编号绑定 workspace ID，保存在插件 state 的 `workspace-badges/` 中，按 Herdr socket

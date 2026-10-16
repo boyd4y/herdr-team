@@ -39,17 +39,23 @@ describe("稳定的 workspace 归属编号", () => {
     } finally { cleanup(); }
   });
 
-  test("子 worktree 沿用主 workspace 编号，不论列表先后；父目录后来加入分组也不变", () => {
+  test("树形子 worktree 隐藏重复编号；其中的 agent 仍沿用主 workspace 编号", () => {
     const { root, cleanup } = makeProject();
     try {
       const file = join(root, "badges.json");
       syncWorkspaceBadges(fakeHerdr({ workspaces: [workspace("w1"), workspace("w2")] }), file);
       const parent = { ...workspace("w2"), worktree: { repo_key: "/repo/.git", is_linked_worktree: false } };
-      const child = { ...workspace("w3"), worktree: { repo_key: "/repo/.git", is_linked_worktree: true } };
+      const child = { ...workspace("w3"), tokens: { team_workspace: "②", team_workspace_c1: "②" },
+        worktree: { repo_key: "/repo/.git", is_linked_worktree: true } };
       const herdr = fakeHerdr({ workspaces: [child, parent], agents: [{ pane_id: "w3:p1", workspace_id: "w3" }] });
       syncWorkspaceBadges(herdr, file);
-      expect(herdr.state.workspaces.map((w) => w.tokens?.team_workspace)).toEqual(["②", "②"]);
+      expect(herdr.state.workspaces.map((w) => w.tokens?.team_workspace)).toEqual([undefined, "②"]);
+      expect(herdr.state.workspaces[0]!.tokens?.team_workspace_c1).toBeUndefined();
       expect(herdr.state.agents[0]!.tokens?.team_workspace).toBe("②");
+      expect(syncWorkspaceBadges(herdr, file).updated).toBe(0);
+      herdr.state.workspaces = [child];
+      syncWorkspaceBadges(herdr, file);
+      expect(child.tokens?.team_workspace).toBe("②"); // Standalone worktree still needs an identity.
     } finally { cleanup(); }
   });
 
