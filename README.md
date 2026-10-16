@@ -20,7 +20,7 @@ GitHub 安装会运行 `bin/setup.js`，一次装齐 CLI、skill、字体、终�
 从这个仓库本地检出开发时，在仓库根目录运行：
 
 ```sh
-herdr plugin link ./herdr-team-plugin
+herdr plugin link .
 herdr plugin action invoke herdr-team.install
 ```
 

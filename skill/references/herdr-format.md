@@ -143,7 +143,7 @@
 `up` 只起常驻角色，`dispatch` 才派任务；角色分成两类，**落在完全不同的地方**：
 
 ```
-项目 workspace "dev-skills"              ← 家
+项目 workspace "my-app"              ← 家
 ├── tab lead         agent "lead"         常驻，主分支
 └── tab test         agent "test"         常驻
 
