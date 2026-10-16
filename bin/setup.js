@@ -2,7 +2,6 @@
 'use strict';
 
 const { planConfigure, applyPlan, reloadConfig } = require('./configure');
-const { installFont } = require('./install-font');
 const { installSkill } = require('./install-skill');
 const { installCLI } = require('./install-cli');
 
@@ -11,7 +10,6 @@ async function setup() {
   const plan = planConfigure();
   await installCLI();
   await installSkill();
-  installFont();
   applyPlan(plan);
   // GitHub builds need not have a running server or runtime socket context.
   if (process.env.HERDR_ENV === '1') {

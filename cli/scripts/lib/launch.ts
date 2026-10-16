@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { HerdrError, type Herdr } from "./herdr.ts";
-import { reportHarnessLogo } from "./logos.ts";
+import { refreshSidebar, reportRoleSidebar } from "./sidebar.ts";
 import { appendRecord, assignmentPrompt, stamp, startupPrompt } from "./handoff.ts";
 import { findTask, writeTaskMeta } from "./task.ts";
 import {
@@ -90,10 +90,6 @@ function residentPane(
   return { paneId: made.paneId, tabId: made.tabId };
 }
 
-function displayName(agentName: string, role: RoleCard): string {
-  return role.model === undefined ? agentName : `${agentName} (${role.model})`;
-}
-
 function liveAgentNames(herdr: Herdr): Set<string> {
   return new Set(herdr.agentList().map((a) => a.name).filter((n): n is string => n !== undefined));
 }
@@ -173,9 +169,8 @@ export function up(project: Project, herdr: Herdr): UpResult {
     // 已存在的 agent **也要**重新上报 —— 名字或 model 改过时，不重报就永远不生效。
     let reported: boolean | null = true;
     if (failure === undefined) {
-      reportHarnessLogo(herdr, paneId, role.kind);
       try {
-        herdr.reportMetadata(paneId, "herdr-team", displayName(role.name, role));
+        reportRoleSidebar(project, herdr, paneId, role);
       } catch {
         reported = false;
       }
@@ -267,10 +262,8 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
           }
 
           herdr.agentStart(agentName, role.kind, paneId, role.args ?? []);
-          reportHarnessLogo(herdr, paneId, role.kind);
           try {
-            // 隔离 agent 只报名字，不带模型 —— `<role>-<id>` 已经够长，再加就没地方了。
-            herdr.reportMetadata(paneId, "herdr-team", agentName);
+            reportRoleSidebar(project, herdr, paneId, role, task.id);
           } catch {
             // 上报失败不影响干活。
           }
@@ -304,6 +297,7 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
       ...(reason === undefined ? {} : { reason }) });
   }
 
+  refreshSidebar(project, herdr);
   return out;
 }
 

@@ -12,6 +12,7 @@ function locations(env = process.env, platform = process.platform, home = os.hom
   ]);
   return {
     herdr: env.HERDR_CONFIG_PATH || path.join(config, 'herdr', 'config.toml'),
+    // These locations are retained only to remove old icon installations.
     fonts: platform === 'darwin' ? path.join(home, 'Library', 'Fonts') :
       path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'fonts'),
     terminals: [...new Set(ghostty)].map((file) => ({ file, kind: 'ghostty' })).concat([

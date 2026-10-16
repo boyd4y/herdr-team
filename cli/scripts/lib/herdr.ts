@@ -96,8 +96,7 @@ export interface Herdr {
   agentStart(name: string, kind: string, paneId: string, args: string[]): void;
   /** 默认只提交输入；dispatch 可选择等待首次 working / blocked，调用上限 8 秒。 */
   agentPrompt(target: string, text: string, options?: { waitForActivity: boolean }): void;
-  reportMetadata(paneId: string, source: string, displayAgent: string): void;
-  reportTokens(paneId: string, source: string, tokens: Record<string, string>, ttlMs: number): void;
+  reportMetadata(paneId: string, source: string, displayAgent: string, tokens?: Record<string, string | null>): void;
 }
 
 interface RawResult {
@@ -271,20 +270,14 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       run(args);
     },
 
-    reportMetadata: (paneId, source, displayAgent) =>
+    reportMetadata: (paneId, source, displayAgent, tokens = {}) =>
       void run([
         "pane", "report-metadata", paneId,
         "--source", source,
         "--display-agent", displayAgent,
         "--clear-state-labels",
-      ]),
-
-    reportTokens: (paneId, source, tokens, ttlMs) =>
-      void run([
-        "pane", "report-metadata", paneId,
-        "--source", source,
-        "--ttl-ms", String(ttlMs),
-        ...Object.entries(tokens).flatMap(([key, value]) => ["--token", `${key}=${value}`]),
+        ...Object.entries(tokens).flatMap(([key, value]) =>
+          value === null ? ["--clear-token", key] : ["--token", `${key}=${value}`]),
       ]),
   };
 }

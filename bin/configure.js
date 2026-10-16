@@ -7,8 +7,9 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const managed = require('./managed');
 const { locations } = require('./paths');
+const { cleanupIcons } = require('./cleanup-icons');
 
-const SIDEBAR = '[ui.sidebar.agents]\nrows = [["state_icon", "$harness_logo", "agent"], ["machine", "workspace", "tab"]]';
+const SIDEBAR = '[ui.sidebar.agents]\nrows = [["state_icon", "agent", "$team_harness"], ["$team_model", "$team_task"]]';
 const POPUP = '[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "herdr-team watch"\nwidth = "90%"\nheight = "85%"';
 
 function herdr(args, env = process.env) {
@@ -68,6 +69,7 @@ function applyPlan(plan, reload = false) {
   if (current.text !== plan.before.text || current.exists !== plan.before.exists) {
     throw new Error('config.toml changed during validation; run the action again');
   }
+  cleanupIcons();
   managed.write(plan.file, plan.before, plan.after);
   console.log(`config: ${plan.file}${plan.reuse ? ' (reusing existing prefix+t popup)' : ''}`);
   if (reload) reloadConfig();

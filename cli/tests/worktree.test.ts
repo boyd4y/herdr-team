@@ -131,11 +131,11 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
     });
   });
 
-  test("隔离 agent 只报名字，不带模型（省空间）", () => {
+  test("隔离 agent 的显示角色与内部任务 agent 名分开", () => {
     withProject(oneTask, (p) => {
       const herdr = fakeHerdr();
       dispatch(p, herdr);
-      expect(herdr.calls.some((c) => c.startsWith("report-metadata") && c.endsWith(" dev-0001"))).toBe(true);
+      expect(herdr.calls.some((c) => c.startsWith("report-metadata") && c.endsWith(" dev"))).toBe(true);
     });
   });
 

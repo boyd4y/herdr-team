@@ -31,7 +31,7 @@ make typecheck
 
 ## 快速开始
 
-先按 [插件安装说明](../README.md#安装) 一次安装 CLI、skill、字体和 sidebar，再直接运行：
+先按 [插件安装说明](../README.md#安装) 一次安装 CLI、skill 和 sidebar，再直接运行：
 
 ```sh
 herdr-team --help
@@ -115,46 +115,14 @@ herdr-team dispatch <id>
 `up` 的身份说明和 `handoff` 的交棒提示仍只提交输入，不增加等待。
 `up --json` 返回 workspace 和角色启动结果，已移除原来的 `dispatched` 字段；派活结果由 `dispatch --json` 单独返回。
 
-### 可选的 sidebar 厂商图标
+### Agent 列表
 
-`up` 启动常驻角色、`dispatch` 启动隔离角色时，可以向对应 pane 写入
-`harness_logo` token。[Herdr Team plugin](../README.md) 已包含 CLI、字体、
-Ghostty / kitty 映射、sidebar 行和 `prefix+t` popup，随同一次安装提供。
-字体来源与权利说明见 [THIRD_PARTY_NOTICES.md](../assets/THIRD_PARTY_NOTICES.md)，各厂商商标归各自所有者。
-码点分配与上游 [lib/logos.js 的 PUA 表](https://github.com/hhdebb/herdr-radar/blob/main/lib/logos.js) 一致；
-上游项目采用 [MIT](https://github.com/hhdebb/herdr-radar/blob/main/LICENSE)，
-字体分发附有 [SIL OFL 1.1](https://github.com/hhdebb/herdr-radar/blob/main/dist/OFL.txt)，
-字形来源和权利说明见 [THIRD_PARTY_NOTICES.md](https://github.com/hhdebb/herdr-radar/blob/main/THIRD_PARTY_NOTICES.md)。
+插件把每个 agent 显示为两行：第一行是角色与 harness，第二行是模型与当前任务 ID。
+任务完成或交棒后清除旧负责人的 ID；常驻角色同时有多个任务时列出全部 ID。
+模型来自角色卡，未配置时显示 `default`，不推测 agent 内部当前选择的模型。
 
-终端还必须把图标范围 **U+E1A0–U+E1BA** 显式映射到字体族 `Herdr Agent Icons Max`，
-仅添加 fallback 字体可能被 CJK 字体抢占，显示成汉字或方块。
-Ghostty 配置文件中加入（字体族名不加引号）：
-
-```ini
-font-codepoint-map = U+E1A0-U+E1BA=Herdr Agent Icons Max
-```
-
-kitty 配置文件中加入：
-
-```conf
-symbol_map U+E1A0-U+E1BA Herdr Agent Icons Max
-```
-
-保存后重新打开终端，让字体和映射生效。在 Herdr 的 sidebar agent 行配置中使用
-`$harness_logo`，然后在运行 `herdr-team` 的 shell 中显式启用（可存入 shell 启动配置）：
-
-```sh
-export HERDR_TEAM_LOGOS=font
-```
-
-**macOS 上也必须显式设为 `font`**。依赖 Fontconfig 的终端字体可达性自动检测只适用于
-Linux；本 CLI 在所有平台都不自动检测。不设变量、设为 `off` 或其他值时，一个图标 token
-都不写。这个开关属于本机终端能力，无需修改项目或 `.role.yaml`。
-
-启用后，每次启动写一次，`up` 复用常驻角色时也刷新。token 使用独立 source
-`herdr-team-logo`，TTL 为 **86400000 ms（24 小时）**；没有后台刷新进程，到期会消失。
-关闭开关会停止写入，已写入的 token 自行到期。没有对应字形的 kind（如 `droid`、`letta`）
-不写任何替代图标；按角色的 agent kind 选图标，不根据 model 猜厂商。图标上报失败不阻断启动或派活。
+升级后在项目的 Herdr pane 中运行 `herdr-team sidebar` 刷新现有 agent 的信息，
+再从 Herdr 菜单选择 `reload config` 应用两行布局。该命令不启动或重启 agent。
 
 ### 只读团队看板
 

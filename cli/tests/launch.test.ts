@@ -69,8 +69,8 @@ describe("up —— 幂等：先找后建", () => {
       up(p, herdr);
       expect(herdr.calls.some((c) => c.startsWith("agent start"))).toBe(false);
       // 名字或 model 改过时，不重报就永远不生效
-      expect(herdr.calls).toContain("report-metadata w1:p1 dev (sol-6.1)");
-      expect(herdr.calls).toContain("report-metadata w1:p2 docs (ds-flash)");
+      expect(herdr.calls).toContain("report-metadata w1:p1 dev");
+      expect(herdr.calls).toContain("report-metadata w1:p2 docs");
     });
   });
 

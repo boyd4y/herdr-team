@@ -76,13 +76,17 @@ describe("herdr 客户端 —— 参数拼装", () => {
     ]);
   });
 
-  test("图标 token 用独立 metadata source 和 24 小时 TTL，不修改显示名或状态标签", () => {
+  test("sidebar 字段分别上报，空任务用 clear-token 清除", () => {
     const { fn, calls } = recordingSpawn(WRAP({}));
-    realHerdr(fn).reportTokens("w1:p1", "herdr-team-logo", { harness_logo: "\ue1a1" }, 86_400_000);
-    expect(calls).toEqual([[
-      "pane", "report-metadata", "w1:p1", "--source", "herdr-team-logo",
-      "--ttl-ms", "86400000", "--token", "harness_logo=\ue1a1",
-    ]]);
+    realHerdr(fn).reportMetadata("w1:p1", "herdr-team", "dev", {
+      team_harness: "codex", team_model: "sol-6.1", team_task: null,
+    });
+    expect(calls[0]).toEqual([
+      "pane", "report-metadata", "w1:p1", "--source", "herdr-team",
+      "--display-agent", "dev", "--clear-state-labels",
+      "--token", "team_harness=codex", "--token", "team_model=sol-6.1",
+      "--clear-token", "team_task",
+    ]);
   });
 
   test("workspace close 用 workspace_id", () => {

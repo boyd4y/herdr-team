@@ -205,15 +205,17 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
       state.agents.push({ name, agent: kind, agent_status: "idle", pane_id: paneId });
     },
     agentPrompt: (target, text) => calls.push(`agent prompt ${target} ${text.slice(0, 40)}`),
-    reportMetadata: (paneId, source, displayAgent) => {
+    reportMetadata: (paneId, source, displayAgent, tokens = {}) => {
       calls.push(`report-metadata ${paneId} ${displayAgent}`);
       const agent = state.agents.find((a) => a.pane_id === paneId);
-      if (agent !== undefined) agent.display_agent = displayAgent;
-    },
-    reportTokens: (paneId, source, tokens, ttlMs) => {
-      calls.push(`report-tokens ${paneId} source=${source} ttl=${ttlMs} ${JSON.stringify(tokens)}`);
-      const agent = state.agents.find((a) => a.pane_id === paneId);
-      if (agent !== undefined) agent.tokens = { ...agent.tokens, ...tokens };
+      if (agent !== undefined) {
+        agent.display_agent = displayAgent;
+        agent.tokens ??= {};
+        for (const [key, value] of Object.entries(tokens)) {
+          if (value === null) delete agent.tokens[key];
+          else agent.tokens[key] = value;
+        }
+      }
     },
   };
 }

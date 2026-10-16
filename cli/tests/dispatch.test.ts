@@ -70,17 +70,12 @@ process.stdout.write(JSON.stringify({ result }));
 }
 
 describe("CLI up / dispatch", () => {
-  test.each(["off", "font"])("真实 CLI 的两条启动链路遵守 HERDR_TEAM_LOGOS=%s", (mode) => {
+  test.each(["off", "font"])("旧环境变量 HERDR_TEAM_LOGOS=%s 不再让 up / dispatch 上报图标", (mode) => {
     withCLI((cli, _, calls) => {
       expect(cli("up").code).toBe(0);
       expect(cli("dispatch", "0001").code).toBe(0);
-      const tokens = calls().filter((args) => args.includes("--token"));
-      expect(tokens).toEqual(mode === "font" ? [
-        ["pane", "report-metadata", "w1:p1", "--source", "herdr-team-logo",
-          "--ttl-ms", "86400000", "--token", "harness_logo=\ue1a0"],
-        ["pane", "report-metadata", "w2:p1", "--source", "herdr-team-logo",
-          "--ttl-ms", "86400000", "--token", "harness_logo=\ue1a1"],
-      ] : []);
+      const tokens = calls().filter((args) => args.some((arg) => arg.startsWith("harness_logo=")));
+      expect(tokens).toEqual([]);
     }, "", mode);
   });
 

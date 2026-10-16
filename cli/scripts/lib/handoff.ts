@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join } from "node:path";
 import { cleanupIfDone, type CleanupResult } from "./cleanup.ts";
 import type { Herdr } from "./herdr.ts";
+import { refreshSidebar } from "./sidebar.ts";
 import { findTask, TaskError, writeTaskMeta } from "./task.ts";
 import { TASK_BODY, isTerminal, isolatedAgentName, type Project, type TaskCard } from "./types.ts";
 
@@ -93,6 +94,7 @@ export function handoff(
     const status = "done";
     writeTaskMeta(project, card, { status });
     appendRecord(project, card, `- ${stamp(now)}  done  (${previousStatus} → ${status})`);
+    refreshSidebar(project, herdr);
 
     // 收尾就该把 worktree 收掉，否则每做一个任务就多留一个 checkout。
     const cleanup = cleanupIfDone(project, herdr, { ...card, status });
@@ -121,6 +123,7 @@ export function handoff(
 
   writeTaskMeta(project, card, { role: next, handoff: rest, status });
   appendRecord(project, card, `- ${stamp(now)}  → ${next}  (${previousStatus} → ${status})`);
+  refreshSidebar(project, herdr);
 
   // 下一个负责人是常驻角色还是隔离角色，决定了它的 agent 叫什么。
   const nextRole = project.roles.find((r) => r.name === next);

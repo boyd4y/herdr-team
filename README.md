@@ -1,10 +1,9 @@
 # Herdr Team plugin
 
-一次安装 `herdr-team` skill、内置 CLI、Herdr sidebar 的 `$harness_logo`、配套字体及
-Ghostty / kitty 码点映射，并把 `prefix+t` 绑定到 `herdr-team watch` popup。只有一次性安装脚本，
+一次安装 `herdr-team` skill、内置 CLI、Herdr sidebar 配置，并把 `prefix+t` 绑定到 `herdr-team watch` popup。只有一次性安装脚本，
 无 daemon、无运行时 npm 依赖，不起 agent，也不改项目的 `.herdr/`。
 
-需要 Herdr 0.9.0+、Node 18+、Bun 1.2+，支持 macOS / Linux。CLI、skill、字体和安装脚本
+需要 Herdr 0.9.0+、Node 18+、Bun 1.2+，支持 macOS / Linux。CLI、skill 和安装脚本
 均随插件分发，安装 action 不联网，不再通过 npm 分发 CLI。
 
 ## 安装
@@ -15,7 +14,7 @@ Ghostty / kitty 码点映射，并把 `prefix+t` 绑定到 `herdr-team watch` po
 herdr plugin install boyd4y/herdr-team
 ```
 
-GitHub 安装会运行 `bin/setup.js`，一次装齐 CLI、skill、字体、终端映射及 Herdr 配置，
+GitHub 安装会运行 `bin/setup.js`，一次装齐 CLI、skill 及 Herdr 配置，
 尝试 reload 当前会话。此命令用于独立仓库发布后的分发；本私有仓库不在此流程中发布或 push。
 从这个仓库本地检出开发时，在仓库根目录运行：
 
@@ -40,44 +39,39 @@ herdr-team status
 `status` 需在已有 `.herdr/` 团队配置的项目中运行。没有运行中的 Herdr 时安装仍可完成，
 启动 Herdr 后调用 `configure` 应用配置。
 
-在运行 `herdr-team` 的 shell 中启用图标（如需持久化，由用户加入自己的 shell 配置）：
-
-```sh
-export HERDR_TEAM_LOGOS=font
-```
-
-新开终端窗口，让字体和映射生效；部分终端需要完全退出再打开。安装器不会改
-shell 配置或 Herdr 服务器的环境。`lead` 后续正常运行 `up` / `dispatch` 时，CLI
-按 agent kind 写图标 token；复用常驻角色也会刷新。已有 token 的 TTL 是 24 小时，
-没有后台续期。未启用开关、未知 kind 或没有字形的 kind 不显示厂商图标。
+sidebar 保留 Herdr 自带的状态圆点；agent 第一行显示角色、harness，第二行显示模型和
+任务 ID（有任务时）。不再重复 machine、workspace、tab。模型取角色卡的 `model`，
+未指定时显示 `default`。无需额外字体或环境变量。
+`up`、`dispatch`、`handoff` 和 `edit` 会更新显示；升级后可在项目的 Herdr pane 中运行
+`herdr-team sidebar` 刷新现有 agent，不启动或重启 agent。随后在 Herdr 菜单里选择
+`reload config` 应用布局。
+原生圆点颜色由 Herdr 的运行状态决定；插件不支持按 workspace hash 动态配色。
+升级安装或运行 `configure` 时，会移除旧版插件添加的终端字体映射，以及内容未修改的
+插件字体副本；其他字体和终端配置保留。旧版图标 token 不再显示，并按原 TTL 到期。
 
 ## Actions 和撤销
 
 | Action | 行为 |
 | --- | --- |
-| `herdr-team.install` | 一次安装 CLI、skill、字体、sidebar 和 popup |
+| `herdr-team.install` | 一次安装 CLI、skill、sidebar 和 popup |
 | `herdr-team.install-cli` | 安装内置 CLI 的用户 bin shim；校验 PATH 和 Bun |
 | `herdr-team.uninstall-cli` | 按所有权记录移除未修改的 shim |
 | `herdr-team.configure` | 校验候选配置，写 sidebar 和 popup 托管块，reload 当前会话 |
 | `herdr-team.unconfigure` | 撤掉 Herdr 托管块并 reload |
-| `herdr-team.install-font` | 安装用户字体并映射已有 Ghostty / kitty 配置 |
-| `herdr-team.uninstall-font` | 删除本插件的字体副本及终端托管块 |
 | `herdr-team.install-skill` | 为 PATH 上已安装的 Claude、Codex、Pi 安装 skill；跳过非本插件拥有的同名目录 |
 | `herdr-team.uninstall-skill` | 按所有权记录移除未修改、无额外文件的 skill 目录 |
 
-卸载前先撤 skill、配置、字体和 CLI，再解除本地链接：
+卸载前先撤 skill、配置和 CLI，再解除本地链接：
 
 ```sh
 herdr plugin action invoke herdr-team.uninstall-skill
 herdr plugin action invoke herdr-team.unconfigure
-herdr plugin action invoke herdr-team.uninstall-font
 herdr plugin action invoke herdr-team.uninstall-cli
 herdr plugin unlink herdr-team
 ```
 
 Herdr 自己的插件日志、config/state 目录由 Herdr 管理；skill 安装的所有权记录和引用文档
-缓存保存在插件 state 目录中，配置与字体仍只用托管块，不写备份。
-`unconfigure` 不清除 CLI 的 token；撤掉模板后它们不再显示，并按 CLI 的 TTL 到期。
+缓存保存在插件 state 目录中，配置只用托管块，不写备份。
 
 ## CLI 的安装位置与所有权
 
@@ -116,8 +110,8 @@ Herdr 没有自动卸载 hook，先运行 `uninstall-cli` 再 unlink / 卸载插
 
 内置 skill 独立放在插件的 `skill/` 子目录：正文读取 `skill/SKILL.md`，引用文档和
 agent 元数据分别放在 `skill/references/` 和 `skill/agents/`，不改源文件。
-插件自身的 `bin/`、`assets/`、`tests/` 和 manifest 留在插件根目录。
-只需分发整个 `herdr-team-plugin/` 即可安装 CLI、skill、字体和配置，无需仓库中的其他目录。
+插件自身的 `bin/`、`tests/` 和 manifest 留在插件根目录。
+只需分发整个插件目录即可安装 CLI、skill 和配置，无需仓库中的其他目录。
 根目录 `make validate` 通过 `PACKAGES` 中的 `herdr-team-plugin/skill` 校验独立的
 skill 包。
 
@@ -153,8 +147,7 @@ Herdr 配置优先用 `HERDR_CONFIG_PATH`，其次 `$XDG_CONFIG_HOME/herdr/confi
 运行 `config check`，候选文件检查通过才写入；reload 失败会报错，已保存的配置保留，
 可重跑 action。安装 hook 无可用会话时会提示稍后运行 `configure`。
 
-所有修改都在 `# >>> herdr-team:config` / `# <<< herdr-team:config`，或终端的
-`herdr-team:font` fence 内。块外内容、原有换行及末尾空行逐字保留，重复执行不会
+Herdr 配置修改都在 `# >>> herdr-team:config` / `# <<< herdr-team:config` 托管块内。块外内容、原有换行及末尾空行逐字保留，重复执行不会
 叠加块；撤销能还原原文件，包括安装前没有配置文件的情况。普通 dotfile 符号链接
 保留，悬空链接和残缺/重复 fence 会报错。
 
@@ -164,40 +157,17 @@ Herdr 配置优先用 `HERDR_CONFIG_PATH`，其次 `$XDG_CONFIG_HOME/herdr/confi
 校验拒绝；用户先自行整理冲突后重跑，不会覆盖别的插件。复杂 TOML 写法的已有
 popup 可能无法识别为可复用，仍由 Herdr 校验阻止重复绑定。
 
-macOS 字体装到 `~/Library/Fonts/HerdrTeamAgentIconsMax-Regular.ttf`；Linux 装到
-`${XDG_DATA_HOME:-~/.local/share}/fonts/`，尽力调用 `fc-cache`。本插件使用独立文件名，
-不移除手工安装或其他插件的字体副本；同名文件内容不符时拒绝覆盖/删除。
-
-终端只修改已存在的配置文件：
-
-- Ghostty：`$XDG_CONFIG_HOME/ghostty/config`、`config.ghostty`（默认 `~/.config/`）；
-  macOS 也检查 `~/Library/Application Support/com.mitchellh.ghostty/` 下的两个文件。
-- kitty：`$XDG_CONFIG_HOME/kitty/kitty.conf`（默认 `~/.config/`）。
-
-码点映射来自字体实际 Unicode 字形，按连续范围推导，不写死上界。不更换主字体，
-字体族名不加引号。不创建缺失的终端配置；未找到文件时输出范围供用户配置后重跑。
-其他终端需自行指定逐码点字体；不支持逐码点映射的终端不在自动安装范围内。
-
-## 字体来源与离线验证
-
-字体原样来自 [hhdebb/herdr-radar 的固定修订](https://github.com/hhdebb/herdr-radar/tree/ae46869a0a40f675a333342510c915dbc155ae6a)
-（18,052 bytes），字形设计继承自 MIT 的 `qintmb/herdr-icon-agent-ui`。
-assets 包含完整 [SIL OFL 1.1](assets/OFL.txt)、[MIT 通知](assets/ICON-LICENSE.txt)
-及 [逐厂商出处表](assets/THIRD_PARTY_NOTICES.md)。厂商商标归各自所有者，不代表关联或背书。
+## 验证
 
 测试位于本包 `tests/*.test.cjs`，使用 Node 内置测试器。在本包目录运行：
 
 ```sh
-node bin/check-font.js
 node --test tests/*.test.cjs
 ```
 
 仓库根目录的 `make plugin-test` 运行同一组检查，`make verify` 已包含它。
-检查直接解析 TTF 的 cmap、post、family 与轮廓索引，将厂商名字和码点逐个与
-`herdr-team-plugin/cli/scripts/lib/logos.ts` 比较；增减、换位、缺字或字体族名变化都会失败。
-一致性检查读取插件内置 CLI 源码；整个插件可独立分发，CLI 和 skill 撤销只需所有权记录。
-测试用临时 HOME、XDG 目录及假的 Herdr / font cache 命令，验证精确回滚、幂等、
-独立分发和冲突拒绝，不依赖网络或活 workspace。
+测试使用临时 HOME、XDG 目录和假的 Herdr 命令，验证精确回滚、幂等、独立分发、
+冲突拒绝，以及旧版图标配置的清理，不依赖网络或活 workspace。
 
 skill 测试另外显式设置 `HERDR_TEAM_SKILL_DIRS`，以系统路径分隔符（macOS / Linux
 为 `:`）指定临时 skills 根目录列表；该变量完全替代 agent 发现，空值表示禁用安装。
