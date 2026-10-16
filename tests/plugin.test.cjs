@@ -256,21 +256,25 @@ test('writes preserve dotfile symlinks and reject non-UTF8 config', (t) => {
   assert(!fs.existsSync(absent));
 });
 
-test('build hook installs skill, configuration and font; actions work in a full checkout', (t) => {
+test('standalone plugin build hook and actions install skill, configuration and font', (t) => {
   const f = fixture(t);
   const original = '# before setup\n[ui]\n';
   f.put(f.herdrConfig, original);
   f.put(f.paths.terminals[0].file, '# ghostty');
-  f.ok('setup.js');
+  const standalone = path.join(f.dir, 'standalone');
+  fs.cpSync(root, standalone, { recursive: true, filter: (file) => path.basename(file) !== 'tests' });
+  const setup = () => {
+    const result = spawnSync(process.execPath, ['bin/setup.js'], {
+      cwd: standalone, env: f.env, encoding: 'utf8', timeout: 10000,
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  };
+  setup();
   assert(fs.readFileSync(f.herdrConfig, 'utf8').includes('$harness_logo'));
   assert(fs.existsSync(path.join(f.paths.fonts, BASENAME)));
   const skillFile = path.join(f.env.HERDR_TEAM_SKILL_DIRS, 'herdr-team', 'SKILL.md');
   assert(fs.readFileSync(skillFile, 'utf8').includes('name: herdr-team'));
-  f.ok('setup.js');
-  // GitHub subdirectory installs retain the sibling skill in their checkout.
-  const standalone = path.join(f.dir, 'standalone');
-  fs.cpSync(root, standalone, { recursive: true, filter: (file) => path.basename(file) !== 'tests' });
-  fs.cpSync(path.join(root, '..', 'herdr-team'), path.join(f.dir, 'herdr-team'), { recursive: true });
+  setup();
   const manifest = fs.readFileSync(path.join(standalone, 'herdr-plugin.toml'), 'utf8');
   const actions = [...manifest.matchAll(/\[\[actions\]\]\nid = "([^"]+)"\ntitle = "[^"]+"\ncommand = (\[[^\n]+\])/g)];
   assert.deepEqual(actions.map(([, id]) => id), ['configure', 'unconfigure', 'install-font', 'uninstall-font', 'install-skill', 'uninstall-skill']);

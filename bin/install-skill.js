@@ -66,9 +66,9 @@ function readState(file) {
 }
 
 function skillText(stateDir) {
-  // GitHub subdirectory installs retain the whole checkout, including this
-  // sibling skill. No npm package, network or installed skill is needed.
-  const source = path.resolve(__dirname, '../../herdr-team');
+  // The plugin bundles its skill and references for standalone distribution.
+  // No npm package, network or installed skill is needed.
+  const source = path.resolve(__dirname, '..');
   const text = fs.readFileSync(path.join(source, 'SKILL.md'), 'utf8');
   const refs = path.join(source, 'references');
   const documents = fs.readdirSync(refs).sort().map((name) => {

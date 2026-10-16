@@ -73,16 +73,15 @@ Herdr 自己的插件日志、config/state 目录由 Herdr 管理；skill 安装
 | `codex` | `~/.codex/skills` | `$CODEX_HOME/skills` |
 | `pi` | `~/.pi/agent/skills` | `$PI_CODING_AGENT_DIR/skills` |
 
-每个目标中只创建 `herdr-team/SKILL.md`。已有的同名目录、普通文件及符号链接
+每个目标中只创建名为 `herdr-team` 的目录及其中的 `SKILL.md`。已有的同名目录、普通文件及符号链接
 （包括旧的手动安装链接）都跳过，不接管、不覆盖；输出会列出跳过的路径。
 新装 agent 后可重新运行 `install-skill`。如果希望用插件管理旧的手动安装，需先自行
 移走原入口，再运行 action；安装器不会替用户迁移它。
 
-正文直接读取同一检出中的 `../herdr-team/SKILL.md`，不改源文件。
-[Herdr v0.9.3 安装器](https://github.com/herdrdev/herdr/blob/v0.9.3/src/cli/plugin.rs)
-的 `git_checkout` / `manifest_root` 保留整仓库，仅将插件根指向子目录，因此 sibling
-skill 可达；离线测试也使用这个整仓库布局。不能只分发 `herdr-team-plugin/` 后安装 skill，
-需要保留相邻的 `herdr-team/`；缺少源文件时明确报错。
+正文直接读取插件根目录的 `SKILL.md`，引用文档和 agent 元数据分别放在插件内的
+`references/` 和 `agents/`，不改源文件。只需分发 `herdr-team-plugin/` 即可安装 skill，
+无需仓库中的其他目录。根目录 `make validate` 已实际验证这种混合目录可被
+`quick_validate.py` 接受，插件内的 skill 仍在 `PACKAGES` 中参与校验。
 
 安装正文与源文件的唯一差异：两个 `references/*.md` 链接改成带尖括号的绝对路径。
 安装器将完整 `references/` 文档复制到插件 state 下
@@ -92,7 +91,7 @@ skill 可达；离线测试也使用这个整仓库布局。不能只分发 `her
 
 state 优先使用 action 注入的 `HERDR_PLUGIN_STATE_DIR`。build hook 没有该变量时，
 按 Herdr 的 Unix 约定使用
-`${XDG_STATE_HOME:-~/.local/state}/herdr/plugins/linxai.herdr-team/`。
+`${XDG_STATE_HOME:-~/.local/state}/herdr/plugins/linxai.herdr-team`。
 `skill-paths.json` 记录每个已创建目录的路径、设备号、inode 和正文摘要；每创建一个
 目录就先保存记录，再写正文。内容没变时不重写正文、引用文档或记录。
 
@@ -158,8 +157,8 @@ node --test tests/*.test.cjs
 仓库根目录的 `make plugin-test` 运行同一组检查，`make verify` 已包含它。
 检查直接解析 TTF 的 cmap、post、family 与轮廓索引，将厂商名字和码点逐个与
 `herdr-team-cli/scripts/lib/logos.ts` 比较；增减、换位、缺字或字体族名变化都会失败。
-跨包一致性检查仅在开发验证时读 CLI 源码；字体和配置 action 可独立分发，
-skill 安装另需整仓库检出中的 sibling skill，skill 撤销只需所有权记录。
+跨包一致性检查仅在开发验证时读 CLI 源码；skill、字体和配置 action 随插件目录
+独立分发，skill 撤销只需所有权记录。
 测试用临时 HOME、XDG 目录及假的 Herdr / font cache 命令，验证精确回滚、幂等、
 独立分发和冲突拒绝，不依赖网络或活 workspace。
 
