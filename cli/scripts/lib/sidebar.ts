@@ -1,7 +1,9 @@
 import { findRoot, loadProject } from "./config.ts";
-import { projectKey, projectAgents, roleAssignment } from "./team-scope.ts";
+import { findRoleAgent, projectKey, projectAgents, roleAssignment } from "./team-scope.ts";
 import { badgeTokens, type Herdr } from "./herdr.ts";
 import type { Project, RoleCard } from "./types.ts";
+import { rememberRoleSession } from "./sessions.ts";
+import { waitingDelivery } from "./delivery.ts";
 
 /** Keep display fields separate from the unique name used to address an agent. */
 export function reportRoleSidebar(
@@ -9,6 +11,7 @@ export function reportRoleSidebar(
 ): void {
   const tasks = project.tasks
     .filter((task) => task.role === role.name && ["doing", "review", "blocked"].includes(task.status))
+    .filter((task) => !waitingDelivery(task))
     .filter((task) => isolatedTaskId === undefined || task.id === isolatedTaskId)
     .map((task) => task.id)
     .sort();
@@ -30,17 +33,21 @@ export function reportRoleSidebar(
 }
 
 /** Refresh after task changes, including clearing completed or handed-off IDs. */
-export function refreshSidebar(project: Project, herdr: Herdr): { updated: number; failed: number } {
+export function refreshSidebar(project: Project, herdr: Herdr, sessionsOnly = false): { updated: number; failed: number } {
   const result = { updated: 0, failed: 0 };
   if (!herdr.envOk()) return result;
   try {
     const fresh = loadProject(project.root);
-    for (const agent of projectAgents(fresh, herdr)) {
+    const agents = projectAgents(fresh, herdr);
+    for (const agent of agents) {
       if (!agent.pane_id) continue;
       const assignment = roleAssignment(fresh, agent);
       if (!assignment) continue;
       try {
-        reportRoleSidebar(fresh, herdr, agent.pane_id, assignment.role, assignment.taskId);
+        // Ambiguous resident roles must not overwrite each other's native session ID.
+        if (!assignment.role.worktree) findRoleAgent(fresh, agents, assignment.role);
+        rememberRoleSession(fresh, assignment.role, agent);
+        if (!sessionsOnly) reportRoleSidebar(fresh, herdr, agent.pane_id, assignment.role, assignment.taskId);
         result.updated++;
       } catch { result.failed++; }
     }
@@ -49,7 +56,7 @@ export function refreshSidebar(project: Project, herdr: Herdr): { updated: numbe
 }
 
 /** One-shot session refresh for plugin hooks, independent of the caller's cwd. */
-export function refreshSessionSidebar(herdr: Herdr): { updated: number; failed: number } {
+export function refreshSessionSidebar(herdr: Herdr, sessionsOnly = false): { updated: number; failed: number } {
   const result = { updated: 0, failed: 0 };
   if (!herdr.envOk()) return result;
   try {
@@ -61,7 +68,7 @@ export function refreshSessionSidebar(herdr: Herdr): { updated: number; failed: 
     }
     for (const root of roots) {
       try {
-        const refreshed = refreshSidebar(loadProject(root), herdr);
+        const refreshed = refreshSidebar(loadProject(root), herdr, sessionsOnly);
         result.updated += refreshed.updated;
         result.failed += refreshed.failed;
       } catch { result.failed++; }

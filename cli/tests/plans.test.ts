@@ -78,7 +78,7 @@ describe("planRoles", () => {
 
 describe("describePlan", () => {
   test("回显时标出谁隔离", () => {
-    expect(describePlan("balanced")).toContain("dev=sol-6.1(隔离)");
+    expect(describePlan("balanced")).toContain("dev=sol-6.1(isolated)");
     expect(describePlan("balanced")).toContain("lead=ds-flash");
   });
 });
@@ -99,10 +99,10 @@ describe("init --plan 的产物", () => {
           expect(role.body).toContain(table);
           expect(role.body).toContain("herdr-team handoff <id>");
           if (role.name !== "lead") {
-            expect(role.body).toContain("你只能跑 `handoff <id>` 和只读查询");
-            expect(role.body).toContain("不建分支、不合并、不删分支、不碰 main");
+            expect(role.body).toContain("limited to `claim <id> --delivery ID`, `handoff <id> --delivery ID`, and read-only queries");
+            expect(role.body).toContain("do not create, merge, or delete branches, or modify main");
           }
-          if (role.name === "test") expect(role.body).toContain("由 `dev` 修改、`test` 验证");
+          if (role.name === "test") expect(role.body).toContain("`dev` to fix and `test` to verify");
         }
       } finally { cleanup(); }
     }

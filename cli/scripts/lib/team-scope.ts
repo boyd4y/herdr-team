@@ -28,7 +28,7 @@ export function resolveProjectWorkspace(project: Project, herdr: Herdr): string 
     return herdr.paneList(w.workspace_id).some((pane) => pane.cwd && findRoot(pane.cwd) === root);
   });
   if (matches.length > 1) throw new TeamScopeError(
-    `项目 ${project.root} 对应多个 workspace（${matches.map((w) => w.workspace_id).join(", ")}），不要猜；请先确认团队归属。`,
+    `Project ${project.root} matches multiple workspaces (${matches.map((w) => w.workspace_id).join(", ")}); resolve ownership before continuing`,
   );
   return matches[0]?.workspace_id ?? null;
 }
@@ -37,7 +37,7 @@ export function bindProjectWorkspace(project: Project, herdr: Herdr, workspaceId
   const workspace = herdr.workspaceList().find((w) => w.workspace_id === workspaceId);
   const key = projectKey(project);
   if (workspace?.tokens?.team_project !== undefined && workspace.tokens.team_project !== key) {
-    throw new TeamScopeError(`${workspaceId} 属于另一个项目，拒绝接管`);
+    throw new TeamScopeError(`${workspaceId} belongs to another project; refusing takeover`);
   }
   herdr.reportWorkspaceMetadata(workspaceId, { team_project: key, team_root: root ? "1" : "0" });
 }
@@ -47,10 +47,10 @@ export function assertProjectWorkspace(project: Project, herdr: Herdr, workspace
   const workspace = herdr.workspaceList().find((w) => w.workspace_id === workspaceId);
   const owner = workspace?.tokens?.team_project;
   if (owner === projectKey(project)) return;
-  if (owner !== undefined) throw new TeamScopeError(`${workspaceId} 属于另一个项目，拒绝复用或回收`);
+  if (owner !== undefined) throw new TeamScopeError(`${workspaceId} belongs to another project; refusing reuse or removal`);
   const root = realpathSync(project.root);
   if (workspace && herdr.paneList(workspaceId).some((pane) => pane.cwd && findRoot(pane.cwd) === root)) return;
-  throw new TeamScopeError(`${workspaceId} 没有可验证的项目归属，拒绝复用或回收`);
+  throw new TeamScopeError(`${workspaceId} has no verifiable project ownership; refusing reuse or removal`);
 }
 
 /** Legacy agents require cwd evidence; newly reported agents have a full project key. */
@@ -102,7 +102,7 @@ export function findRoleAgent(project: Project, agents: AgentInfo[], role: RoleC
     const assignment = roleAssignment(project, agent);
     return assignment?.role.name === role.name && assignment.taskId === taskId;
   });
-  if (matches.length > 1) throw new TeamScopeError(`项目内角色 ${role.name}${taskId ? `/${taskId}` : ""} 对应多个 agent，不要猜`);
+  if (matches.length > 1) throw new TeamScopeError(`Role ${role.name}${taskId ? `/${taskId}` : ""} matches multiple project agents; refusing to guess`);
   return matches[0];
 }
 
@@ -112,6 +112,6 @@ export function availableAgentName(project: Project, herdr: Herdr, role: RoleCar
   const names = new Set(herdr.agentList().map((agent) => agent.name));
   if (plain.length <= 32 && !names.has(plain)) return plain;
   const scoped = scopedAgentName(project, role.name, taskId);
-  if (names.has(scoped)) throw new TeamScopeError(`agent 名 ${scoped} 已占用，拒绝复用不明归属的 agent`);
+  if (names.has(scoped)) throw new TeamScopeError(`Agent name ${scoped} is already taken; refusing to reuse an unverified agent`);
   return scoped;
 }

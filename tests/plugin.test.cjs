@@ -111,8 +111,9 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     assert(applied.includes('{ token = "$team_workspace_c0", fg = "#89b4fa", bold = true, dim = false }'));
     assert(!applied.includes('$harness_logo'));
     assert(applied.includes('key = "prefix+t"'));
-    assert(applied.includes('command = "herdr-team watch"'));
+    assert(applied.includes('command = "herdr-team console --observe"'));
     assert(applied.includes('"$team_label", "$team_harness"'));
+    assert(applied.includes('["branch", { token = "$team_git_files", fg = "#f9e2af", dim = false }, "git_status"]'));
     assert(!applied.includes('"agent", "$team_harness"'));
     assert(!applied.includes(', "workspace"]'));
     assert(applied.startsWith(original || ''));
@@ -134,7 +135,7 @@ test('an existing identical popup is reused, stays outside the fence and survive
   const original = `${POPUP}\n\n[ui]\nsidebar_width=30\n`;
   f.put(f.herdrConfig, original);
   assert(existingPopup(original));
-  assert(!existingPopup(original.replace('herdr-team watch', 'other-command')));
+  assert(!existingPopup(original.replace('herdr-team console --observe', 'other-command')));
   f.ok('configure.js');
   f.ok('configure.js');
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8').match(/prefix\+t/g).length, 1);
@@ -262,6 +263,8 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   assert(manifest.includes('[[startup]]'));
   assert(manifest.includes('on = "workspace.created"'));
   assert(manifest.includes('on = "pane.agent_detected"'));
+  assert(manifest.includes('on = "pane.agent_status_changed"'));
+  assert(manifest.includes('"sidebar", "--auto", "--sessions-only"'));
   assert(manifest.includes('"sidebar", "--auto"'));
   assert(!manifest.includes('"sidebar", "--badges-only"'));
 });

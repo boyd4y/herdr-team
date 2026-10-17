@@ -6,7 +6,7 @@ import { emitYaml, parseYaml } from "./yaml.ts";
 /** 角色元数据里键的顺序。**不含 `name`** —— 角色名就是目录名。 */
 export const ROLE_FIELD_ORDER = ["kind", "model", "worktree", "cwd", "args", "env"];
 
-const DEFAULT_BODY = "你负责这件事。\n\n完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。\n";
+const DEFAULT_BODY = "You own this work.\n\nWhen done, run `herdr-team handoff <id>`. Do not edit task cards yourself.\n";
 
 export class RoleError extends Error {}
 
@@ -32,7 +32,7 @@ export interface AddRoleResult {
 
 function assertName(name: string): void {
   if (!NAME_RE.test(name)) {
-    throw new RoleError(`角色名 "${name}" 必须匹配 ${NAME_RE}（小写字母开头，只用字母数字和 -）`);
+    throw new RoleError(`Role name "${name}" must match ${NAME_RE} (start with a lowercase letter; use letters, digits and hyphens)`);
   }
 }
 
@@ -50,16 +50,16 @@ export function addRole(project: Project, opts: AddRoleOptions): AddRoleResult {
   const existed = existsSync(metaPath);
   if (existed && opts.force !== true) {
     throw new RoleError(
-      `角色 "${opts.name}" 已经存在。更新加 --force；改职责用 --force --body 或 --body-file，省略正文则保留 prompt.md。`,
+      `Role "${opts.name}" already exists. Use --force to update; use --force --body or --body-file to replace responsibilities, otherwise prompt.md is preserved.`,
     );
   }
 
   const meta = existed ? parseYaml(readFileSync(metaPath, "utf8")) : {};
-  if (meta === null) throw new RoleError(`角色 "${opts.name}" 的 ${ROLE_META} 不是合法的 YAML 映射`);
+  if (meta === null) throw new RoleError(`Role "${opts.name}" has an invalid YAML mapping in ${ROLE_META}`);
   const kind = opts.kind ?? meta["kind"];
-  if (kind === undefined) throw new RoleError("新角色的 --kind 是必填的（codex / claude / grok / kimi …）");
+  if (kind === undefined) throw new RoleError("--kind is required for new roles (codex / claude / grok / kimi ...)");
   if (typeof kind !== "string" || !(KINDS as readonly string[]).includes(kind)) {
-    throw new RoleError(`kind "${kind}" 不在枚举内`);
+    throw new RoleError(`Unsupported kind "${kind}"`);
   }
   meta["kind"] = kind;
   if (opts.model !== undefined) meta["model"] = opts.model;
@@ -113,16 +113,16 @@ export function removeRole(project: Project, name: string, force = false): Remov
 
   const role: RoleCard | undefined = project.roles.find((r) => r.name === name);
   if (role === undefined) {
-    const known = project.roles.map((r) => r.name).join(", ") || "（没有角色）";
-    throw new RoleError(`没有 "${name}" 这个角色。现有：${known}`);
+    const known = project.roles.map((r) => r.name).join(", ") || "(no roles)";
+    throw new RoleError(`Unknown role "${name}". Available: ${known}`);
   }
 
   if (!force) {
     const used = tasksUsingRole(project, name);
     if (used.length > 0) {
       throw new RoleError(
-        `还有 ${used.length} 个没结束的任务用着 "${name}"（${used.join(", ")}）。` +
-          `先处理它们，或者改用 cancel / 换角色。确实要删就加 --force。`,
+        `${used.length} active tasks still reference "${name}" (${used.join(", ")}).` +
+          `Finish, cancel, or reassign them first. Use --force to remove the role anyway.`,
       );
     }
   }
@@ -141,6 +141,6 @@ export function describeRole(role: RoleCard): string {
 
 export function readBodyFile(path: string): string {
   if (path === "-") return readFileSync(0, "utf8");
-  if (!existsSync(path)) throw new RoleError(`找不到 ${path}`);
+  if (!existsSync(path)) throw new RoleError(`File not found: ${path}`);
   return readFileSync(path, "utf8");
 }

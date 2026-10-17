@@ -3,7 +3,7 @@ import { loadProject } from "../scripts/lib/config.ts";
 import { dispatch, up } from "../scripts/lib/launch.ts";
 import { handoff } from "../scripts/lib/handoff.ts";
 import { refreshSessionSidebar, refreshSidebar } from "../scripts/lib/sidebar.ts";
-import { fakeHerdr, makeProject, roleMeta, runningWorkspace, taskMeta, twoResidentRoles, writeRole, writeTask } from "./helpers.ts";
+import { claimCurrent, fakeHerdr, makeProject, roleMeta, runningWorkspace, taskMeta, twoResidentRoles, writeRole, writeTask } from "./helpers.ts";
 
 describe("agent sidebar 的两行信息", () => {
   test("角色与 harness 独立，模型不再拼进角色名，无任务时清空旧 ID", () => {
@@ -28,10 +28,10 @@ describe("agent sidebar 的两行信息", () => {
       dispatch(loadProject(root), herdr, "0001");
       expect(herdr.state.agents[0]!.tokens?.team_task).toBe("#0001");
       expect(herdr.state.agents[1]!.tokens?.team_task).toBeUndefined();
-      handoff(loadProject(root), herdr, "0001");
+      handoff(loadProject(root), herdr, "0001", new Date(), { delivery: claimCurrent(root) });
       expect(herdr.state.agents[0]!.tokens?.team_task).toBeUndefined();
       expect(herdr.state.agents[1]!.tokens?.team_task).toBe("#0001");
-      handoff(loadProject(root), herdr, "0001");
+      handoff(loadProject(root), herdr, "0001", new Date(), { delivery: claimCurrent(root) });
       expect(herdr.state.agents.every((agent) => agent.tokens?.team_task === undefined)).toBe(true);
     } finally { cleanup(); }
   });
@@ -44,9 +44,10 @@ describe("agent sidebar 的两行信息", () => {
       writeTask(root, "0002-b", taskMeta());
       const herdr = fakeHerdr();
       dispatch(loadProject(root), herdr);
+      expect(herdr.state.agents).toHaveLength(1);
+      expect(loadProject(root).tasks[1]!.meta.delivery).toMatchObject({ state: "queued" });
       expect(herdr.state.agents.map((agent) => [agent.name, agent.display_agent, agent.tokens])).toMatchObject([
         ["dev-0001", "dev", { team_harness: "codex", team_model: "sol-6.1", team_task: "#0001" }],
-        ["dev-0002", "dev", { team_harness: "codex", team_model: "sol-6.1", team_task: "#0002" }],
       ]);
     } finally { cleanup(); }
   });

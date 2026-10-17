@@ -1,3 +1,6 @@
+import { loadProject } from "../scripts/lib/config.ts";
+import { deliveryFor } from "../scripts/lib/delivery.ts";
+import { claimTask } from "../scripts/lib/queue.ts";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +17,8 @@ import { badgeTokens, type AgentInfo, type Herdr, type PaneInfo, type TabInfo, t
  * 在导入期就把覆盖目录指到临时处。
  */
 process.env["HERDR_TEAM_TRUST_HOME"] = mkdtempSync(join(tmpdir(), "herdr-team-trusthome-"));
+// Never write native session references into the user's real plugin state.
+process.env["HERDR_PLUGIN_STATE_DIR"] = mkdtempSync(join(tmpdir(), "herdr-team-state-"));
 
 let fixtureProjectRoot = "/tmp/myproj";
 
@@ -205,6 +210,10 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
       calls.push(`pane close ${paneId}`);
       state.agents = state.agents.filter((a) => a.pane_id !== paneId);
     },
+    paneRun: (paneId, command) => {
+      calls.push(`pane run ${paneId} ${command}`);
+    },
+    paneIsShell: (paneId) => !state.agents.some((a) => a.pane_id === paneId),
     workspaceCloseGroup: (workspaceId) => {
       calls.push(`workspace close ${workspaceId} --group`);
       state.workspaces = state.workspaces.filter((w) => w.workspace_id !== workspaceId);
@@ -221,7 +230,13 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
     reportWorkspaceMetadata: (id, tokens) => {
       calls.push(`report-workspace ${id}`);
       const workspace = state.workspaces.find((w) => w.workspace_id === id);
-      if (workspace) workspace.tokens = { ...workspace.tokens, ...tokens };
+      if (workspace) {
+        workspace.tokens ??= {};
+        for (const [key, value] of Object.entries(tokens)) {
+          if (value === null) delete workspace.tokens[key];
+          else workspace.tokens[key] = value;
+        }
+      }
     },
     reportBadge: (scope, id, badge, colorSlot = 0, label) => {
       calls.push(`report-badge ${scope} ${id} ${badge}`);
@@ -245,6 +260,14 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
           else agent.tokens[key] = value;
         }
       }
+      const pane = state.panes.find((p) => p.pane_id === paneId);
+      if (pane) {
+        pane.tokens ??= {};
+        for (const [key, value] of Object.entries(tokens)) {
+          if (value === null) delete pane.tokens[key];
+          else pane.tokens[key] = value;
+        }
+      }
     },
   };
 }
@@ -265,4 +288,13 @@ export function runningWorkspace(label = "myproj"): FakeHerdr {
   herdr.live("dev", "w1:p1");
   herdr.live("docs", "w1:p2");
   return herdr;
+}
+
+/** Simulate the agent acknowledging the exact assignment received in its prompt. */
+export function claimCurrent(root: string, id = "0001"): string {
+  const project = loadProject(root);
+  const delivery = deliveryFor(project.tasks.find((t) => t.id === id)!);
+  if (!delivery) throw new Error("Expected an active delivery");
+  claimTask(project, id, delivery.id);
+  return delivery.id;
 }

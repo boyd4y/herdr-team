@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
   ID_RE,
@@ -13,6 +14,8 @@ import {
 } from "./types.ts";
 import { emitYaml } from "./yaml.ts";
 import { formatProblems, validateTaskDependencies } from "./validate.ts";
+import { loadProject } from "./config.ts";
+import { withTeamLock } from "./runtime.ts";
 
 /** 元数据里键的顺序，写出去时保持稳定，diff 才好看。 */
 export const TASK_FIELD_ORDER = ["title", "priority", "status", "role", "handoff", "depends_on"];
@@ -31,7 +34,7 @@ export function nextId(project: Project): string {
     .filter((n) => Number.isFinite(n));
   const max = used.length > 0 ? Math.max(...used) : 0;
   if (max >= ID_CEILING) {
-    throw new TaskError(`id 已用尽（${max} >= ${ID_CEILING}），需要人工介入`);
+    throw new TaskError(`Task IDs exhausted (${max} >= ${ID_CEILING}); manual intervention required`);
   }
   return String(max + 1).padStart(4, "0");
 }
@@ -58,16 +61,16 @@ export function roleNames(project: Project): string[] {
 function assertRole(project: Project, role: string, field: string): void {
   const names = roleNames(project);
   if (!names.includes(role)) {
-    const available = names.length > 0 ? names.join(", ") : "（本项目还没有角色）";
-    throw new TaskError(`${field} "${role}" 解析不到角色。可用角色：${available}`);
+    const available = names.length > 0 ? names.join(", ") : "(no roles in this project)";
+    throw new TaskError(`${field} "${role}" does not resolve to a role. Available: ${available}`);
   }
 }
 
 export function findTask(project: Project, id: string): TaskCard {
   const card = project.tasks.find((t) => t.id === id);
   if (card === undefined) {
-    const known = project.tasks.map((t) => t.id).join(", ") || "（没有任务）";
-    throw new TaskError(`找不到任务 ${id}。现有：${known}`);
+    const known = project.tasks.map((t) => t.id).join(", ") || "(no tasks)";
+    throw new TaskError(`Task ${id} not found. Available: ${known}`);
   }
   return card;
 }
@@ -89,7 +92,15 @@ function writeBody(dir: string, body: string): void {
 export function writeTaskMeta(project: Project, card: TaskCard, patch: Record<string, unknown>): void {
   const dir = join(project.herdrDir, card.dir);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, TASK_META), emitYaml({ ...card.meta, ...patch }, TASK_FIELD_ORDER));
+  const destination = join(dir, TASK_META);
+  const temporary = `${destination}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, emitYaml({ ...card.meta, ...patch }, TASK_FIELD_ORDER), { flag: "wx" });
+    renameSync(temporary, destination);
+  } finally {
+    try { unlinkSync(temporary); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  }
 }
 
 export interface CreateOptions {
@@ -111,29 +122,29 @@ export interface CreatedTask {
 
 export function createTask(project: Project, opts: CreateOptions): CreatedTask {
   const title = opts.title.trim();
-  if (title === "") throw new TaskError("title 不能为空");
-  if (title.length > 80) throw new TaskError(`title 长度 ${title.length} 超过 80`);
+  if (title === "") throw new TaskError("title cannot be empty");
+  if (title.length > 80) throw new TaskError(`title length ${title.length} exceeds 80`);
 
   assertRole(project, opts.role, "role");
-  for (const h of opts.handoff) assertRole(project, h, "handoff 里的");
+  for (const h of opts.handoff) assertRole(project, h, "handoff entry");
 
   if (!(PRIORITIES as readonly string[]).includes(opts.priority)) {
-    throw new TaskError(`priority "${opts.priority}" 必须是 ${PRIORITIES.join(" / ")} 之一`);
+    throw new TaskError(`priority "${opts.priority}" must be one of ${PRIORITIES.join(" / ")}`);
   }
 
   const slug = opts.slug ?? deriveSlug(title);
   if (slug === null) {
     throw new TaskError(
-      "标题含非 ASCII 字符，无法自动派生英文 slug。用 --slug 给一个（小写英文 kebab-case）。",
+      "Cannot derive an ASCII slug from this title. Supply --slug in lowercase kebab-case.",
     );
   }
-  if (!SLUG_RE.test(slug)) throw new TaskError(`slug "${slug}" 必须匹配 ${SLUG_RE}`);
-  if (slug.length > SLUG_MAX) throw new TaskError(`slug 长度 ${slug.length} 超过 ${SLUG_MAX}`);
+  if (!SLUG_RE.test(slug)) throw new TaskError(`slug "${slug}" must match ${SLUG_RE}`);
+  if (slug.length > SLUG_MAX) throw new TaskError(`slug length ${slug.length} exceeds ${SLUG_MAX}`);
 
   const id = nextId(project);
   const dirName = `${id}-${slug}`;
   const dir = join(project.herdrDir, "tasks", dirName);
-  if (existsSync(dir)) throw new TaskError(`tasks/${dirName} 已存在`);
+  if (existsSync(dir)) throw new TaskError(`tasks/${dirName} already exists`);
 
   const dependsOn = opts.dependsOn ?? [];
   assertDependencies(project, { id, dir: `tasks/${dirName}`, dependsOn });
@@ -180,26 +191,30 @@ export function editTask(
   patch: EditOptions,
   force: boolean,
 ): { dir: string } {
+  return withTeamLock(project, "queue", () => editTaskLocked(loadProject(project.root), id, patch, force));
+}
+
+function editTaskLocked(project: Project, id: string, patch: EditOptions, force: boolean): { dir: string } {
   const card = findTask(project, id);
 
   if (isTerminal(card.status)) {
-    throw new TaskError(`${id} 已是终态（${card.status}），不再修改。要新活就新开一个。`);
+    throw new TaskError(`${id} is terminal (${card.status}); create a new task instead of editing it`);
   }
   if (card.status !== "todo" && !force) {
     throw new TaskError(
-      `${id} 的 status 是 ${card.status}，不是 todo —— 它可能已经派出去了。确认要改就用 --force。`,
+      `${id} is ${card.status}, not todo; it may already be dispatched. Use --force to edit it.`,
     );
   }
 
   if (patch.title !== undefined) {
     const title = patch.title.trim();
-    if (title === "") throw new TaskError("title 不能为空");
-    if (title.length > 80) throw new TaskError(`title 长度 ${title.length} 超过 80`);
+    if (title === "") throw new TaskError("title cannot be empty");
+    if (title.length > 80) throw new TaskError(`title length ${title.length} exceeds 80`);
   }
   if (patch.role !== undefined) assertRole(project, patch.role, "role");
-  for (const h of patch.handoff ?? []) assertRole(project, h, "handoff 里的");
+  for (const h of patch.handoff ?? []) assertRole(project, h, "handoff entry");
   if (patch.priority !== undefined && !(PRIORITIES as readonly string[]).includes(patch.priority)) {
-    throw new TaskError(`priority "${patch.priority}" 必须是 ${PRIORITIES.join(" / ")} 之一`);
+    throw new TaskError(`priority "${patch.priority}" must be one of ${PRIORITIES.join(" / ")}`);
   }
   if (patch.dependsOn !== undefined) {
     assertDependencies(project, { ...card, dependsOn: patch.dependsOn });
@@ -212,6 +227,9 @@ export function editTask(
   if (patch.dependsOn !== undefined) meta["depends_on"] = patch.dependsOn;
   if (patch.priority !== undefined) meta["priority"] = patch.priority;
   if (patch.status !== undefined) meta["status"] = patch.status;
+  if (patch.role !== undefined && patch.role !== card.role || patch.status === "todo" || patch.status === "cancelled") {
+    meta["delivery"] = null;
+  }
   if (Object.keys(meta).length > 0) writeTaskMeta(project, card, meta);
 
   // 正文只在显式给了 --body 时才动。

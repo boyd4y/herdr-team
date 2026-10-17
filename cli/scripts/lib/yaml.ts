@@ -8,7 +8,7 @@
 const KEYWORDS = new Set(["true", "false", "null", "yes", "no", "on", "off", "y", "n", "~"]);
 
 /** 可以直接裸写的普通标量：字母或中文开头，其后只含安全字符。 */
-const SAFE_PLAIN = /^[A-Za-z一-鿿][A-Za-z0-9一-鿿._ -]*$/;
+const SAFE_PLAIN = /^[A-Za-z\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff._ -]*$/;
 
 const YAML = (Bun as unknown as { YAML: { parse(input: string): unknown } }).YAML;
 
@@ -27,6 +27,7 @@ export function scalar(value: string): string {
  * 读回来就不等于 `true` 了。
  */
 function literal(value: unknown): string {
+  if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return scalar(String(value));

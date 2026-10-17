@@ -42,13 +42,13 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
       id: card.id,
       branch,
       action: "absent",
-      note: `查不到 worktree 列表：${error instanceof Error ? error.message : String(error)}`,
+      note: `Failed to list worktrees: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 
   const found = trees.find((t) => t.branch === branch);
   if (found === undefined) {
-    return { id: card.id, branch, action: "absent", note: `没有 ${branch} 的 checkout（没建过或已收）` };
+    return { id: card.id, branch, action: "absent", note: `No checkout for ${branch} (not created or already removed)` };
   }
 
   if (found.open_workspace_id === undefined || found.open_workspace_id === null) {
@@ -56,13 +56,13 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
       id: card.id,
       branch,
       action: "closed",
-      note: `${branch} 的 checkout 还在 ${found.path}，但 Herdr 里已经关掉了 —— 手动 \`git worktree remove\` 收`,
+      note: `Checkout ${branch} remains at ${found.path}, but its Herdr workspace is closed; remove it manually with \`git worktree remove\``,
     };
   }
 
   try { assertProjectWorkspace(project, herdr, found.open_workspace_id); }
   catch (error) {
-    return { id: card.id, branch, action: "foreign", note: `${branch} 不能安全回收：${error instanceof Error ? error.message : String(error)}` };
+    return { id: card.id, branch, action: "foreign", note: `Cannot safely remove ${branch}: ${error instanceof Error ? error.message : String(error)}` };
   }
 
   try {
@@ -72,9 +72,7 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
       id: card.id,
       branch,
       action: "dirty",
-      note: `Git 拒绝删 ${branch}（多半有未提交的改动）：${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      note: `Git refused to remove ${branch} (check for uncommitted changes): ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 
@@ -82,7 +80,7 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
     id: card.id,
     branch,
     action: "removed",
-    note: `已收掉 ${branch}（分支保留，随时能合）`,
+    note: `Removed ${branch} checkout (branch retained for merging)`,
   };
 }
 
@@ -96,7 +94,7 @@ export function cleanupIfDone(project: Project, herdr: Herdr, card: TaskCard): C
       id: card.id,
       branch: worktreeBranch(card),
       action: "not-terminal",
-      note: `${card.id} 还是 ${card.status}，不动它的 worktree`,
+      note: `${card.id} is still ${card.status}; keeping its worktree`,
     };
   }
   return cleanupTask(project, herdr, card);

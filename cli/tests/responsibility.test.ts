@@ -87,8 +87,8 @@ describe("CLI responsibility updates", () => {
       expect(report.skipped).toContain("roles/dev/prompt.md");
       const human = cli("init", "--roles-file", "roles.json", "--force");
       expect(human.code).toBe(0);
-      expect(human.stdout).toContain("角色元数据已写入: roles/dev/.role.yaml");
-      expect(human.stdout).toContain("角色正文已保留（未覆盖）: roles/dev/prompt.md");
+      expect(human.stdout).toContain("Role metadata written: roles/dev/.role.yaml");
+      expect(human.stdout).toContain("Role bodies preserved: roles/dev/prompt.md");
       expect(human.stdout).not.toContain("角色正文已写入");
       expect(loadProject(root).roles.find((r) => r.name === "dev")?.kind).toBe("claude");
       expect(readFileSync(join(root, ".herdr/roles/dev/prompt.md"), "utf8")).toBe(before);

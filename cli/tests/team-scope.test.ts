@@ -9,7 +9,7 @@ import { refreshSidebar } from "../scripts/lib/sidebar.ts";
 import { cleanupTask } from "../scripts/lib/cleanup.ts";
 import { worktreeBranch } from "../scripts/lib/types.ts";
 import { projectAgents, projectKey, resolveProjectWorkspace, TeamScopeError } from "../scripts/lib/team-scope.ts";
-import { fakeHerdr, makeProject, roleMeta, taskMeta, writeRole, writeTask } from "./helpers.ts";
+import { claimCurrent, fakeHerdr, makeProject, roleMeta, taskMeta, writeRole, writeTask } from "./helpers.ts";
 
 function fixture(run: (a: ReturnType<typeof loadProject>, b: ReturnType<typeof loadProject>, herdr: ReturnType<typeof fakeHerdr>) => void) {
   const a = makeProject("same-name"), b = makeProject("same-name");
@@ -53,7 +53,7 @@ describe("两个项目同名角色、同号任务的隔离", () => {
     const foreignTask = readFileSync(join(b.herdrDir, "tasks/0001-a/.task.yaml"), "utf8");
     herdr.calls.length = 0;
     expect(dispatch(a, herdr, "0001")[0]!.action).toBe("dispatched");
-    expect(handoff(loadProject(a.root), herdr, "0001", new Date(), { summary: "项目 A 的交付记录。" }).prompted).toBe(true);
+    expect(handoff(loadProject(a.root), herdr, "0001", new Date(), { summary: "项目 A 的交付记录。", delivery: claimCurrent(a.root) }).prompted).toBe(true);
     const prompts = herdr.calls.filter((call) => call.startsWith("agent prompt"));
     expect(prompts.map((call) => call.split(" ")[2])).toEqual(["a:p-dev", "a:p-docs"]);
     expect(readFileSync(join(b.herdrDir, "tasks/0001-a/.task.yaml"), "utf8")).toBe(foreignTask);
@@ -63,9 +63,9 @@ describe("两个项目同名角色、同号任务的隔离", () => {
 
   test("只存在另一个项目的同名 agent 时，dispatch 不派出、handoff 不误投", () => fixture((a, b, herdr) => {
     herdr.state.agents = ["dev", "docs"].map((name) => ({ name, pane_id: `b:p-${name}`, workspace_id: "b", tokens: { team_project: projectKey(b) } }));
-    expect(dispatch(a, herdr, "0001")[0]!.action).toBe("no-agent");
+    expect(dispatch(a, herdr, "0001")[0]!.action).toBe("queued");
     expect(loadProject(a.root).tasks[0]!.status).toBe("todo");
-    expect(handoff(a, herdr, "0001").prompted).toBe(false);
+    expect(() => handoff(loadProject(a.root), herdr, "0001")).toThrow(/Claim/);
     expect(herdr.calls.some((call) => call.startsWith("agent prompt"))).toBe(false);
     expect(buildReport(loadProject(a.root), herdr, false).roles.every((role) => role.herdrStatus === "absent")).toBe(true);
   }));
@@ -112,14 +112,14 @@ test("两个项目的隔离任务 0001 各起自己的 worktree agent", () => fi
   expect(ownB[0]!.tokens?.team_task_id).toBe("0001");
 }));
 
-test("handoff 目标有歧义时不写任务流转", () => fixture((a, _b, herdr) => {
+test("handoff retains a queued delivery when the target is ambiguous", () => fixture((a, _b, herdr) => {
   herdr.state.agents = ["one", "two"].map((name) => ({ name, pane_id: `a:p-${name}`, workspace_id: "a",
     tokens: { team_project: projectKey(a), team_role: "docs" } }));
   const file = join(a.herdrDir, "tasks/0001-a/.task.yaml");
   const before = readFileSync(file, "utf8");
-  expect(() => handoff(a, herdr, "0001")).toThrow(TeamScopeError);
-  expect(readFileSync(file, "utf8")).toBe(before);
-  expect(herdr.calls).toEqual([]);
+  expect(handoff(a, herdr, "0001")).toMatchObject({ prompted: false, queueState: "queued" });
+  expect(readFileSync(file, "utf8")).not.toBe(before);
+  expect(herdr.calls.some((call) => call.startsWith("agent prompt"))).toBe(false);
 }));
 
 test.each([false, true])("同分支的外项目 worktree 不能复用或回收（有归属标记=%s）", (tagged) => fixture((a, b, herdr) => {
@@ -131,7 +131,7 @@ test.each([false, true])("同分支的外项目 worktree 不能复用或回收�
   const trees = herdr.worktreeList(b.root);
   herdr.worktreeList = () => trees;
   herdr.calls.length = 0;
-  expect(dispatch(project, herdr, "0001")[0]!.action).toBe("no-agent");
+  expect(dispatch(project, herdr, "0001")[0]!.action).toBe("queued");
   expect(loadProject(a.root).tasks[0]!.status).toBe("todo");
   expect(cleanupTask(project, herdr, { ...project.tasks[0]!, status: "done" }).action).toBe("foreign");
   expect(herdr.calls.some((call) => /^(agent (start|prompt)|worktree remove)/.test(call))).toBe(false);

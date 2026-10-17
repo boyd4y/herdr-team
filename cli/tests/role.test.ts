@@ -101,7 +101,7 @@ describe("addRole —— 运行期加角色", () => {
   test("新角色即使有 --force 也必须给 kind，失败不落盘", () => {
     withProject(() => {}, (p) => {
       for (const force of [false, true]) {
-        expect(() => addRole(p, { name: "new-role", body: "职责", force })).toThrow(/新角色的 --kind 是必填/);
+        expect(() => addRole(p, { name: "new-role", body: "职责", force })).toThrow(/--kind is required for new roles/);
         expect(existsSync(join(p.herdrDir, "roles/new-role"))).toBe(false);
       }
     });
@@ -109,13 +109,13 @@ describe("addRole —— 运行期加角色", () => {
 
   test("非法名字拒绝", () => {
     withProject(() => {}, (p) => {
-      expect(() => addRole(p, { name: "Bad_Name", kind: "codex" })).toThrow(/必须匹配/);
+      expect(() => addRole(p, { name: "Bad_Name", kind: "codex" })).toThrow(/must match/);
     });
   });
 
   test("非法 kind 拒绝", () => {
     withProject(() => {}, (p) => {
-      expect(() => addRole(p, { name: "x", kind: "nope" })).toThrow(/不在枚举内/);
+      expect(() => addRole(p, { name: "x", kind: "nope" })).toThrow(/[Uu]nsupported/);
     });
   });
 });

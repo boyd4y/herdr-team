@@ -48,7 +48,7 @@ describe("dependsOn 写盘前校验", () => {
         expect(() => createTask(loadProject(root), {
           title: "Implement feature", role: "dev", handoff: [],
           dependsOn: [dep], priority: "P2", body: "描述",
-        })).toThrow(dep === "0004" ? /存在环，涉及 0004/ : new RegExp(`${dep}.*解析不到任务`));
+        })).toThrow(dep === "0004" ? /cycle includes 0004/ : new RegExp(`${dep}.*does not resolve to a task`));
         expect(existsSync(join(root, ".herdr/tasks/0004-implement-feature"))).toBe(false);
         expect(loadProject(root).tasks).toHaveLength(3);
       });
@@ -68,11 +68,11 @@ describe("dependsOn 写盘前校验", () => {
         } catch (error) {
           message = (error as Error).message;
         }
-        if (dep === "0099") expect(message).toMatch(/0099.*解析不到任务/);
+        if (dep === "0099") expect(message).toMatch(/0099.*does not resolve to a task/);
         else {
-          expect(message).toContain("存在环");
+          expect(message).toContain("cycle");
           for (const id of dep === "0003" ? ["0001", "0002", "0003"] : ["0001"]) {
-            expect(message).toContain(`涉及 ${id}`);
+            expect(message).toContain(`includes ${id}`);
           }
         }
         expect(readFileSync(join(dir, TASK_META), "utf8")).toBe(beforeMeta);
@@ -89,7 +89,7 @@ describe("dependsOn 写盘前校验", () => {
       editTask(loadProject(root), "0003", { dependsOn: ["0001"] }, true);
       expect(loadProject(root).tasks[2]?.dependsOn).toEqual(["0001"]);
       writeTask(root, "0003-third", taskMeta({ status: "done" }));
-      expect(() => editTask(loadProject(root), "0003", { dependsOn: [] }, true)).toThrow(/终态/);
+      expect(() => editTask(loadProject(root), "0003", { dependsOn: [] }, true)).toThrow(/terminal/);
     });
   });
 });
@@ -146,7 +146,7 @@ describe("--depends-on CLI", () => {
         expect(result.status).toBe(2);
         expect(result.stderr).toContain(dep);
         if (dep === "0003") {
-          for (const id of ["0001", "0002", "0003"]) expect(result.stderr).toContain(`涉及 ${id}`);
+          for (const id of ["0001", "0002", "0003"]) expect(result.stderr).toContain(`includes ${id}`);
         }
         expect(readFileSync(path, "utf8")).toBe(before);
       }

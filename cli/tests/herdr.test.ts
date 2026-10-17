@@ -151,12 +151,12 @@ describe("herdr 客户端 —— 解析与报错", () => {
 
   test("缺 result 字段时报错", () => {
     const { fn } = recordingSpawn('{"result":{}}');
-    expect(() => realHerdr(fn).workspaceList()).toThrow(/没有 result/);
+    expect(() => realHerdr(fn).workspaceList()).toThrow(/missing result/);
   });
 
   test("workspace create 返回值不全时报错", () => {
     const { fn } = recordingSpawn(WRAP({ workspace: { workspace_id: "w1" } }));
-    expect(() => realHerdr(fn).workspaceCreate("p", "/tmp", {})).toThrow(/没返回完整/);
+    expect(() => realHerdr(fn).workspaceCreate("p", "/tmp", {})).toThrow(/returned incomplete/);
   });
 
   test("herdr 本体不存在时报错", () => {
@@ -165,4 +165,16 @@ describe("herdr 客户端 —— 解析与报错", () => {
     };
     expect(() => realHerdr(fn).workspaceList()).toThrow(/PATH/);
   });
+});
+
+test("Console shell checks use process-info --pane and reject foreground children", () => {
+  const calls: string[][] = [];
+  let info: Record<string, unknown> = { shell_pid: 12, foreground_process_group_id: 12, foreground_processes: [{ pid: 12 }] };
+  const h = realHerdr((args) => { calls.push(args); return { code: 0, stdout: JSON.stringify({ result: { process_info: info } }), stderr: "" }; });
+  expect(h.paneIsShell("w1:p1")).toBe(true);
+  expect(calls[0]).toEqual(["pane", "process-info", "--pane", "w1:p1"]);
+  info = { ...info, foreground_process_group_id: 99, foreground_processes: [{ pid: 99 }] };
+  expect(h.paneIsShell("w1:p1")).toBe(false);
+  info = {};
+  expect(h.paneIsShell("w1:p1")).toBe(false);
 });

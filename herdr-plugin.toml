@@ -2,7 +2,7 @@ id = "herdr-team"
 name = "Herdr Team"
 version = "0.1.0"
 min_herdr_version = "0.9.3"
-description = "Install the team CLI, skill, sidebar and a prefix+t team board popup."
+description = "Install the team CLI, skill, sidebar and Team Console popup."
 platforms = ["linux", "macos"]
 
 # GitHub installs perform setup once. Local links use the actions below.
@@ -71,6 +71,11 @@ command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
 [[events]]
 on = "pane.agent_detected"
 command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto"]
+
+# Save native session references after startup/turns without metadata feedback loops.
+[[events]]
+on = "pane.agent_status_changed"
+command = ["bun", "cli/scripts/cli.ts", "sidebar", "--auto", "--sessions-only"]
 
 [[events]]
 on = "pane.moved"

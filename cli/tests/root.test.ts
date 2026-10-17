@@ -155,14 +155,14 @@ describe("findRoot —— 区分 Herdr 数据目录和团队项目", () => {
       const result = cli(project, "validate");
       expect(result.exitCode).toBe(2);
       expect(result.stdout.toString()).toBe("");
-      expect(result.stderr.toString()).toContain("从当前目录向上找不到含 .herdr/ 的项目根（用 --root 指定）");
-      expect(result.stderr.toString()).not.toContain("identity.md 不存在");
+      expect(result.stderr.toString()).toContain("No team project found in this directory or its parents; use --root");
+      expect(result.stderr.toString()).not.toContain("identity.md is missing");
     });
   });
 
   test("无团队配置时 watch --line 静默退出", () => {
     withHerdrData((_base, project) => {
-      const result = cli(project, "watch", "--line");
+      const result = cli(project, "console", "--line");
       expect(result.exitCode).toBe(0);
       expect(result.stdout.toString()).toBe("");
       expect(result.stderr.toString()).toBe("");

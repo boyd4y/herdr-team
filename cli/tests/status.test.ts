@@ -67,9 +67,9 @@ describe("status 文本输出（逐字节快照）", () => {
     expect(formatReport(report)).toBe(
       [
         "tasks",
-        "  id    title                       priority  status    role",
-        "  0001  修登录                      P1        todo      dev",
-        "  0002  Add docs                    P2        doing     docs",
+        "  id    title                       priority  status    role            delivery",
+        "  0001  修登录                      P1        todo      dev             —",
+        "  0002  Add docs                    P2        doing     docs            —",
         "",
         "roles",
         "  role            agent           herdrStatus   paneId",
@@ -77,7 +77,7 @@ describe("status 文本输出（逐字节快照）", () => {
         "  docs            —               absent        —",
         "",
         "inconsistencies",
-        "  （无）",
+        "  (none)",
       ].join("\n"),
     );
   });
@@ -96,17 +96,17 @@ describe("status 文本输出（逐字节快照）", () => {
   });
 
   test("空列表", () => {
-    expect(formatTasks([], roles)).toBe("（没有未结束的任务。加 --all 看全部）");
+    expect(formatTasks([], roles)).toBe("(no active tasks; use --all to include terminal tasks)");
     expect(formatReport({ tasks: [], roles: [], inconsistencies: [] })).toBe(
       [
         "tasks",
-        "  （没有未完成的任务）",
+        "  (no active tasks)",
         "",
         "roles",
-        "  （没有角色）",
+        "  (no roles)",
         "",
         "inconsistencies",
-        "  （无）",
+        "  (none)",
       ].join("\n"),
     );
   });

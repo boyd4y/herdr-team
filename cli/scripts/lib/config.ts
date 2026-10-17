@@ -136,12 +136,12 @@ function readMeta(
 ): Record<string, unknown> | null {
   const path = join(itemDir, metaName);
   if (!existsSync(path)) {
-    problems.push({ file: rel, rule, message: `缺少 ${metaName}` });
+    problems.push({ file: rel, rule, message: `Missing ${metaName}` });
     return null;
   }
   const meta = parseYaml(readFileSync(path, "utf8"));
   if (meta === null) {
-    problems.push({ file: `${rel}/${metaName}`, rule, message: "不是合法的 YAML 映射" });
+    problems.push({ file: `${rel}/${metaName}`, rule, message: "Invalid YAML mapping" });
     return null;
   }
   return meta;

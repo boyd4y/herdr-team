@@ -1,11 +1,17 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { stamp } from "./records.ts";
+export { appendRecord, stamp } from "./records.ts";
+export { assignmentPrompt } from "./assignment.ts";
 import { join } from "node:path";
 import { cleanupIfDone, type CleanupResult } from "./cleanup.ts";
 import type { Herdr } from "./herdr.ts";
+import { randomUUID } from "node:crypto";
+import { loadProject } from "./config.ts";
+import { completedDeliveries, deliveryFor, newDelivery } from "./delivery.ts";
+import { commitTaskTransition, flushTaskHistory, pumpQueue } from "./queue.ts";
+import { withTeamLock } from "./runtime.ts";
 import { refreshSidebar } from "./sidebar.ts";
-import { findRoleAgent, projectAgents } from "./team-scope.ts";
-import { findTask, TaskError, writeTaskMeta } from "./task.ts";
-import { TASK_BODY, TASK_META, isTerminal, isolatedAgentName, type Project, type TaskCard } from "./types.ts";
+import { findTask, TaskError } from "./task.ts";
+import { TASK_BODY, isTerminal, isolatedAgentName, type Project, type TaskCard } from "./types.ts";
 
 export interface HandoffResult {
   id: string;
@@ -16,6 +22,9 @@ export interface HandoffResult {
   previousStatus: string;
   /** 下游有没有真的收到 prompt。 */
   prompted: boolean;
+  delivery?: string;
+  queueState?: string;
+  duplicate?: boolean;
   /** Whether this handoff saved a delivery summary in taskPath. */
   summarySaved: boolean;
   taskPath: string;
@@ -23,35 +32,6 @@ export interface HandoffResult {
   cleanup?: CleanupResult;
   /** 给人看的一句话说明。 */
   note: string;
-}
-
-const RECORD_HEADING = /^##\s*流转记录\s*$/m;
-
-export function stamp(at: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
-}
-
-/**
- * 往 `## 流转记录` 追加一行。
- *
- * 只做**追加**，不整篇重写 —— 散文文件一个字都不该被工具碰掉。
- * 少了小节就先补上小节头，那条路径才需要写文件。
- */
-export function appendRecord(project: Project, card: TaskCard, line: string): void {
-  const dir = join(project.herdrDir, card.dir);
-  const path = join(dir, TASK_BODY);
-  mkdirSync(dir, { recursive: true });
-
-  const body = card.body.replace(/\s*$/, "");
-  if (!RECORD_HEADING.test(body)) {
-    writeFileSync(path, body === "" ? `## 流转记录\n${line}\n` : `${body}\n\n## 流转记录\n${line}\n`);
-    return;
-  }
-
-  const raw = existsSync(path) ? readFileSync(path, "utf8") : "";
-  const needsNewline = raw !== "" && !raw.endsWith("\n");
-  appendFileSync(path, `${needsNewline ? "\n" : ""}${line}\n`);
 }
 
 /**
@@ -72,35 +52,59 @@ export function agentNameForTask(project: Project, card: TaskCard): string {
  * 所以队列空时不是拒绝，而是"它干完了，收尾"。
  */
 export function handoff(
-  project: Project,
-  herdr: Herdr,
-  id: string,
-  now: Date = new Date(),
-  options: { summary?: string } = {},
+  project: Project, herdr: Herdr, id: string, now: Date = new Date(),
+  options: { summary?: string; delivery?: string } = {},
 ): HandoffResult {
+  if (!herdr.envOk()) throw new TaskError("Run handoff inside a Herdr pane (HERDR_ENV=1).");
+  const result = withTeamLock(project, "queue", () => handoffLocked(loadProject(project.root), herdr, id, now, options));
+  if (!result.duplicate) pumpQueue(project, herdr, now);
+  if (result.delivery && !result.duplicate) {
+    const current = findTask(loadProject(project.root), id), d = deliveryFor(current);
+    if (d?.id === result.delivery) {
+      result.queueState = d.state;
+      result.prompted = ["submitted", "claimed"].includes(d.state);
+      result.note += ` Delivery ${d.state}${d.reason ? `: ${d.reason}` : "."}`;
+    }
+  }
+  return result;
+}
+
+function handoffLocked(
+  project: Project, herdr: Herdr, id: string, now: Date,
+  options: { summary?: string; delivery?: string },
+): HandoffResult {
+  flushTaskHistory(project, findTask(project, id));
+  project = loadProject(project.root);
   const card = findTask(project, id);
 
+  const currentDelivery = deliveryFor(card);
+  const receipts = completedDeliveries(card);
+  const taskPath = join(project.herdrDir, card.dir, TASK_BODY);
+  if (options.delivery && receipts.includes(options.delivery)) {
+    return { id, from: card.role, to: isTerminal(card.status) ? null : card.role, status: card.status,
+      previousStatus: card.status, prompted: false, summarySaved: false, taskPath, duplicate: true,
+      note: `Delivery ${options.delivery} was already handed off; no changes made.` };
+  }
+  if (currentDelivery && (options.delivery !== currentDelivery.id || currentDelivery.state !== "claimed")) {
+    throw new TaskError("Claim the current delivery first, then hand off with its --delivery ID");
+  }
+  if (!currentDelivery && options.delivery) throw new TaskError("Stale delivery ID; no changes made");
   if (isTerminal(card.status)) {
-    throw new TaskError(`${id} 已是终态（${card.status}），不能再流转`);
+    throw new TaskError(`${id} is already terminal (${card.status}); cannot hand off`);
   }
 
-  if (!herdr.envOk()) throw new TaskError("handoff 要在 Herdr 的 pane 里跑（HERDR_ENV=1）。");
+  if (!herdr.envOk()) throw new TaskError("Run handoff inside a Herdr pane (HERDR_ENV=1).");
 
   const summary = options.summary?.trim();
-  if (summary !== undefined && !summary) throw new TaskError("交付摘要不能为空；省略 --summary 可按旧方式交棒");
-  const delivery = { summarySaved: summary !== undefined, taskPath: join(project.herdrDir, card.dir, TASK_BODY) };
-  const deliveryNote = summary === undefined ? " 未提供交付摘要。" : " 交付摘要已写入任务正文。";
-  const record = (line: string, to: string) => appendRecord(project, card, summary === undefined ? line
-    : `${line}\n\n### 交付 ${stamp(now)} · ${card.role} → ${to}\n\n${summary}\n`);
+  if (summary !== undefined && !summary) throw new TaskError("Delivery summary cannot be empty; omit --summary to hand off without one");
+  const summaryReceipt = { summarySaved: summary !== undefined, taskPath: join(project.herdrDir, card.dir, TASK_BODY) };
+  const deliveryNote = summary === undefined ? " No delivery summary supplied." : " Delivery summary appended to task.md.";
+  const operation = currentDelivery?.id ?? randomUUID();
+  const completed = currentDelivery ? [...receipts, currentDelivery.id] : receipts;
   const persist = (patch: Record<string, unknown>, line: string, to: string) => {
-    const metaPath = join(project.herdrDir, card.dir, TASK_META);
-    const previous = readFileSync(metaPath);
-    writeTaskMeta(project, card, patch);
-    try { record(line, to); }
-    catch (error) {
-      writeFileSync(metaPath, previous);
-      throw error;
-    }
+    const text = summary === undefined ? line : `${line}\n\n### Delivery ${stamp(now)} · ${card.role} → ${to}\n\n${summary}\n`;
+    commitTaskTransition(project, card, { ...patch, completed_deliveries: completed },
+      `${text}\n<!-- team-operation:handoff-${operation} -->`);
   };
 
   const from = card.role;
@@ -109,7 +113,7 @@ export function handoff(
   if (card.handoff.length === 0) {
     // 最后一个负责人干完了 —— 没有下一步，整个任务收尾。
     const status = "done";
-    persist({ status }, `- ${stamp(now)}  done  (${previousStatus} → ${status})`, "done");
+    persist({ status, delivery: null }, `- ${stamp(now)}  done  (${previousStatus} → ${status})`, "done");
     refreshSidebar(project, herdr);
 
     // 收尾就该把 worktree 收掉，否则每做一个任务就多留一个 checkout。
@@ -129,70 +133,21 @@ export function handoff(
       previousStatus,
       prompted: false,
       cleanup,
-      ...delivery,
-      note: `${id} 完成（${from} 是最后一个负责人）。${tail}${deliveryNote}`,
+      ...summaryReceipt,
+      note: `${id} completed (${from} was the final owner).${tail}${deliveryNote}`,
     };
   }
 
   const next = card.handoff[0] as string;
   const rest = card.handoff.slice(1);
   const status = "review";
-
-  // 下一个负责人是常驻角色还是隔离角色，决定了它的 agent 叫什么。
-  const nextRole = project.roles.find((r) => r.name === next);
-  const nextAgent = nextRole?.worktree === true ? isolatedAgentName(next, card.id) : next;
-
-  const target = nextRole === undefined ? undefined : findRoleAgent(project, projectAgents(project, herdr), nextRole, nextRole.worktree ? card.id : undefined)?.pane_id;
-
-  persist({ role: next, handoff: rest, status }, `- ${stamp(now)}  → ${next}  (${previousStatus} → ${status})`, next);
+  const queued = newDelivery(next, "handoff", now);
+  persist({ role: next, handoff: rest, status, delivery: queued },
+    `- ${stamp(now)}  → ${next}  (${previousStatus} → ${status})`, next);
   refreshSidebar(project, herdr);
-
-  if (target === undefined) {
-    // 不启动新 agent —— 卡记录的是"该谁做了"，不是"agent 在不在"。
-    const hint =
-      nextRole?.worktree === true
-        ? `请 lead 确认后跑 \`herdr-team edit ${id} --status todo --force\`，再跑 \`herdr-team dispatch ${id}\`，会在 \`feat/${id}-${card.slug}\` 上开好 worktree。`
-        : `请 lead 跑 \`herdr-team up\` 拉起它，再安排接续这张 review 卡。`;
-    return {
-      id,
-      from,
-      to: next,
-      status,
-      previousStatus,
-      prompted: false,
-      ...delivery,
-      note: `${id} 已流转到 ${next}（agent 名 ${nextAgent}），但它当前不在。${hint}${deliveryNote}`,
-    };
-  }
-
-  const identityPath = join(project.herdrDir, "identity.md");
-  const identity = existsSync(identityPath) ? readFileSync(identityPath, "utf8") : "";
-  const deliveryHint = summary === undefined
-    ? "本次交棒未提供交付摘要。先检查任务正文和已有产物；信息不足时请上游补充，不把终端输出当成交付记录。"
-    : "本次交付摘要已追加到任务正文的“交付”小节。先读摘要及其中引用的报告、文件、验证结果，再接续任务。";
-  herdr.agentPrompt(target, `任务 ${id} 已交付给你。\n${assignmentPrompt(identity, nextRole!.body, { ...card, role: next, handoff: rest, status }, project.root)}\n团队根目录：${project.root}\n先读取 ${delivery.taskPath}。${deliveryHint}\nherdr agent read 仅用于排障，不作为默认交付渠道。执行 herdr-team 时使用 --root 指向上述团队根目录。`);
-  return {
-    id,
-    from,
-    to: next,
-    status,
-    previousStatus,
-    prompted: true,
-    ...delivery,
-    note: `${id} 已交给 ${nextAgent}（status=${status}）。${deliveryNote}`,
-  };
+  return { id, from, to: next, status, previousStatus, prompted: false,
+    ...summaryReceipt, delivery: queued.id, queueState: "queued",
+    note: `${id} handed off to ${next}.${deliveryNote}` };
 }
 
 /** 派活说明：identity + 角色正文 + 任务目录 + 交棒要求。顺序固定。 */
-export function assignmentPrompt(identity: string, roleBody: string, card: TaskCard, root?: string): string {
-  return [
-    identity.trim(),
-    "",
-    roleBody.trim(),
-    "",
-    `你现在负责任务 ${card.id}：${card.title}`,
-    `目录：${root === undefined ? `.herdr/${card.dir}` : join(root, ".herdr", card.dir)}（.task.yaml 是元数据，${TASK_BODY} 是描述和流转记录）`,
-    "",
-    `交付时建议用 \`herdr-team handoff ${card.id} --summary "成果、文件或报告路径、验证结果、风险与下一步"\`，长摘要可用 --summary-file F。CLI 会把摘要追加到任务正文，不要自行改任务卡。`,
-  ].join("\n");
-}

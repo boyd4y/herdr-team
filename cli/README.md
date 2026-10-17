@@ -6,28 +6,16 @@
 
 ## 开发验证
 
-在仓库根目录运行离线验证，无需安装 npm 开发依赖：
+在仓库根目录运行离线验证：
 
 ```sh
-make verify
+(cd cli && bun test)
+node --test tests/*.test.cjs
 ```
 
-类型检查需要先安装开发依赖。从仓库根目录运行：
-
-```sh
-cd herdr-team-plugin/cli
-bun install
-cd ../..
-make typecheck
-```
-
-也可以在 `herdr-team-plugin/cli/` 内运行 `bun run typecheck`。
-提交 `herdr-team-plugin/cli/bun.lock`，固定 TypeScript 和 Bun 类型定义的解析版本，便于复现检查结果；
-`node_modules/` 不提交。
-
-`typecheck` 刻意独立于 `make verify`：前者需要 `bun install` 准备开发依赖，首次安装可能联网，
-而 `make verify` 必须在没有 `node_modules/`、没有网络和活 workspace 时也能通过。
-在 CI 或提交前准备好开发依赖后，单独运行 `make typecheck`。
+类型检查需要先在 `cli/` 安装开发依赖，再运行 `bun run typecheck`。
+`cli/bun.lock` 固定 TypeScript 和 Bun 类型定义；`node_modules/` 不提交。
+测试使用临时项目和 Herdr 替身，不访问真实团队。
 
 ## 快速开始
 
@@ -92,7 +80,7 @@ herdr-team role add dev --force --body "你负责实现功能和同步接口文�
 不存在的 id、自依赖或成环都会报错并保留原文件；`--handoff` 仍只指定流转角色。
 修改已派出的卡仍需 `--force`，终态卡不允许修改。
 
-由 `lead` 在 Herdr pane 中启动常驻团队，再派活（`up` 不派任务、不起 worktree）：
+由 `lead` 在 Herdr pane 中启动常驻团队，再将任务入队（`up` 不自动将 todo 卡入队）：
 
 ```sh
 herdr-team up
@@ -101,22 +89,67 @@ herdr-team dispatch
  herdr-team dispatch <id>
 ```
 
-`up` 只启动或复用 agent、更新归属和侧栏，不发送身份说明或其他消息。
+`up` 启动或复用常驻 agent、更新归属和侧栏，并在项目 workspace 中创建或复用 **Team Console** tab，保持当前焦点。它不自动将已有 todo 卡入队；Console 会继续处理先前已入队的任务。
 项目身份与角色职责随 `dispatch` / `handoff` 的实际任务发送。
 
-`dispatch` 按 priority、id 升序处理 `todo` 卡并检查依赖；指定 id 不存在或状态不是 `todo` 时会报错。
-隔离角色在派活时才起 worktree/agent；agent 启动失败后再次派活会复用已有的开放 worktree workspace。
-派活提交输入后，尽量通过 Herdr 的活动等待确认 agent 已到 `working` 或 `blocked`，再把卡从
-`todo` 改成 `doing`，缩短刚启动时 `idle` 被误报为 `maybe-finished` 的窗口。常驻和隔离角色
-都走这一步；调用上限为 8 秒，给 Herdr 内置的 5 秒活动窗口留出余量，比原来最坏多等 3 秒。
-观察到活动立即返回，不等待整轮任务完成，也不增加重发或状态轮询子进程。
-若 Herdr 返回结构化错误码 `agent_prompt_stalled` / `timeout`，仍写 `doing` 和派出记录，
-输出 `dispatched` 并注明「未能确认已开工」；`--json` 的对应结果在 `reason` 字段中注明。
-输入可能已送达，不应因这条提示重派。未开工、或回到 `idle` / `done` 却未交棒的 `doing` 卡
-仍会报 `maybe-finished`。`agent_blocked`（输入被拒）、agent 不存在及其他错误仍会报错，
-卡保留 `todo`，不追加派出成功记录；只按返回的 JSON `error.code` 区分，不匹配正文或错误说明。
-`handoff` 的交棒提示只提交输入，不增加等待。
-`up --json` 返回 workspace 和角色启动结果，已移除原来的 `dispatched` 字段；派活结果由 `dispatch --json` 单独返回。
+常驻角色退出后，再次 `up` 默认用已保存的原生 session ID 恢复，输出 `resumed`。
+ID 按规范化的项目路径和角色名分开保存在插件 state 的 `agent-sessions/` 下，不写进
+项目 `.herdr/`，也不依赖 workspace/pane ID；角色的 kind 或 cwd 改变后不复用旧会话。
+运行中的 agent 始终复用。需要忽略记录、按当前角色卡启动新会话时：
+
+```sh
+herdr-team up --fresh
+```
+
+`--fresh` 只影响待启动的角色，启动成功后清除它的旧记录；不会重启正在工作的 agent。
+角色卡 `args` 显式指定的 resume/session 参数优先，不叠加自动恢复参数。
+恢复失败保留记录并输出原因，不自动改成新会话。没有记录时正常新建。
+
+自动记录依赖 Herdr 官方 integration 上报 `agent_session`。例如使用 Codex/Grok 时，
+分别运行 `herdr integration install codex` / `herdr integration install grok` 安装或更新集成，
+在后续启动或会话事件上报后才能记录；已有会话不会按目录或“最近一次”猜测 ID。
+`up`、`down` 关停前、sidebar 刷新以及 agent 状态变化事件会保存当前已上报的 ID。
+插件事件只写本地记录，不发送消息、不回写 metadata，无 daemon。
+直接强制关闭 pane 前若尚未捕获 ID，就没有可恢复记录。
+隔离 worktree 角色仍由 `dispatch` 按任务启动，不参与 `up` 的角色会话恢复。
+升级后重新 `herdr plugin link /path/to/herdr-team` 加载新增事件钩子，并更新已安装 CLI。
+
+`dispatch [<id>]` 将 todo 卡持久化入队，并尝试立即投递一条符合条件的任务。
+未指定 id 时入队全部 todo 卡；指定不存在或非 todo 的 id 会报错。队列按 priority、入队时间和 id 排序，依赖进入终态后才可投递。
+同一角色一次只处理一个任务，包括隔离 worktree 角色。接收方只有 `idle` / `done` 时才接收；
+`working`、`blocked`、`unknown` 或不在线时保持排队。隔离角色在实际派送时创建或复用 worktree/agent。
+
+队列直接保存在 `.task.yaml` 的 `delivery` 中，无数据库和独立系统服务：
+
+- `queued`：等待依赖、角色或 agent 可用。
+- `sending`：已记录目标 pane，正在提交输入。
+- `submitted`：Herdr 已接受输入，等待 agent 领取。
+- `claimed`：agent 已运行 `claim`，占用角色直至交棒。
+- `uncertain`：无法确认送达、提交后 60 秒未领取，或已领取的 agent 丢失/换会话；暂停自动重发。
+
+每次分配带唯一 delivery ID。agent 必须先运行消息中给出的领取命令，完成时使用同一个 ID：
+
+```sh
+herdr-team claim <id> --delivery <delivery-id> --root <team-root>
+herdr-team handoff <id> --delivery <delivery-id> --summary "Results; artifacts; validation; risks" --root <team-root>
+```
+
+重复领取会返回 `duplicate: true`，此时不要启动第二份工作；重复交棒不会再次推进角色或追加摘要。
+交棒先保存摘要和下一个角色的队列项，再尝试投递。接收方忙时留在队列，Console 后续自动处理。
+重启后发现残留 `sending` 会转为 `uncertain`，不会假定上次没有送达。
+消息可能已送到，**先核对 agent 和任务产物**，再由 lead 显式重试：
+
+```sh
+herdr-team queue --json
+herdr-team queue retry <id>
+herdr-team queue drain
+```
+
+`retry` 仅接受 uncertain 项，并分配新 ID，使旧领取令牌失效；`drain` 手动尝试投递一条，便于 Console 关闭时使用。
+取消、改派角色或强制退回 todo 会清除旧 delivery。尚未入队的旧任务保持原行为；一旦进入新队列，就必须领取并携带 ID 交棒。
+任务变更通过项目排他锁串行，历史写入可在重启后补齐。队列避免盲目重复发送，并不保证底层终端消息恰好执行一次。
+
+`up --json` 返回 workspace、角色结果和 `console`（started / reused / failed）；会话恢复为 `resumed`，记录保存失败附带 `sessionWarning`。
 
 ### 多项目边界
 
@@ -139,16 +172,23 @@ workspace 复用按项目绑定或可验证的目录判断，不按相同的文�
 
 `herdr-team sidebar` 刷新现有 agent 的信息与归属编号；`--badges-only` 只刷新所有
 workspace 和 agent 的编号，不要求当前目录是团队项目。均不启动或重启 agent。
+默认 sidebar 刷新还会更新所有 workspace 的未提交文件数；`--git-only` 仅刷新此项，
+不要求 `.herdr/`。spaces 第二行的 `📄N` 在原生 `↑` / `↓` 提交数之前显示，
+计入暂存、未暂存和未跟踪文件，去重且重命名计一次，忽略文件不计。
+干净仓库显示 `📄0`，非 Git 目录或读取失败时隐藏。不同 worktree 分别统计。
+标签栏定时命令可使用 `HERDR_ENV=1 herdr-team console --line --follow --sync-git`，
+在输出原团队状态前更新所有 workspace 的文件数；仅此显式选项会写 workspace metadata，
+`--line` 本身不调度任务。刷新频率由 Herdr 该 command 的 `interval_seconds` 控制。
 新增 workspace 与 agent 由插件事件钩子自动同步。升级后重新 `herdr plugin link`
 加载钩子，再从 Herdr 菜单选择 `reload config` 应用布局。
 
-### 只读团队看板
+### Team Console
 
-盯团队进展用 `watch` —— 只读实时看板，把任务卡、Herdr agent 和两者对不上的地方放进
-一屏，默认每 2 秒刷新：
+`console` 集中显示任务、角色的当前工作与队列数、领取状态和异常，并驱动自动投递，默认每 2 秒刷新。
+`up` 自动在项目 workspace 中打开这个常驻 tab；也可以在 Herdr 终端中手动运行：
 
 ```sh
-herdr-team watch
+herdr-team console
 ```
 
 `↑↓`（或 `j`/`k`）选任务、`PgUp`/`PgDn` 翻详情正文、`a` 切换是否显示已结束的卡、
@@ -158,8 +198,11 @@ herdr-team watch
 结果优先显示靠前、连续的匹配，同分按 priority、id 排，空查询恢复原顺序。
 搜索沿用 `a` / `--all` 的范围，TASKS 右侧显示查询及命中数/范围内任务数，角色和健康检查仍显示全项目。
 
-`--interval <秒>` 改刷新间隔（`0` = 只手动刷新），
-`--all` 一进来就显示已结束的卡。TUI 里不做任何写操作 —— 派活、交棒、收尾仍走各自命令。
+`--interval <秒>` 改刷新间隔（调度时必须大于 0），`--all` 显示已结束的卡。
+每个项目只允许一个调度 Console。关闭 tab 或按 q 退出会暂停自动投递，队列仍保存在磁盘；再次 `up` 或运行 `console` 即可继续。
+`down` 会先让 Console 退出，再关闭团队 agent。
+`console --observe` 是同一 Console 的只读模式，可同时打开多个，适用于 popup；此模式允许 `--interval 0` 手动刷新。
+只保留 `console` 命令，旧 `watch` 入口已移除。
 
 **这是给人看的，不要放进 agent 的流程里**：它会一直占着终端直到有人按键。
 非交互地看状态用 `herdr-team status`（可加 `--json`）。
@@ -169,7 +212,7 @@ herdr-team watch
 
 ## 放进 Herdr
 
-两个位置都有人用，**两者都不改 pane / tab 拓扑**：
+除 `up` 创建的常驻 tab，还可配置这两个只读入口：
 
 **popup** —— 按一下浮出来，`q` 关掉，不留痕迹（Herdr 管这叫 session-modal）：
 
@@ -177,7 +220,7 @@ herdr-team watch
 [[keys.command]]
 key = "prefix+t"
 type = "popup"
-command = "herdr-team watch"
+command = "herdr-team console --observe"
 width = "90%"
 height = "85%"
 ```
@@ -186,7 +229,7 @@ height = "85%"
 
 ```toml
 tab_bar_right = [
-  { type = "command", command = "herdr-team watch --line --follow", interval_seconds = 10, timeout_seconds = 5 },
+  { type = "command", command = "HERDR_ENV=1 herdr-team console --line --follow", interval_seconds = 10, timeout_seconds = 5 },
 ]
 ```
 
@@ -203,7 +246,7 @@ cwd 是服务器启动时的目录（通常是你家目录），从那儿往上�
 
 改完记得 `herdr config check`，再 `herdr server reload-config`。
 
-和 `status` 有一处**有意的不同**：`watch` 是容错启动的。`.herdr/` 里有坏卡不会拦着
+和 `status` 有一处**有意的不同**：`console` 是容错启动的。`.herdr/` 里有坏卡不会拦着
 不让你看（看板恰恰是卡坏的时候最想看），坏卡会被跳过、并在帧里用 `✗` 横幅报出来 ——
 所以卡片总数可能比 `tasks/` 下的目录数少，看到横幅就是原因。
 
@@ -213,21 +256,21 @@ cwd 是服务器启动时的目录（通常是你家目录），从那儿往上�
 自动查找项目根时，`.herdr/` 中至少要有 `identity.md`、`roles`、`tasks` 之一；
 只有 `projects/`、`worktrees/` 的 Herdr 数据目录不会被当成团队项目。
 子目录仍可向上找到项目，只建了一部分配置的项目也能被识别。
-找不到时普通命令提示用 `--root` 指定，`watch --line` 静默退出；
+找不到时普通命令提示用 `--root` 指定，`console --line` 静默退出；
 `init` 则在当前目录创建配置。显式 `--root` 仍允许定位待校验的 `.herdr/`。
 
 默认编排命令（含 `init`、建卡、改卡、派活、起停团队、增删角色、清理）及 Git 分支的创建、合并、删除都归 `lead`。
-其他角色只能用 `handoff` 交棒，以及 `tasks`、`status`、`validate`、`role list` 只读查询；允许在任务范围内提交，但不碰 main。
+其他角色用 `claim` 领取、`handoff --delivery ID` 交棒，以及 `tasks`、`status`、`validate`、`role list` 只读查询；允许在任务范围内提交，但不碰 main。
 这是提示词约定，CLI 不做角色权限拦截。任务完成后由当前角色交接：
 
 ```sh
-herdr-team handoff <id> --summary "成果；产物路径/提交；验证结果；风险与下一步"
-herdr-team handoff <id> --summary-file summary.md
+herdr-team handoff <id> --delivery <delivery-id> --summary "成果；产物路径/提交；验证结果；风险与下一步"
+herdr-team handoff <id> --delivery <delivery-id> --summary-file summary.md
 ```
 
 摘要可选，两个参数互斥；提供后由 CLI 追加到任务 `task.md` 的“交付”小节，再通知下游先读正文和引用产物。
 空摘要、文件读取失败在流转前报错；原有描述和历次交付保留。最终 done 或下游未在线时也会保存摘要。
-裸 `handoff <id>` 仍兼容，回执和下游提示明确标记未提供摘要。JSON 包含 `summarySaved` 和绝对 `taskPath`。
+未进入队列的旧卡可裸 `handoff <id>`，回执和下游提示明确标记未提供摘要。JSON 包含 `summarySaved` 和绝对 `taskPath`。
 下游通过 `herdr-team tasks <id>`（可加 `--json`）读取交付内容；`herdr agent read` 仅用于排障，不能替代任务产物。
 
 最后一次 `handoff` 到 `done` 时会尝试回收 worktree；`clean` 回收所有

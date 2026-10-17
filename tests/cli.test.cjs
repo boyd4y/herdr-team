@@ -69,17 +69,17 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
   fs.rmSync(moved, { recursive: true });
   const version = JSON.parse(fs.readFileSync(path.join(root, 'cli/package.json'), 'utf8')).version;
   assert.equal(f.cli('--version').trim(), version);
-  assert.match(f.cli('--help'), /herdr-team <命令>/);
+  assert.match(f.cli('--help'), /herdr-team <command>/);
   assert(!f.cli('--help').includes('bunx'));
-  for (const command of ['init', 'validate', 'add', 'edit', 'handoff', 'role', 'tasks', 'status', 'watch', 'up', 'dispatch', 'clean', 'down']) {
-    assert(f.cli(command, '--help').includes(`用法: herdr-team ${command}`));
+  for (const command of ['init', 'validate', 'add', 'edit', 'handoff', 'role', 'tasks', 'status', 'console', 'claim', 'queue', 'up', 'dispatch', 'clean', 'down']) {
+    assert(f.cli(command, '--help').includes(`Usage: herdr-team ${command}`));
   }
   f.cli('init', '--plan', 'balanced');
   assert.equal(JSON.parse(f.cli('validate', '--json')).ok, true);
   const herdr = path.join(f.bin, 'herdr');
   fs.writeFileSync(herdr, '#!/bin/sh\nprintf \'%s\' \'{"result":{"agents":[],"workspaces":[],"panes":[],"worktrees":[]}}\'\n', { mode: 0o755 });
   assert.equal(typeof JSON.parse(f.cli('status', '--json')), 'object');
-  assert.match(f.cli('watch', '--once'), /TASKS/);
+  assert.match(f.cli('console', '--once'), /TASKS/);
   // No tests, node_modules or local settings are copied into the runtime cache.
   const snapshot = fs.readdirSync(path.join(buildState, 'cli-runtime'))[0];
   assert.deepEqual(fs.readdirSync(path.join(buildState, 'cli-runtime', snapshot)).sort(), ['package.json', 'scripts']);

@@ -4,7 +4,7 @@ import { loadProject } from "../scripts/lib/config.ts";
 import { handoff } from "../scripts/lib/handoff.ts";
 import { dispatch } from "../scripts/lib/launch.ts";
 import { worktreeBranch, type Project } from "../scripts/lib/types.ts";
-import { fakeHerdr, makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
+import { claimCurrent, fakeHerdr, makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 function withProject(build: (root: string) => void, run: (p: Project) => void): void {
   const { root, cleanup } = makeProject();
@@ -85,7 +85,7 @@ describe("cleanupTask", () => {
       const result = cleanupTask(p, herdr, { ...p.tasks[0]!, status: "done" });
 
       expect(result.action).toBe("dirty");
-      expect(result.note).toContain("未提交");
+      expect(result.note).toContain("uncommitted");
       // 关键：**没有** force 删掉别人没提交的工作
       expect(herdr.calls.some((c) => c.includes("force"))).toBe(false);
     });
@@ -129,12 +129,12 @@ describe("handoff 到终态时顺带回收", () => {
         const branch = worktreeBranch(p.tasks[0]!);
         expect([...herdr.branches.values()]).toContain(branch);
 
-        const first = handoff(p, herdr, "0001");
+        const first = handoff(p, herdr, "0001", new Date(), { delivery: claimCurrent(p.root) });
         expect(first.status).toBe("review");
         expect(loadProject(p.root).tasks[0]?.role).toBe("docs");
         expect([...herdr.branches.values()]).toContain(branch);
 
-        const last = handoff(loadProject(p.root), herdr, "0001");
+        const last = handoff(loadProject(p.root), herdr, "0001", new Date(), { delivery: claimCurrent(p.root) });
         expect(last.status).toBe("done");
         expect(last.cleanup?.action).toBe("removed");
         expect(herdr.branches.size).toBe(0);
@@ -183,7 +183,7 @@ describe("handoff 到终态时顺带回收", () => {
 
         expect(result.status).toBe("done"); // 任务照样结束
         expect(result.cleanup?.action).toBe("dirty");
-        expect(result.note).toContain("未提交");
+        expect(result.note).toContain("uncommitted");
       },
     );
   });

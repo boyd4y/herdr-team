@@ -27,19 +27,19 @@ describe("parseRoleSpecs", () => {
   });
 
   test("非法角色名报错", () => {
-    expect(() => parseRoleSpecs('[{"name":"Bad_Name","kind":"codex"}]')).toThrow(/必须匹配/);
+    expect(() => parseRoleSpecs('[{"name":"Bad_Name","kind":"codex"}]')).toThrow(/must match/);
   });
 
   test("非法 kind 报错", () => {
-    expect(() => parseRoleSpecs('[{"name":"dev","kind":"nope"}]')).toThrow(/不在枚举内/);
+    expect(() => parseRoleSpecs('[{"name":"dev","kind":"nope"}]')).toThrow(/[Uu]nsupported/);
   });
 
   test("缺 name 报错", () => {
-    expect(() => parseRoleSpecs('[{"kind":"codex"}]')).toThrow(/缺少字符串字段 name/);
+    expect(() => parseRoleSpecs('[{"kind":"codex"}]')).toThrow(/missing string field name/);
   });
 
   test("args 不是数组报错", () => {
-    expect(() => parseRoleSpecs('[{"name":"dev","kind":"codex","args":"-m"}]')).toThrow(/args 必须是字符串数组/);
+    expect(() => parseRoleSpecs('[{"name":"dev","kind":"codex","args":"-m"}]')).toThrow(/args must be an array of strings/);
   });
 });
 
@@ -61,9 +61,9 @@ describe("init —— 骨架", () => {
     try {
       init(loadProject(root), []);
       const text = readFileSync(join(root, ".herdr/identity.md"), "utf8");
-      expect(text).toContain("# 我是谁");
-      expect(text).toContain("## 代码风格");
-      expect(text).toContain("## 偏好");
+      expect(text).toContain("# Identity");
+      expect(text).toContain("## Code conventions");
+      expect(text).toContain("## Preferences");
     } finally {
       cleanup();
     }

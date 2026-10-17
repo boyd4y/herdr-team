@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { loadProject } from "../scripts/lib/config.ts";
 import { handoff } from "../scripts/lib/handoff.ts";
 import { TASK_BODY, type Project } from "../scripts/lib/types.ts";
-import { fakeHerdr, makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
+import { claimCurrent, fakeHerdr, makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 function withProject(build: (root: string) => void, run: (p: Project) => void): void {
   const { root, cleanup } = makeProject();
@@ -103,19 +103,19 @@ describe("handoff —— 队列为空：收尾", () => {
 describe("handoff —— 守卫", () => {
   test("终态拒绝", () => {
     withProject((root) => writeTask(root, "0001-a", taskMeta({ status: "done" })), (p) => {
-      expect(() => handoff(p, fakeHerdr(), "0001")).toThrow(/终态/);
+      expect(() => handoff(p, fakeHerdr(), "0001")).toThrow(/terminal/);
     });
   });
 
   test("cancelled 也拒绝", () => {
     withProject((root) => writeTask(root, "0001-a", taskMeta({ status: "cancelled" })), (p) => {
-      expect(() => handoff(p, fakeHerdr(), "0001")).toThrow(/终态/);
+      expect(() => handoff(p, fakeHerdr(), "0001")).toThrow(/terminal/);
     });
   });
 
   test("找不到的 id 报错", () => {
     withProject(() => {}, (p) => {
-      expect(() => handoff(p, fakeHerdr(), "0099")).toThrow(/找不到/);
+      expect(() => handoff(p, fakeHerdr(), "0099")).toThrow(/not found/);
     });
   });
 });
@@ -144,12 +144,14 @@ describe("流转记录 —— 只追加，不重写散文", () => {
   test("已有历史记录时接在后面，不覆盖", () => {
     withProject((root) => writeTask(root, "0001-a", taskMeta({ status: "doing", handoff: ["docs"] })), (p) => {
       // 先手工塞一条历史
-      const first = handoff(p, fakeHerdr(), "0001", new Date(2026, 9, 15, 1, 0));
+      const herdr = fakeHerdr();
+      herdr.live("docs");
+      const first = handoff(p, herdr, "0001", new Date(2026, 9, 15, 1, 0));
       expect(first.status).toBe("review");
 
       // 再推进一次（队列已空）→ 收尾
       const reloaded = loadProject(p.root);
-      handoff(reloaded, fakeHerdr(), "0001", new Date(2026, 9, 15, 2, 0));
+      handoff(reloaded, herdr, "0001", new Date(2026, 9, 15, 2, 0), { delivery: claimCurrent(p.root) });
 
       const text = bodyOf(p, "tasks/0001-a");
       expect(text).toContain("(doing → review)");

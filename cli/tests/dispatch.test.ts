@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { loadProject } from "../scripts/lib/config.ts";
+import { rememberRoleSession } from "../scripts/lib/sessions.ts";
 import { makeProject, twoRoles, writeTask, taskMeta } from "./helpers.ts";
 
 // Exercise the real CLI and realHerdr adapter, with an offline Herdr executable.
@@ -43,7 +44,7 @@ if (command === "workspace" && sub === "list") {
   result = { workspace: { workspace_id: id }, tab: { tab_id: id + ":t1" }, root_pane: { pane_id: id + ":p1" } };
 } else if (command === "agent" && sub === "start") {
   const pane = args[args.indexOf("--pane") + 1];
-  state.agents.push({ name: args[2], pane_id: pane, workspace_id: pane.split(":")[0] });
+  state.agents.push({ name: args[2], agent_status: "idle", pane_id: pane, workspace_id: pane.split(":")[0] });
 } else if (["pane", "workspace"].includes(command) && sub === "report-metadata") {
   if(command === "pane") {
     const agent = state.agents.find(a=>a.pane_id===args[2]);
@@ -55,7 +56,7 @@ if (command === "workspace" && sub === "list") {
   throw new Error("Unexpected Herdr call: " + args.join(" "));
 }
 writeFileSync(path, JSON.stringify(state));
-if (command === "agent" && sub === "prompt" && args.includes("--wait") && process.env.HERDR_TEST_PROMPT_ERROR) {
+if (command === "agent" && sub === "prompt" && process.env.HERDR_TEST_PROMPT_ERROR) {
   process.stderr.write(JSON.stringify({ error: { code: process.env.HERDR_TEST_PROMPT_ERROR } }));
   process.exit(1);
 }
@@ -66,7 +67,7 @@ process.stdout.write(JSON.stringify({ result }));
       const proc = Bun.spawnSync([join(bin, "herdr-team"), ...args], {
         cwd: root,
         env: { ...process.env, HERDR_ENV: "1", HERDR_TEAM_LOGOS: logos, HERDR_TEST_STATE: stateFile, HERDR_TEST_ROOT: root,
-          HERDR_TEST_PROMPT_ERROR: promptError, PATH: `${bin}${delimiter}${process.env.PATH}` },
+          HERDR_BIN_PATH: executable, HERDR_TEST_PROMPT_ERROR: promptError, PATH: `${bin}${delimiter}${process.env.PATH}` },
         stdout: "pipe", stderr: "pipe",
       });
       return { code: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
@@ -78,6 +79,23 @@ process.stdout.write(JSON.stringify({ result }));
 }
 
 describe("CLI up / dispatch", () => {
+  test.each([false, true])("up 的默认恢复与 --fresh 通过真实 CLI 生效（fresh=%s）", (fresh) => {
+    withCLI((cli, root, calls) => {
+      const project = loadProject(root);
+      const role = project.roles.find((r) => r.name === "docs")!;
+      rememberRoleSession(project, role, { agent_session: {
+        source: "herdr:claude", agent: "claude", kind: "id", value: "saved-docs-session",
+      } });
+      const result = cli("up", "--json", ...(fresh ? ["--fresh"] : []));
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout).roles.find((r: { role: string }) => r.role === "docs").action)
+        .toBe(fresh ? "started" : "resumed");
+      const start = calls().find((args) => args[0] === "agent" && args[1] === "start")!;
+      expect(start.includes("saved-docs-session")).toBe(!fresh);
+      expect(calls().some((args) => args[0] === "agent" && args[1] === "prompt")).toBe(false);
+    });
+  });
+
   test.each(["off", "font"])("旧环境变量 HERDR_TEAM_LOGOS=%s 不再让 up / dispatch 上报图标", (mode) => {
     withCLI((cli, _, calls) => {
       expect(cli("up").code).toBe(0);
@@ -95,12 +113,13 @@ describe("CLI up / dispatch", () => {
         expect(result.stderr).toBe("");
         if (json) {
           expect(JSON.parse(result.stdout)).toMatchObject([{
-            id: "0001", action: "dispatched", reason: `未能确认已开工（${code}）`,
+            id: "0001", action: "uncertain", reason: expect.stringContaining(code),
           }]);
         } else {
-          expect(result.stdout).toContain(`0001  dev  dispatched  (未能确认已开工（${code}）)`);
+          expect(result.stdout).toContain("0001  dev  uncertain");
+          expect(result.stdout).toContain(code);
         }
-        expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["doing", "todo"]);
+        expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "todo"]);
         expect(calls().filter((c) => c[0] === "agent" && c[1] === "prompt")).toHaveLength(1);
       }, code);
     });
@@ -109,9 +128,10 @@ describe("CLI up / dispatch", () => {
   test.each(["agent_blocked", "agent_not_found"])("dispatch %s 仍报错并保留 todo", (code) => {
     withCLI((cli, root) => {
       const result = cli("dispatch", "0001");
-      expect(result.code).toBe(1);
-      expect(result.stderr).toContain(code);
-      expect(result.stdout).toBe("");
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toContain("queued");
+      expect(result.stdout).toContain(code);
       expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "todo"]);
       expect(readFileSync(join(root, ".herdr/tasks/0001-a/task.md"), "utf8")).not.toContain("(todo → doing)");
     }, code);
@@ -129,9 +149,9 @@ describe("CLI up / dispatch", () => {
       const assigned = cli("dispatch", "--json");
       expect(assigned.code).toBe(0);
       expect(JSON.parse(assigned.stdout).map((d: { id: string; action: string }) => [d.id, d.action])).toEqual([
-        ["0002", "dispatched"], ["0001", "dispatched"],
+        ["0002", "dispatched"], ["0001", "queued"],
       ]);
-      expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["doing", "doing"]);
+      expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "doing"]);
     });
   });
 
@@ -150,27 +170,25 @@ describe("CLI up / dispatch", () => {
     withCLI((cli, root, calls) => {
       const unknown = cli("dispatch", "9999");
       expect(unknown.code).toBe(2);
-      expect(unknown.stderr).toContain("找不到任务 9999");
+      expect(unknown.stderr).toContain("Task 9999 not found");
       writeTask(root, "0001-a", taskMeta({ status: "done" }));
       const finished = cli("dispatch", "0001");
       expect(finished.code).toBe(2);
-      expect(finished.stderr).toContain("done，只能派 todo");
+      expect(finished.stderr).toContain("done; only todo tasks");
       expect(cli("dispatch", "0001", "0002").code).toBe(2);
       expect(calls()).toEqual([]);
       expect(loadProject(root).tasks[1]?.status).toBe("todo");
     });
   });
 
-  test("交给尚未启动的隔离角色时，提示的 edit + dispatch 路径可执行", () => {
+  test("handoff starts an isolated downstream agent without resetting the card", () => {
     withCLI((cli, root) => {
       writeTask(root, "0001-a", taskMeta({ role: "docs", status: "doing", handoff: ["dev"] }));
       const handed = cli("handoff", "0001", "--json");
       expect(handed.code).toBe(0);
       expect(JSON.parse(handed.stdout).status).toBe("review");
-      expect(JSON.parse(handed.stdout).note).toContain("edit 0001 --status todo --force");
-      expect(cli("edit", "0001", "--status", "todo", "--force").code).toBe(0);
-      expect(cli("dispatch", "0001").code).toBe(0);
-      expect(loadProject(root).tasks[0]?.status).toBe("doing");
+      expect(JSON.parse(handed.stdout).prompted).toBe(true);
+      expect(loadProject(root).tasks[0]?.status).toBe("review");
       expect(loadProject(root).tasks[1]?.status).toBe("todo");
     });
   });

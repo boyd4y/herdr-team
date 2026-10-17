@@ -128,7 +128,7 @@ describe("createTask —— 写出的东西", () => {
     withProject(() => {}, (p) => {
       expect(() =>
         createTask(p, { title: "X", role: "ghost", handoff: [], priority: "P2", body: "" }),
-      ).toThrow(/可用角色：dev, docs/);
+      ).toThrow(/Available: dev, docs/);
     });
   });
 
@@ -203,7 +203,7 @@ describe("editTask", () => {
 
   test("终态不许改", () => {
     withProject((root) => writeTask(root, "0001-a", taskMeta({ status: "done" })), (p) => {
-      expect(() => editTask(p, "0001", { title: "x" }, true)).toThrow(/终态/);
+      expect(() => editTask(p, "0001", { title: "x" }, true)).toThrow(/terminal/);
     });
   });
 

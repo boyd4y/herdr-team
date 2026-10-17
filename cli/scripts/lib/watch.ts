@@ -1,6 +1,7 @@
 import { projectAgents } from "./team-scope.ts";
+import { deliveryFor, deliveryState } from "./delivery.ts";
 /**
- * `herdr-team watch` —— 只读实时看板。
+ * Team Console renderer and terminal loop。
  *
  * 分三层：
  *   - 纯渲染 `renderFrame` / `computeLayout`（不碰 IO、不读时钟）
@@ -10,7 +11,7 @@ import { projectAgents } from "./team-scope.ts";
  * 这么分的理由和 `herdr.ts` 抽 `Herdr` 接口一样：测试塞个假实现就能离线把
  * 整个循环跑完 —— 按键、刷新、resize 都能断言。
  *
- * **本模块不许有模块级副作用。** `realTerminal()` 只能在 `cmdWatch` 里构造，
+ * **本模块不许有模块级副作用。** `realTerminal()` 只能在 `cmdConsole` 里构造，
  * 否则 `bun test` 一 import 就把 stdin 抢走。
  */
 
@@ -199,6 +200,7 @@ export interface WatchState {
 
 export interface WatchModel {
   projectName: string;
+  consoleMode?: boolean;
   /** 已格式化好的时钟，由驱动传进来 —— 渲染里读时钟就没法测了。 */
   now: string;
   intervalSeconds: number;
@@ -358,23 +360,23 @@ function bannerEntries(model: WatchModel): { glyph: string; text: string; code?:
   const out: { glyph: string; text: string; code?: string }[] = [];
 
   if (model.loadError !== null) {
-    out.push({ glyph: "⚠", text: `读取 .herdr/ 失败：${model.loadError}`, code: YELLOW });
+    out.push({ glyph: "⚠", text: `Failed to load .herdr/: ${model.loadError}`, code: YELLOW });
   }
   if (!model.herdrOk) {
     out.push({
       glyph: "⚠",
-      text: "连不上 Herdr —— 角色状态暂缺，跑 `herdr-team status` 看详情",
+      text: "Herdr is unavailable; role status missing. Run `herdr-team status` for details",
       code: YELLOW,
     });
   }
   const first = model.inconsistencies[0];
   if (first !== undefined) {
-    const more = model.inconsistencies.length > 1 ? `（共 ${model.inconsistencies.length} 条）` : "";
+    const more = model.inconsistencies.length > 1 ? `(${model.inconsistencies.length} total)` : "";
     out.push({ glyph: "⚠", text: `[${first.kind}] ${first.message}${more}`, code: YELLOW });
   }
   const problem = model.problems[0];
   if (problem !== undefined) {
-    const more = model.problems.length > 1 ? `（共 ${model.problems.length} 条，跑 validate）` : "";
+    const more = model.problems.length > 1 ? `(${model.problems.length} total; run validate)` : "";
     out.push({ glyph: "✗", text: `${problem}${more}`, code: RED });
   }
 
@@ -445,12 +447,12 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
   if (layout.tooSmall) {
     return [
       cell(
-        ` 终端太小：需 ≥ ${MIN_WIDTH}×${layout.minHeight}，当前 ${width}×${opts.height}`,
+        ` Terminal too small: need ≥ ${MIN_WIDTH}×${layout.minHeight}; current ${width}×${opts.height}`,
         width,
         YELLOW,
         color,
       ),
-      cell(" q 退出", width, DIM, color),
+      cell(" q quit", width, DIM, color),
     ];
   }
 
@@ -462,8 +464,8 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
 
   // --- 标题栏
   const badge = model.herdrOk ? "" : "   herdr ✗";
-  const left = ` herdr-team · ${model.projectName}${badge}`;
-  const rate = model.intervalSeconds === 0 ? "手动" : `${model.intervalSeconds}s`;
+  const left = ` ${model.consoleMode ? "Team Console" : "herdr-team"} · ${model.projectName}${badge}`;
+  const rate = model.intervalSeconds === 0 ? "manual" : `${model.intervalSeconds}s`;
   const right = `⟳${rate}  ${model.now} `;
   const rightW = Math.min(displayWidth(right), Math.max(0, width - 8));
   push(cell(left, width - rightW, BOLD, color) + cell(right, rightW, DIM, color));
@@ -491,7 +493,7 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
   }
 
   if (model.tasks.length === 0) {
-    push(cell(filtering ? "  （没有匹配任务。Esc 清除过滤）" : "  （没有任务。按 a 看已结束的）", width, DIM, color));
+    push(cell(filtering ? "  (no matching tasks; Esc clears the filter)" : "  (no tasks; press a to include terminal tasks)", width, DIM, color));
   }
   for (let i = offset; i < offset + layout.taskRows; i++) {
     const task = model.tasks[i];
@@ -502,13 +504,13 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
 
   // --- 角色
   const roleHidden = model.roles.length - layout.roleRows;
-  const roleMark = roleHidden > 0 ? `⋯ ${roleHidden} 个角色未显示` : "";
+  const roleMark = roleHidden > 0 ? `⋯ ${roleHidden} roles hidden` : "";
   push(
     cell(" ROLES", width - Math.min(displayWidth(roleMark), Math.max(0, width - 12)), BOLD, color) +
       cell(roleMark, Math.min(displayWidth(roleMark), Math.max(0, width - 12)), DIM, color),
   );
   if (model.roles.length === 0) {
-    push(cell("  （没有角色）", width, DIM, color));
+    push(cell("  (no roles)", width, DIM, color));
   }
   for (const role of model.roles.slice(0, layout.roleRows)) {
     push(roleRow(role, width, color));
@@ -538,7 +540,9 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
     push(cell(` handoff  ${handoff}        depends_on ${deps}`, width));
     const role = model.roles.find((r) => r.role === selected.role);
     const branch = role?.worktree === true ? worktreeBranch(selected) : "—";
-    push(cell(` branch   ${branch}`, width, DIM, color));
+    let delivery = deliveryState(selected) ?? "";
+    try { const d = deliveryFor(selected); if (d?.reason) delivery += `: ${d.reason}`; } catch { /* Validation banner explains malformed records. */ }
+    push(cell(` branch   ${branch}${delivery ? `   delivery ${delivery}` : ""}`, width, DIM, color));
 
     const mdHead = " ── task.md ";
     push(cell(mdHead + "─".repeat(Math.max(0, width - displayWidth(mdHead))), width, DIM, color));
@@ -555,10 +559,10 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
   // --- 底栏
   const scrollable = model.selectedIndex >= 0 && model.tasks[model.selectedIndex] !== undefined;
   const hint = model.searching
-    ? " 输入搜索   Backspace 删除   Enter 保留   Esc 清除   Ctrl-C 退出 "
+    ? " Search   Backspace delete   Enter keep   Esc clear   Ctrl-C quit "
     : scrollable
-      ? " ↑↓ 选择   PgUp/PgDn 翻正文   / 搜索   r 刷新   a 全部   q 退出 "
-      : " ↑↓ 选择   / 搜索   r 刷新   a 全部   q 退出 ";
+      ? " ↑↓ select   PgUp/PgDn scroll   / search   r refresh   a all   q quit "
+      : " ↑↓ select   / search   r refresh   a all   q quit ";
   push(cell(hint, width, DIM, color));
 
   return lines;
@@ -575,15 +579,17 @@ function taskRow(task: TaskCard, model: WatchModel, selected: boolean, width: nu
   const rest = width - TASKS_FIXED_COLS;
   const role = model.roles.find((r) => r.role === task.role);
   const branch = role?.worktree === true ? worktreeBranch(task) : "—";
+  const delivery = deliveryState(task);
+  const title = `${delivery ? `[${delivery}] ` : ""}${sanitize(task.title)}`;
 
   if (rest < 24) {
-    return head + cell(sanitize(task.title), Math.max(0, width - TASKS_FIXED_COLS), undefined, color);
+    return head + cell(title, Math.max(0, width - TASKS_FIXED_COLS), undefined, color);
   }
   const branchW = Math.min(28, Math.floor(rest * 0.45));
   const titleW = rest - branchW - 1;
   return (
     head +
-    cell(sanitize(task.title), titleW, selected ? BOLD : undefined, color) +
+    cell(title, titleW, selected ? BOLD : undefined, color) +
     " " +
     cell(branch, branchW, DIM, color)
   );
@@ -599,7 +605,9 @@ function roleRow(role: RoleStatus, width: number, color: boolean): string {
 
   // 隔离角色没有常驻 agent 也没有 pane，那两列天生是空的 —— 说清楚，
   // 免得被当成「agent 掉了」。
-  const note = role.worktree ? "按任务起 agent" : "";
+  const note = role.current !== undefined
+    ? `active ${role.current.map((id) => `#${id}`).join(",") || "—"}  queued ${role.queued ?? 0}`
+    : role.worktree ? "starts on dispatch" : "";
   const tail = [role.paneId ?? "", note].filter((s) => s !== "").join("   ");
   return head + cell(tail, Math.max(0, width - ROLE_FIXED_COLS), DIM, color);
 }
@@ -624,7 +632,7 @@ const LINE_STATUS_ORDER = ["doing", "review", "todo"] as const;
  *
  * `unregistered`（todo 卡已经在跑）不算 —— 那是提醒不是问题，拿它占标签栏只会变噪音。
  */
-const NEEDS_ATTENTION = new Set(["blocked", "agent-missing", "maybe-finished"]);
+const NEEDS_ATTENTION = new Set(["blocked", "agent-missing", "maybe-finished", "delivery-uncertain"]);
 
 /**
  * 标签栏那一行，形状：`team: 1 doing 2 todo · 1 blocked · 1 ✗`
@@ -683,6 +691,7 @@ export interface OnceOpts {
   color: boolean;
   showAll: boolean;
   intervalSeconds: number;
+  consoleMode?: boolean;
 }
 
 /**
@@ -703,6 +712,7 @@ export function renderOnce(project: Project, herdr: Herdr, opts: OnceOpts): stri
     loadError: null,
   };
   const model = buildModel(project, herdr, state, clock(), opts.intervalSeconds);
+  model.consoleMode = opts.consoleMode;
   return frameText(renderFrame(model, { width: opts.width, height: opts.height, color: opts.color }));
 }
 
@@ -845,6 +855,7 @@ export function realTerminal(): Terminal {
 // ------------------------------------------------------------------ 驱动
 
 export interface WatchDeps {
+  consoleMode?: boolean;
   io: Terminal;
   /** 首帧的数据。由调用方先读好 —— 读失败就在进备屏之前报错退出，不留半屏。 */
   initial: Project;
@@ -857,6 +868,8 @@ export interface WatchDeps {
   color: boolean;
   /** 只给测试用：跑完这么多帧就收工，防止驱动 bug 把测试挂死。 */
   maxFrames?: number;
+  tick?: () => void;
+  shouldQuit?: () => boolean;
 }
 
 /**
@@ -881,7 +894,7 @@ const PAGE = 10;
 /**
  * 跑看板。
  *
- * 清理只在一个地方：下面的 `finally`。所以 `cmdWatch` **绝不能**自己调
+ * 清理只在一个地方：下面的 `finally`。所以 `cmdConsole` **绝不能**自己调
  * `process.exit()` —— 那样会赶在还原终端之前把进程杀掉，用户的终端就留在
  * raw mode 里了。这也是 `main` 得是 async 的原因。
  */
@@ -922,9 +935,16 @@ export async function runWatch(deps: WatchDeps): Promise<number> {
     process.on("SIGINT", onSignal);
     process.on("SIGTERM", onSignal);
 
-    for (let frame = 0; frame < maxFrames && !quitting; frame += 1) {
+    let nextTick = 0;
+    for (let frame = 0; frame < maxFrames && !quitting && !deps.shouldQuit?.(); frame += 1) {
+      if (deps.tick && Date.now() >= nextTick) {
+        try { deps.tick(); project = reload(project); }
+        catch (error) { state.loadError = error instanceof Error ? error.message : String(error); }
+        nextTick = Date.now() + Math.max(1000, intervalMs);
+      }
       const { width, height } = io.size(); // 每帧重读：SIGWINCH 没接上也能跟上缩放
       const model = buildModel(project, herdr, state, clock(), deps.intervalSeconds);
+      if (deps.tick || deps.consoleMode) model.consoleMode = true;
       const opts = { width, height, color: deps.color };
       const layout = computeLayout(model, opts);
 

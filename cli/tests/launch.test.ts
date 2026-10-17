@@ -55,7 +55,7 @@ describe("up —— 幂等：先找后建", () => {
           { workspace_id: "w2", tab_id: "w2:t1", pane_id: "w2:p1", cwd: p.root },
         ],
       });
-      expect(() => up(p, herdr)).toThrow(/不要猜/);
+      expect(() => up(p, herdr)).toThrow(/resolve ownership/);
     });
   });
 
@@ -63,7 +63,7 @@ describe("up —— 幂等：先找后建", () => {
     withProject(() => {}, (p) => {
       const herdr = runningWorkspace();
       up(p, herdr);
-      expect(herdr.calls.some((c) => c.startsWith("tab create"))).toBe(false);
+      expect(herdr.calls.some((c) => c.startsWith("tab create") && !c.startsWith("tab create Team Console"))).toBe(false);
     });
   });
 
@@ -84,7 +84,7 @@ describe("up —— 幂等：先找后建", () => {
       const result = up(p, herdr);
       expect(result.roles[0]?.paneId.endsWith(":p1")).toBe(true);
       expect(herdr.calls.some((c) => c.startsWith("tab rename") && c.endsWith("dev"))).toBe(true);
-      expect(herdr.calls.filter((c) => c.startsWith("tab create"))).toHaveLength(1);
+      expect(herdr.calls.filter((c) => c.startsWith("tab create"))).toHaveLength(2);
     });
   });
 
@@ -115,7 +115,7 @@ describe("up —— 幂等：先找后建", () => {
   test("没有角色时拒绝", () => {
     const { root, cleanup } = makeProject();
     try {
-      expect(() => up(loadProject(root), fakeHerdr())).toThrow(/没有角色/);
+      expect(() => up(loadProject(root), fakeHerdr())).toThrow(/No roles/);
     } finally {
       cleanup();
     }
@@ -212,7 +212,7 @@ describe("派活", () => {
     withTasks(
       (root) => writeTask(root, "0001-a", taskMeta()),
       (p) => {
-        expect(dispatch(p, fakeHerdr())[0]?.action).toBe("no-agent");
+        expect(dispatch(p, fakeHerdr())[0]?.action).toBe("queued");
       },
     );
   });

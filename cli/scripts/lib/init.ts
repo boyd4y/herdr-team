@@ -6,20 +6,20 @@ import { emitYaml } from "./yaml.ts";
 /** 角色元数据里键的顺序。**不含 `name`** —— 角色名就是目录名，不重复存。 */
 export const ROLE_FIELD_ORDER = ["kind", "model", "worktree", "cwd", "args", "env"];
 
-const IDENTITY_TEMPLATE = `# 我是谁
+const IDENTITY_TEMPLATE = `# Identity
 
-<一句话说明自己是谁、主要做什么>
+<Describe who you are and what you work on.>
 
-## 代码风格
+## Code conventions
 
-- <改完要跑什么、提交习惯等>
+- <Validation commands and commit conventions.>
 
-## 偏好
+## Preferences
 
-- <agent 该遵守的通用偏好>
+- <Shared preferences for the team.>
 `;
 
-const DEFAULT_ROLE_BODY = "你负责这件事。\n\n完成后运行 `herdr-team handoff <id>` 交棒，不要自己改任务卡。\n";
+const DEFAULT_ROLE_BODY = "You own this work.\n\nWhen done, run `herdr-team handoff <id>`. Do not edit task cards yourself.\n";
 
 export class InitError extends Error {}
 
@@ -46,21 +46,21 @@ export interface InitResult {
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new InitError("角色定义必须是 JSON 对象数组");
+    throw new InitError("Role definitions must be an array of JSON objects");
   }
   return value as Record<string, unknown>;
 }
 
 function requireString(rec: Record<string, unknown>, key: string): string {
   const v = rec[key];
-  if (typeof v !== "string" || v === "") throw new InitError(`角色定义缺少字符串字段 ${key}`);
+  if (typeof v !== "string" || v === "") throw new InitError(`Role definition is missing string field ${key}`);
   return v;
 }
 
 function optionalString(rec: Record<string, unknown>, key: string): string | undefined {
   const v = rec[key];
   if (v === undefined) return undefined;
-  if (typeof v !== "string") throw new InitError(`角色字段 ${key} 必须是字符串`);
+  if (typeof v !== "string") throw new InitError(`Role field ${key} must be a string`);
   return v;
 }
 
@@ -70,31 +70,31 @@ export function parseRoleSpecs(input: string): RoleSpec[] {
   try {
     parsed = JSON.parse(input);
   } catch (error) {
-    throw new InitError(`角色定义不是合法 JSON：${error instanceof Error ? error.message : String(error)}`);
+    throw new InitError(`Invalid role definition JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
   const list = Array.isArray(parsed) ? parsed : (asRecord(parsed)["roles"] ?? null);
-  if (!Array.isArray(list)) throw new InitError("角色定义必须是数组，或含 roles 数组的对象");
+  if (!Array.isArray(list)) throw new InitError("Role definitions must be an array or an object containing a roles array");
 
   return list.map((raw) => {
     const rec = asRecord(raw);
     const name = requireString(rec, "name");
     const kind = requireString(rec, "kind");
-    if (!NAME_RE.test(name)) throw new InitError(`角色名 "${name}" 必须匹配 ${NAME_RE}`);
+    if (!NAME_RE.test(name)) throw new InitError(`Role name "${name}" must match ${NAME_RE}`);
     if (!(KINDS as readonly string[]).includes(kind)) {
-      throw new InitError(`角色 "${name}" 的 kind "${kind}" 不在枚举内`);
+      throw new InitError(`Role "${name}" has unsupported kind "${kind}"`);
     }
     const argsRaw = rec["args"];
     if (argsRaw !== undefined && !Array.isArray(argsRaw)) {
-      throw new InitError(`角色 "${name}" 的 args 必须是字符串数组`);
+      throw new InitError(`Role "${name}" args must be an array of strings`);
     }
     const envRaw = rec["env"];
     if (envRaw !== undefined && (envRaw === null || typeof envRaw !== "object" || Array.isArray(envRaw))) {
-      throw new InitError(`角色 "${name}" 的 env 必须是字符串映射`);
+      throw new InitError(`Role "${name}" env must map strings to strings`);
     }
 
     const worktreeRaw = rec["worktree"];
     if (worktreeRaw !== undefined && typeof worktreeRaw !== "boolean") {
-      throw new InitError(`角色 "${name}" 的 worktree 必须是 true 或 false`);
+      throw new InitError(`Role "${name}" worktree must be true or false`);
     }
 
     return {
@@ -184,6 +184,6 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
 
 export function readRolesFile(path: string): string {
   if (path === "-") return readFileSync(0, "utf8");
-  if (!existsSync(path)) throw new InitError(`找不到 ${path}`);
+  if (!existsSync(path)) throw new InitError(`File not found: ${path}`);
   return readFileSync(path, "utf8");
 }

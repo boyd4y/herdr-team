@@ -12,8 +12,8 @@ const { cleanupIcons } = require('./cleanup-icons');
 // Eight stable color slots; each token holds the compact badge + name label.
 const BADGE_COLORS = ['#89b4fa', '#cba6f7', '#94e2d5', '#fab387', '#f5c2e7', '#a6e3a1', '#74c7ec', '#f9e2af'];
 const BADGE_TOKENS = BADGE_COLORS.map((fg, slot) => `{ token = "$team_workspace_c${slot}", fg = "${fg}", bold = true, dim = false }`).join(', ');
-const SIDEBAR = `[ui.sidebar.agents]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label", "$team_harness"], ["$team_model", "$team_task"]]\n\n[ui.sidebar.spaces]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label"], ["branch", "git_status"]]`;
-const POPUP = '[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "herdr-team watch"\nwidth = "90%"\nheight = "85%"';
+const SIDEBAR = `[ui.sidebar.agents]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label", "$team_harness"], ["$team_model", "$team_task"]]\n\n[ui.sidebar.spaces]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label"], ["branch", { token = "$team_git_files", fg = "#f9e2af", dim = false }, "git_status"]]`;
+const POPUP = '[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "herdr-team console --observe"\nwidth = "90%"\nheight = "85%"';
 
 function herdr(args, env = process.env) {
   const result = spawnSync(env.HERDR_BIN_PATH || 'herdr', args, {
@@ -40,7 +40,7 @@ function existingPopup(text) {
       values.set(match[1], match[3]);
     }
     return values.get('key') === 'prefix+t' && values.get('type') === 'popup' &&
-      values.get('command') === 'herdr-team watch';
+      values.get('command') === 'herdr-team console --observe';
   });
 }
 

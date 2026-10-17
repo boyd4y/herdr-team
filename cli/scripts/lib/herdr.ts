@@ -23,6 +23,17 @@ export interface AgentInfo {
   tab_id?: string;
   workspace_id?: string;
   tokens?: Record<string, string>;
+  agent_session?: AgentSessionInfo;
+  cwd?: string;
+  foreground_cwd?: string;
+}
+
+/** Native session reference reported by an official Herdr integration. */
+export interface AgentSessionInfo {
+  source: string;
+  agent: string;
+  kind: "id" | "path";
+  value: string;
 }
 
 export interface TabInfo {
@@ -35,7 +46,7 @@ export interface TabInfo {
 
 export interface WorkspaceInfo {
   tokens?: Record<string, string>;
-  worktree?: { repo_key: string; is_linked_worktree: boolean };
+  worktree?: { repo_key: string; is_linked_worktree: boolean; checkout_path?: string };
   workspace_id: string;
   label: string;
   pane_count: number;
@@ -57,6 +68,7 @@ export interface PaneInfo {
   workspace_id: string;
   cwd?: string;
   agent_status?: string;
+  tokens?: Record<string, string>;
 }
 
 /** One text token avoids Herdr's separator between the badge and its label. */
@@ -104,12 +116,14 @@ export interface Herdr {
    */
   paneCurrent(): { paneId: string; cwd: string | null };
   paneClose(paneId: string): void;
+  paneRun(paneId: string, command: string): void;
+  paneIsShell(paneId: string): boolean;
   workspaceCloseGroup(workspaceId: string): void;
   agentList(): AgentInfo[];
   agentStart(name: string, kind: string, paneId: string, args: string[]): void;
   /** 默认只提交输入；dispatch 可选择等待首次 working / blocked，调用上限 8 秒。 */
   agentPrompt(target: string, text: string, options?: { waitForActivity: boolean }): void;
-  reportWorkspaceMetadata(workspaceId: string, tokens: Record<string, string>): void;
+  reportWorkspaceMetadata(workspaceId: string, tokens: Record<string, string | null>, source?: string): void;
   reportBadge(scope: "workspace" | "pane", id: string, badge: string | null, colorSlot?: number, label?: string): void;
   reportMetadata(paneId: string, source: string, displayAgent: string, tokens?: Record<string, string | null>): void;
 }
@@ -127,7 +141,7 @@ function unwrap<T>(json: unknown, key: string, args: string[]): T[] {
   const r = (json as RawResult).result;
   const list = r?.[key];
   if (!Array.isArray(list)) {
-    throw new HerdrError(`herdr ${args.join(" ")} 返回里没有 result.${key}`, args);
+    throw new HerdrError(`herdr ${args.join(" ")} response is missing result.${key}`, args);
   }
   return list as T[];
 }
@@ -162,14 +176,14 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       proc = spawn(args);
     } catch (error) {
       throw new HerdrError(
-        `跑不了 herdr（PATH 里有吗？）：${error instanceof Error ? error.message : String(error)}`,
+        `Cannot run herdr (check PATH): ${error instanceof Error ? error.message : String(error)}`,
         args,
       );
     }
     if (proc.code !== 0) {
-      const detail = proc.stderr.trim() || proc.stdout.trim() || `退出码 ${proc.code}`;
+      const detail = proc.stderr.trim() || proc.stdout.trim() || `exit code ${proc.code}`;
       throw new HerdrError(
-        `herdr ${args.join(" ")} 失败：${detail}`,
+        `herdr ${args.join(" ")} failed: ${detail}`,
         args,
         errorCode(proc.stderr) ?? errorCode(proc.stdout),
       );
@@ -182,7 +196,7 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
     try {
       return JSON.parse(text) as T;
     } catch {
-      throw new HerdrError(`herdr ${args.join(" ")} 的输出不是 JSON：${text.slice(0, 200)}`, args);
+      throw new HerdrError(`herdr ${args.join(" ")} returned invalid JSON: ${text.slice(0, 200)}`, args);
     }
   };
 
@@ -198,7 +212,7 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       const tabId = (raw["tab"] as { tab_id?: string } | undefined)?.tab_id;
       const paneId = (raw["root_pane"] as { pane_id?: string } | undefined)?.pane_id;
       if (!workspaceId || !tabId || !paneId) {
-        throw new HerdrError("workspace create 没返回完整的 workspace/tab/root_pane", args);
+        throw new HerdrError("workspace create returned incomplete workspace/tab/root_pane IDs", args);
       }
       return { workspaceId, tabId, paneId };
     },
@@ -220,7 +234,7 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       const raw = (json(args) as RawResult).result ?? {};
       const tabId = (raw["tab"] as { tab_id?: string } | undefined)?.tab_id;
       const paneId = (raw["root_pane"] as { pane_id?: string } | undefined)?.pane_id;
-      if (!tabId || !paneId) throw new HerdrError("tab create 没返回 tab/root_pane", args);
+      if (!tabId || !paneId) throw new HerdrError("tab create returned incomplete tab/root_pane IDs", args);
       return { tabId, paneId };
     },
 
@@ -231,7 +245,7 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       const tabId = (raw["tab"] as { tab_id?: string } | undefined)?.tab_id;
       const paneId = (raw["root_pane"] as { pane_id?: string } | undefined)?.pane_id;
       if (!workspaceId || !tabId || !paneId) {
-        throw new HerdrError("worktree create 没返回完整的 workspace/tab/root_pane", args);
+        throw new HerdrError("worktree create returned incomplete workspace/tab/root_pane IDs", args);
       }
       return { workspaceId, tabId, paneId };
     },
@@ -249,6 +263,13 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
     tabRename: (tabId, label) => void run(["tab", "rename", tabId, label]),
 
     paneClose: (paneId) => void run(["pane", "close", paneId]),
+    paneRun: (paneId, command) => void run(["pane", "run", paneId, command]),
+    paneIsShell: (paneId) => {
+      const raw = (json(["pane", "process-info", "--pane", paneId]) as RawResult).result ?? {};
+      const info = raw["process_info"] as { shell_pid?: number; foreground_process_group_id?: number; foreground_processes?: Array<{ pid: number }> } | undefined;
+      return info?.shell_pid !== undefined && info.foreground_process_group_id === info.shell_pid &&
+        (info.foreground_processes ?? []).every((p) => p.pid === info.shell_pid);
+    },
 
     // 关掉「主 workspace + 挂在它下面的 worktree workspace」整组。
     workspaceCloseGroup: (workspaceId) => void run(["workspace", "close", workspaceId, "--group"]),
@@ -264,7 +285,7 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       const args = ["pane", "current"];
       const raw = (json(args) as RawResult).result ?? {};
       const pane = raw["pane"] as { pane_id?: string; cwd?: string } | undefined;
-      if (pane?.pane_id === undefined) throw new HerdrError("pane current 没返回 pane", args);
+      if (pane?.pane_id === undefined) throw new HerdrError("pane current response is missing pane", args);
       return { paneId: pane.pane_id, cwd: pane.cwd ?? null };
     },
 
@@ -285,9 +306,10 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       run(args);
     },
 
-    reportWorkspaceMetadata: (workspaceId, tokens) => void run([
-      "workspace", "report-metadata", workspaceId, "--source", "herdr-team",
-      ...Object.entries(tokens).flatMap(([key, value]) => ["--token", `${key}=${value}`]),
+    reportWorkspaceMetadata: (workspaceId, tokens, source = "herdr-team") => void run([
+      "workspace", "report-metadata", workspaceId, "--source", source,
+      ...Object.entries(tokens).flatMap(([key, value]) =>
+        value === null ? ["--clear-token", key] : ["--token", `${key}=${value}`]),
     ]),
 
     reportBadge: (scope, id, badge, colorSlot = 0, label) => void run([

@@ -163,7 +163,7 @@ describe("fuzzy search", () => {
   test("子序列不要求连续，但不能乱序或复用码点", () => {
     expect(fuzzyScore("watch tests", "wtt")).not.toBeNull();
     expect(fuzzyScore("watch tests", "tw")).toBeNull();
-    expect(fuzzyScore("watch", "ww")).toBeNull();
+    expect(fuzzyScore("console", "ww")).toBeNull();
     expect(fuzzyScore("", "w")).toBeNull();
   });
 
@@ -317,7 +317,7 @@ describe("renderFrame", () => {
   });
 
   test("搜索输入、空结果、超长中英文查询也遵守宽高预算，长查询保留命中数", () => {
-    for (const query of ["", "加读", "watch", "不存在".repeat(80), "x".repeat(200), "\x1b[31m"]) {
+    for (const query of ["", "加读", "console", "不存在".repeat(80), "x".repeat(200), "\x1b[31m"]) {
       for (const searching of [false, true]) {
         const m = model({ query, searching });
         for (const width of [40, 60, 80, 120]) {
@@ -359,7 +359,7 @@ describe("renderFrame", () => {
       [20, 5],
     ] as const) {
       const frame = renderFrame(model(), { width, height, color: false });
-      expect(frame.join("\n")).toContain("终端太小");
+      expect(frame.join("\n")).toContain("Terminal too small");
       for (const line of frame) expect(displayWidth(line)).toBeLessThanOrEqual(width);
     }
   });
@@ -445,8 +445,8 @@ describe("renderFrame", () => {
   test("空项目也能渲染，不崩", () => {
     const m = buildModel(projectOf([], []), fakeHerdr(), freshState(), "00:00:00", 2);
     const frame = renderFrame(m, { width: 80, height: 24, color: false });
-    expect(frame.join("\n")).toContain("（没有任务");
-    expect(frame.join("\n")).toContain("（没有角色）");
+    expect(frame.join("\n")).toContain("(no tasks");
+    expect(frame.join("\n")).toContain("(no roles)");
     for (const line of frame) expect(displayWidth(stripAnsi(line))).toBeLessThanOrEqual(80);
   });
 
@@ -567,7 +567,7 @@ describe("runWatch", () => {
   test("输入中的 q/j/k/r/a 和 / 都是文本，不退出或触发命令", async () => {
     const { io, calls } = await drive([...parseKeys("/qjkra/").keys, { kind: "quit" }]);
     expect(io.screen).toContain("/qjkra/  (0/2)");
-    expect(io.screen).toContain("没有匹配任务");
+    expect(io.screen).toContain("no matching tasks");
     expect(calls).toBe(0);
     expect(io.log).toEqual(["raw:on", "enter", "leave", "raw:off"]);
   });
@@ -700,7 +700,7 @@ describe("runWatch", () => {
       color: false,
     });
 
-    expect(io.screen).toContain("读取 .herdr/ 失败");
+    expect(io.screen).toContain("Failed to load .herdr/");
     expect(io.screen).toContain("加只读看板"); // 上一份数据还在画
   });
 
@@ -789,6 +789,7 @@ process.stdout.write(JSON.stringify({ result }));
           env: {
             ...process.env,
             HERDR_ENV: "1",
+            HERDR_BIN_PATH: executable,
             HERDR_TEST_CWD: root,
             PATH: `${bin}${delimiter}${process.env.PATH}`,
           },
@@ -813,13 +814,13 @@ process.stdout.write(JSON.stringify({ result }));
 
   test("打一帧就退出，而且绝不碰备屏和光标", () => {
     withCLI((cli) => {
-      const r = cli("watch", "--once");
+      const r = cli("console", "--once");
       expect(r.code).toBe(0);
       expect(r.stdout).toContain("TASKS");
       expect(r.stdout).toContain("1 open / 2 total");
       expect(r.stdout).toContain("0001");
       expect(r.stdout).not.toContain("0002"); // 已结束的默认不显示
-      expect(r.stdout).not.toContain("终端太小");
+      expect(r.stdout).not.toContain("Terminal too small");
       // 关键：非交互路径一个终端控制序列都不能发。
       expect(r.stdout).not.toContain("\x1b[?1049");
       expect(r.stdout).not.toContain("\x1b[?25l");
@@ -829,16 +830,24 @@ process.stdout.write(JSON.stringify({ result }));
 
   test("非 TTY 又没给 --once：照样打一帧，并在 stderr 说清楚", () => {
     withCLI((cli) => {
-      const r = cli("watch");
+      const r = cli("console");
       expect(r.code).toBe(0);
       expect(r.stdout).toContain("TASKS");
-      expect(r.stderr).toContain("不是交互终端");
+      expect(r.stderr).toContain("non-interactive terminal");
+    });
+  });
+
+  test("watch is no longer a public command", () => {
+    withCLI((cli) => {
+      const result = cli("watch", "--once");
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain("Unknown command");
     });
   });
 
   test("--json 明确拒绝，而不是默默忽略", () => {
     withCLI((cli) => {
-      const r = cli("watch", "--json");
+      const r = cli("console", "--json");
       expect(r.code).toBe(2);
       expect(r.stderr).toContain("status --json");
     });
@@ -846,16 +855,16 @@ process.stdout.write(JSON.stringify({ result }));
 
   test("--help 给出用法，并点出 --once", () => {
     withCLI((cli) => {
-      const r = cli("watch", "--help");
+      const r = cli("console", "--help");
       expect(r.code).toBe(0);
-      expect(r.stdout).toContain("用法: herdr-team watch");
+      expect(r.stdout).toContain("Usage: herdr-team console");
       expect(r.stdout).toContain("--once");
     });
   });
 
   test("--line 打一行给标签栏，不碰终端", () => {
     withCLI((cli) => {
-      const r = cli("watch", "--line");
+      const r = cli("console", "--line");
       expect(r.code).toBe(0);
       expect(r.stdout.trim()).toBe("team: 1 todo");
       expect(r.stdout).not.toContain("\x1b");
@@ -864,7 +873,7 @@ process.stdout.write(JSON.stringify({ result }));
 
   test("--line 不在团队项目里时静默退出 —— 否则每进一个普通项目标签栏就挂个报错", () => {
     withCLI((_cli, from) => {
-      const r = from(tmpdir(), "watch", "--line");
+      const r = from(tmpdir(), "console", "--line");
       expect(r.code).toBe(0);
       expect(r.stdout).toBe("");
       expect(r.stderr).toBe("");
@@ -873,9 +882,9 @@ process.stdout.write(JSON.stringify({ result }));
 
   test("--line 显式给了错的 --root 就照常报错（那是你写错了，该说）", () => {
     withCLI((_cli, from) => {
-      const r = from(tmpdir(), "watch", "--line", "--root", join(tmpdir(), "definitely-not-a-project"));
+      const r = from(tmpdir(), "console", "--line", "--root", join(tmpdir(), "definitely-not-a-project"));
       expect(r.code).toBe(2);
-      expect(r.stderr).toContain("没有 .herdr/");
+      expect(r.stderr).toContain("No .herdr/");
     });
   });
 
@@ -885,7 +894,7 @@ process.stdout.write(JSON.stringify({ result }));
    */
   test("--follow 跟着焦点 pane 找项目", () => {
     withCLI((_cli, from) => {
-      const r = from(tmpdir(), "watch", "--line", "--follow");
+      const r = from(tmpdir(), "console", "--line", "--follow");
       expect(r.code).toBe(0);
       expect(r.stdout.trim()).toBe("team: 1 todo");
     });
@@ -893,7 +902,7 @@ process.stdout.write(JSON.stringify({ result }));
 
   test("--line 和 --once 互斥", () => {
     withCLI((cli) => {
-      const r = cli("watch", "--line", "--once");
+      const r = cli("console", "--line", "--once");
       expect(r.code).toBe(2);
       expect(r.stderr).toContain("--line");
     });

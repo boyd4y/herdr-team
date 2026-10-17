@@ -1,6 +1,7 @@
 import { findRoleAgent, projectAgents } from "./team-scope.ts";
 import type { AgentInfo, Herdr } from "./herdr.ts";
 import { padTo, truncate } from "./text.ts";
+import { deliveryState, waitingDelivery } from "./delivery.ts";
 import {
   isTerminal,
   isolatedAgentName,
@@ -18,6 +19,8 @@ export interface RoleStatus {
   paneId: string | null;
   /** true = 这个角色按任务开 worktree，没有常驻 agent。 */
   worktree: boolean;
+  current?: string[];
+  queued?: number;
 }
 
 export interface Inconsistency {
@@ -50,9 +53,14 @@ function loadAgents(project: Project, herdr: Herdr): AgentInfo[] {
  */
 export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleStatus[] {
   return project.roles.map((role) => {
+    const owned = project.tasks.filter((t) => t.role === role.name && !isTerminal(t.status));
+    const queue = owned.some((t) => deliveryState(t)) ? {
+      current: owned.filter((t) => !waitingDelivery(t) && (deliveryState(t) || t.status !== "todo")).map((t) => t.id),
+      queued: owned.filter(waitingDelivery).length,
+    } : {};
     if (role.worktree) {
       // 隔离角色的 agent 跟着任务走，没有常驻的那个。
-      return { role: role.name, agent: null, herdrStatus: "per-task", paneId: null, worktree: true };
+      return { role: role.name, agent: null, herdrStatus: "per-task", paneId: null, worktree: true, ...queue };
     }
     const live = findRoleAgent(project, agents, role);
     return {
@@ -61,6 +69,7 @@ export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleSta
       herdrStatus: live?.agent_status ?? "absent",
       paneId: live?.pane_id ?? null,
       worktree: false,
+      ...queue,
     };
   });
 }
@@ -78,6 +87,16 @@ export function findInconsistencies(
 
   for (const task of project.tasks) {
     if (isTerminal(task.status)) continue;
+    const delivery = deliveryState(task);
+    if (delivery === "queued") continue;
+    if (delivery === "uncertain" || delivery === "invalid") {
+      out.push({ kind: "delivery-uncertain", id: task.id, message: `${task.id}: delivery needs reconciliation; automatic resend paused` });
+      continue;
+    }
+    if (delivery === "submitted") {
+      out.push({ kind: "awaiting-claim", id: task.id, message: `${task.id}: submitted, waiting for the agent to claim it` });
+      continue;
+    }
     const role = project.roles.find((r) => r.name === task.role);
     if (role === undefined) continue;
 
@@ -87,25 +106,25 @@ export function findInconsistencies(
 
     if (task.status === "doing") {
       if (live === undefined) {
-        const where = role.worktree ? `（worktree agent ${agentName}）` : "";
+        const where = role.worktree ? `(worktree agent ${agentName}) ` : "";
         out.push({
           kind: "agent-missing",
           id: task.id,
-          message: `${task.id} 是 doing，但 ${role.name} ${where}没有存活 agent`,
+          message: `${task.id} is doing, but ${role.name} ${where}has no running agent`,
         });
       } else if (status === "blocked") {
-        out.push({ kind: "blocked", id: task.id, message: `${task.id} 的 ${role.name} 在等你（blocked）` });
+        out.push({ kind: "blocked", id: task.id, message: `${task.id}: ${role.name} is waiting for input (blocked)` });
       } else if (status === "idle" || status === "done") {
         out.push({
           kind: "maybe-finished",
           id: task.id,
-          message: `${task.id} 是 doing，但 ${role.name} 空闲 —— 可能干完了没交棒`,
+          message: `${task.id} is doing, but ${role.name} is idle; it may have finished without a handoff`,
         });
       }
     }
 
     if (task.status === "todo" && status === "working") {
-      out.push({ kind: "unregistered", id: task.id, message: `${task.id} 还是 todo，但 ${role.name} 已经在跑` });
+      out.push({ kind: "unregistered", id: task.id, message: `${task.id} is todo, but ${role.name} is already running` });
     }
   }
 
@@ -129,7 +148,7 @@ function pad(value: string, width: number): string {
 
 /** 纯任务列表 —— 只看卡片，不问 Herdr。 */
 export function formatTasks(tasks: TaskCard[], roles: RoleCard[]): string {
-  if (tasks.length === 0) return "（没有未结束的任务。加 --all 看全部）";
+  if (tasks.length === 0) return "(no active tasks; use --all to include terminal tasks)";
 
   const lines = [
     `  ${pad("id", 6)}${pad("title", 30)}${pad("priority", 10)}${pad("status", 10)}${pad("role", 16)}branch`,
@@ -156,6 +175,7 @@ export function formatTaskDetail(task: TaskCard): string {
     `dependsOn: [${task.dependsOn.join(", ")}]`,
     `repo: ${task.repo}`,
     `dir: ${task.dir}`,
+    ...(deliveryState(task) ? [`delivery: ${deliveryState(task)}`] : []),
     "",
     task.body,
   ].join("\n");
@@ -167,23 +187,23 @@ export function formatReport(report: StatusReport): string {
   // 列头与 JSON 的字段名一致 —— 同一个概念在两种输出里叫同一个词。
   lines.push("tasks");
   if (report.tasks.length === 0) {
-    lines.push("  （没有未完成的任务）");
+    lines.push("  (no active tasks)");
   } else {
-    lines.push(`  ${pad("id", 6)}${pad("title", 28)}${pad("priority", 10)}${pad("status", 10)}role`);
+    lines.push(`  ${pad("id", 6)}${pad("title", 28)}${pad("priority", 10)}${pad("status", 10)}${pad("role", 16)}delivery`);
     for (const t of report.tasks) {
-      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(t.status, 10)}${t.role}`);
+      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(t.status, 10)}${pad(t.role, 16)}${deliveryState(t) ?? "—"}`);
     }
   }
 
   lines.push("");
   lines.push("roles");
   if (report.roles.length === 0) {
-    lines.push("  （没有角色）");
+    lines.push("  (no roles)");
   } else {
     lines.push(`  ${pad("role", 16)}${pad("agent", 16)}${pad("herdrStatus", 14)}paneId`);
     for (const r of report.roles) {
       lines.push(
-        `  ${pad(r.role, 16)}${pad(r.agent ?? "—", 16)}${pad(r.herdrStatus, 14)}${r.paneId ?? "—"}`,
+        `  ${pad(r.role, 16)}${pad(r.agent ?? "—", 16)}${pad(r.herdrStatus, 14)}${r.paneId ?? "—"}${r.current ? `  active ${r.current.join(",") || "—"}  queued ${r.queued ?? 0}` : ""}`,
       );
     }
   }
@@ -191,7 +211,7 @@ export function formatReport(report: StatusReport): string {
   lines.push("");
   lines.push("inconsistencies");
   if (report.inconsistencies.length === 0) {
-    lines.push("  （无）");
+    lines.push("  (none)");
   } else {
     for (const i of report.inconsistencies) lines.push(`  ⚠ [${i.kind}] ${i.message}`);
   }

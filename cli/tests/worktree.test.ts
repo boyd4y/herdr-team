@@ -96,7 +96,7 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
       const made = herdr.worktreeCreate(p.root, "feat/0001-fix-login", "feat/0001-fix-login");
       herdr.state.workspaces = [];
       const result = dispatch(p, herdr);
-      expect(result[0]?.reason).toContain("workspace 已关闭");
+      expect(result[0]?.reason).toContain("workspace is closed");
       expect(herdr.calls.filter((c) => c.startsWith("worktree create"))).toHaveLength(1);
       expect(herdr.calls).not.toContain(`worktree remove ${made.workspaceId}`);
       expect(loadProject(p.root).tasks[0]?.status).toBe("todo");
@@ -139,7 +139,7 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
     });
   });
 
-  test("两个任务各开一个 worktree，互不打架", () => {
+  test("isolated roles process one task at a time", () => {
     withProject(
       (root) => {
         writeTask(root, "0001-a", taskMeta({ title: "甲" }));
@@ -148,9 +148,9 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
       (p) => {
         const herdr = fakeHerdr();
         dispatch(p, herdr);
-        expect(herdr.calls.filter((c) => c.startsWith("worktree create"))).toHaveLength(2);
+        expect(herdr.calls.filter((c) => c.startsWith("worktree create"))).toHaveLength(1);
         expect(herdr.calls.some((c) => c.startsWith("agent start dev-0001"))).toBe(true);
-        expect(herdr.calls.some((c) => c.startsWith("agent start dev-0002"))).toBe(true);
+        expect(herdr.calls.some((c) => c.startsWith("agent start dev-0002"))).toBe(false);
       },
     );
   });
@@ -161,7 +161,7 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
       const after = loadProject(p.root).tasks[0];
       expect(after?.status).toBe("doing");
       const body = require("node:fs").readFileSync(`${p.herdrDir}/tasks/0001-fix-login/task.md`, "utf8") as string;
-      expect(body).toContain("dev-0001");
+      expect(body).toContain("submitted");
     });
   });
 
@@ -183,7 +183,7 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
       (root) => writeTask(root, "0001-a", taskMeta({ repo: "not-here" })),
       (p) => {
         const out = dispatch(p, fakeHerdr());
-        expect(out[0]?.action).toBe("no-agent");
+        expect(out[0]?.action).toBe("queued");
         expect(out[0]?.reason).toContain("not-here");
       },
     );
@@ -206,7 +206,7 @@ describe("handoff 到隔离角色", () => {
     );
   });
 
-  test("隔离 agent 不在时，请 lead 把 review 卡重排为 todo 再 dispatch", () => {
+  test("handoff starts the missing isolated agent and retains review status", () => {
     withProject(
       (root) => writeTask(root, "0001-a", taskMeta({ status: "doing", role: "docs", handoff: ["dev"] })),
       (p) => {
@@ -214,11 +214,9 @@ describe("handoff 到隔离角色", () => {
         herdr.live("docs");
         const result = handoff(p, herdr, "0001");
 
-        expect(result.prompted).toBe(false);
-        expect(result.note).toContain("feat/0001-a");
-        expect(result.note).toContain("请 lead");
-        expect(result.note).toContain("edit 0001 --status todo --force");
-        expect(result.note).toContain("dispatch 0001");
+        expect(result.prompted).toBe(true);
+        expect(herdr.calls.some((c) => c.startsWith("worktree create"))).toBe(true);
+        expect(result.queueState).toBe("submitted");
         expect(result.status).toBe("review");
       },
     );
