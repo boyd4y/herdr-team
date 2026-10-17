@@ -63,7 +63,7 @@ Commands:
   dispatch [<id>]       Enqueue todo tasks and attempt delivery
   clean                 Remove worktrees for terminal tasks
   down [--workspace]    Stop team agents; keep workspaces by default
-  sidebar               Refresh badges, file counts, and agent metadata
+  sidebar               Refresh badges, Git details, and agent metadata
 
 Options:
   --root <DIR>          Project root; otherwise search parent directories
@@ -85,7 +85,7 @@ Console options:
   --once                Render one read-only frame and exit
   --observe             Show a live read-only Console
   --line --follow       Show the focused project's status in the tab bar
-  --sync-git            With --line, refresh workspace changed-file counts
+  --sync-git            With --line, refresh primary workspace Git details
 
   -h, --help            Show help
   -v, --version         Show version
@@ -372,7 +372,7 @@ function cmdInit(args: string[]): number {
 function cmdSidebar(args: string[]): number {
   const parsed = parseArgs(args, ["root"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team sidebar [--root DIR] [--json] [--auto | --badges-only | --git-only] [--sessions-only]\nRefresh workspace badges, changed-file counts, and agent metadata without starting agents.\n--auto Discover team projects across the session.\n--badges-only Refresh workspace badges without requiring .herdr/.\n--git-only Refresh changed-file counts for all workspaces without requiring .herdr/.\n--sessions-only Save resident session references without writing Herdr metadata.\n");
+    process.stdout.write("Usage: herdr-team sidebar [--root DIR] [--json] [--auto | --badges-only | --git-only] [--sessions-only]\nRefresh workspace badges, Git details, and agent metadata without starting agents.\n--auto Discover team projects across the session.\n--badges-only Refresh workspace badges without requiring .herdr/.\n--git-only Refresh primary/ordinary workspace branches, file counts, and ahead/behind counts from local Git; hide Git details for linked worktrees. No fetch or .herdr/ required.\n--sessions-only Save resident session references without writing Herdr metadata.\n");
     return 0;
   }
   if (parsed.flags.has("auto") && parsed.flags.has("badges-only")) throw new UsageError("--auto and --badges-only cannot be combined");
@@ -385,7 +385,7 @@ function cmdSidebar(args: string[]): number {
   if (!herdr.envOk()) throw new LaunchError("Run this command inside a Herdr pane (HERDR_ENV=1).");
   if (gitOnly) {
     const result = syncWorkspaceGit(herdr);
-    out(parsed, result, `Updated file counts for ${result.updated} workspaces${result.failed ? `; ${result.failed} failed` : ""}`);
+    out(parsed, result, `Updated Git details for ${result.updated} workspaces${result.failed ? `; ${result.failed} failed` : ""}`);
     return result.failed ? 1 : 0;
   }
   if (parsed.flags.has("sessions-only")) {
@@ -461,7 +461,7 @@ Options:
   --observe             Show a live read-only Console without scheduling
   --line                Print one tab-bar status line without interaction
   --follow              Follow the focused pane when --root is omitted
-  --sync-git            With --line, refresh workspace changed-file counts
+  --sync-git            With --line, refresh primary workspace Git details
 
 Example status line:
   team: 1 doing 2 todo · 1 blocked · 1 ✗
@@ -472,7 +472,7 @@ The final count reports .herdr/ validation problems.
 Quiet or non-team projects produce no status text.
 
 Use --follow for a Herdr tab-bar command: the command's cwd can differ from
-the focused project. Add --sync-git to refresh sidebar file counts as well.
+the focused project. Add --sync-git to refresh sidebar Git details as well.
 `;
 
 async function cmdConsole(args: string[]): Promise<number> {

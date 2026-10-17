@@ -172,13 +172,26 @@ workspace 复用按项目绑定或可验证的目录判断，不按相同的文�
 
 `herdr-team sidebar` 刷新现有 agent 的信息与归属编号；`--badges-only` 只刷新所有
 workspace 和 agent 的编号，不要求当前目录是团队项目。均不启动或重启 agent。
-默认 sidebar 刷新还会更新所有 workspace 的未提交文件数；`--git-only` 仅刷新此项，
-不要求 `.herdr/`。spaces 第二行的 `📄N` 在原生 `↑` / `↓` 提交数之前显示，
-计入暂存、未暂存和未跟踪文件，去重且重命名计一次，忽略文件不计。
-干净仓库显示 `📄0`，非 Git 目录或读取失败时隐藏。不同 worktree 分别统计。
-标签栏定时命令可使用 `HERDR_ENV=1 herdr-team console --line --follow --sync-git`，
-在输出原团队状态前更新所有 workspace 的文件数；仅此显式选项会写 workspace metadata，
-`--line` 本身不调度任务。刷新频率由 Herdr 该 command 的 `interval_seconds` 控制。
+默认 sidebar 刷新还会更新 Git 摘要；`--git-only` 只刷新 Git 详情，不要求 `.herdr/`
+目录，但仍须在 Herdr pane 或插件环境中运行。
+
+主 workspace 和普通 workspace 的 spaces 第二行显示一个 `team_git_summary` 文本摘要，包含本地分支、
+未提交文件数和 ahead/behind 提交差异，例如 `main · 📄15 ↑10`、`main · 📄0` 或
+`main · 📄2 ↑3 ↓1`。只显示非零的 ahead/behind 数；没有 upstream 时仍显示分支和文件数，
+但不显示箭头。Detached HEAD 不显示分支名。文件数包含暂存、未暂存和未跟踪文件，
+每个文件计一次、重命名计一次，忽略文件不计。Git 不可用时会清除摘要，不会显示 `📄0`。
+数据来自本地 Git 和 tracking refs，不会自动 fetch。摘要字段最多 80 个 Unicode 字符；
+长分支名只会缩短显示前缀并以 `…` 结尾，完整的文件数和提交差异仍会显示，Git 中的实际分支名不变。
+
+链接 worktree（嵌套和单独显示的 workspace 都适用）只显示第一行名称标签，不显示
+文件数、ahead/behind 提交差异或额外的空白第二行。嵌套子 worktree 不重复显示归属编号；
+单独显示的链接 worktree 保留稳定编号。workspace 变成链接 worktree 或 Git 不可用时，旧摘要会被清除；
+变回主/普通 workspace 后会重新显示 Git 详情。
+
+标签栏定时命令可使用 `HERDR_ENV=1 herdr-team console --line --follow --sync-git`；
+`--sync-git` 必须与 `--line` 一起使用，会在输出状态行前刷新 Git 摘要。
+`--line` 本身不调度任务。Git 摘要也会由 sidebar 刷新及插件生命周期钩子更新；
+刷新频率由 Herdr 该 command 的 `interval_seconds` 控制。
 新增 workspace 与 agent 由插件事件钩子自动同步。更新本地链接的事件钩子时按上面的升级步骤操作；
 只需重新应用布局时运行 `herdr-team.configure` action，它会保存托管配置并 reload config。
 

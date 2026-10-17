@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 const { read, edit } = require('../bin/managed');
 const { locations } = require('../bin/paths');
 const { cleanupIcons, BASENAME } = require('../bin/cleanup-icons');
-const { existingPopup, POPUP } = require('../bin/configure');
+const { existingPopup, POPUP, SIDEBAR } = require('../bin/configure');
 const { installNpxStub } = require('./skills-fixture.cjs');
 
 const root = path.resolve(__dirname, '..');
@@ -113,7 +113,7 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     assert(applied.includes('key = "prefix+t"'));
     assert(applied.includes('command = "herdr-team console --observe"'));
     assert(applied.includes('"$team_label", "$team_harness"'));
-    assert(applied.includes('["branch", { token = "$team_git_files", fg = "#f9e2af", dim = false }, "git_status"]'));
+    assert(applied.includes('"$team_label"], ["$team_git_summary"]]'));
     assert(!applied.includes('"agent", "$team_harness"'));
     assert(!applied.includes(', "workspace"]'));
     assert(applied.startsWith(original || ''));
@@ -128,6 +128,18 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
   assert(calls.some((c) => c.args.join(' ') === 'config check'));
   assert.equal(calls.filter((c) => c.args.join(' ') === 'server reload-config').length, 16);
   for (const call of calls.filter((c) => c.args[0] === 'config')) assert(!fs.existsSync(call.config));
+});
+
+test('managed space rows use only optional root Git metadata so linked rows collapse', () => {
+  const [first, second] = SIDEBAR.split('[ui.sidebar.spaces]\nrows = [[')[1].split('], [');
+  assert(first.includes('$team_label'));
+  assert(first.includes('$team_workspace_c0'));
+  assert(!first.includes('$team_git_summary'));
+  assert.equal(second, '"$team_git_summary"]]');
+  assert(!SIDEBAR.includes('"branch"'));
+  assert(!SIDEBAR.includes('"git_status"'));
+  assert(!SIDEBAR.includes('$team_git_files'));
+  assert(!SIDEBAR.includes('sidebar_width'));
 });
 
 test('an existing identical popup is reused, stays outside the fence and survives removal', (t) => {
@@ -156,7 +168,7 @@ test('upgrade replaces the old sidebar and removes only managed terminal mapping
   const f = fixture(t);
   const original = '# my config\n[ui]\nsidebar_width=30\n';
   f.put(f.herdrConfig, edit({ text: original, exists: true }, 'config',
-    `${POPUP}\n\n[ui.sidebar.agents]\nrows=[["state_icon", "$harness_logo", "agent"]]`).text);
+    `${POPUP}\n\n[ui.sidebar.agents]\nrows=[["state_icon", "$harness_logo", "agent"]]\n\n[ui.sidebar.spaces]\nrows=[["workspace"], ["branch", "$team_git_files", "git_status"]]`).text);
   const originals = new Map();
   for (const { file } of f.paths.terminals) {
     const text = '# user font settings\r\nfont-size = 14\r\n\r\n';
@@ -171,6 +183,7 @@ test('upgrade replaces the old sidebar and removes only managed terminal mapping
   assert(config.startsWith(original));
   assert(!config.includes('$harness_logo'));
   assert(config.includes('{ token = "$team_workspace_c1", fg = "#cba6f7", bold = true, dim = false }'));
+  assert(config.includes(SIDEBAR));
   for (const [file, text] of originals) assert.equal(fs.readFileSync(file, 'utf8'), text);
   assert.equal(fs.readFileSync(modified, 'utf8'), 'modified font');
   assert.equal(fs.readFileSync(unrelated, 'utf8'), 'other font');
