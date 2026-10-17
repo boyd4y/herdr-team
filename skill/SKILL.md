@@ -141,6 +141,7 @@ CLI 就是照它实现的 —— 卡片不合规时 CLI 会报出来，不要去
 
 只使用 `console`，旧 `watch` 命令已移除。`up` 在项目 workspace 自动创建或复用 **Team Console** tab，保持当前焦点。
 每个项目一个调度进程；关闭会暂停自动投递，队列不会丢失。`console --observe`、`--once` 和 `--line` 为只读模式。
+交互式 Console 将任务状态、delivery flow 与 agent 可用性分开展示：`PENDING` 汇总非零投递状态，任务行用 FLOW 符号，角色表列出 active 任务和 queue 数，`NEEDS YOU` 收集警告；标签栏只读行会在任务计数后显示非零的 `N queued`。详细布局和窄屏行为见 [CLI Team Console 文档](../cli/README.md#team-console)。
 Console 只投递 delivery 已入队的任务，不自动处理未入队的历史 todo。
 同一角色一次处理一个任务，隔离角色也串行。Herdr 状态必须 idle/done 才发送；working/blocked/unknown 时等待。
 派活消息内包含 claim 和 handoff 的完整命令，必须使用同一个 delivery ID 和绝对 --root。

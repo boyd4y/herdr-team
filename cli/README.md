@@ -204,6 +204,25 @@ workspace 和 agent 的编号，不要求当前目录是团队项目。均不启
 herdr-team console
 ```
 
+显示把任务状态、投递流程和 agent 可用性分开：
+
+- 标题下的 `PENDING` 按固定顺序显示全项目非零投递计数：`◷ N waiting`（queued）、
+  `→ N delivering`（sending 或 submitted）、`● N claimed`、`! N needs you`（uncertain 或 invalid）。
+  全部为零时整条及其空行隐藏；搜索和 `--all` 不改变这些计数。
+- 任务行有独立的 FLOW 符号列：`·` 无投递、`◷` 等待、`→` 投递中、`●` 已领取、`!` 需处理。
+  标题起始列固定，不再加 `[queued]` 等前缀。等待用暗色、投递中用青色、不确定用黄色、无效用红色。
+- `ROLES` 表头同时标出 agent、Herdr status、active 和 queue 列。active 最多列两个 `#id`；
+  超过两个时折为 `#id +N`（N 是其余任务数），无任务显示 `—`，queue 是右对齐的等待投递数。
+- `NEEDS YOU` 汇总加载失败、Herdr 不可用、状态不一致（含投递不确定）、校验问题；
+  每类最多一行，状态不一致和校验问题显示首项及总数。无问题时隐藏。
+- 详情保留任务字段和 task.md 正文，另列 flow 的人类可读名称、短 delivery ID 和原因，
+  以及 agent 的名称、实时状态和 pane ID；隔离角色显示当前所选任务的 agent。
+
+终端最小宽度为 40 列。100 列及以上显示任务分支；70–99 列隐藏分支；50–69 列把
+`PENDING` 压缩为符号加数字并缩短 agent 名称；40–49 列的任务只显示 id、status、title，
+角色只显示 role、status、queue。列宽不足时用 `…` 截断，终端高度不足时显示尺寸提示。
+这些都是显示调整，原始投递状态和 JSON 字段保持不变。
+
 `↑↓`（或 `j`/`k`）选任务、`PgUp`/`PgDn` 翻详情正文、`a` 切换是否显示已结束的卡、
 `/` 进入搜索，边输入边按 id、标题、角色过滤；`Enter` 保留过滤并退出输入，
 `Backspace` 删除一个码点，`Esc` 退出输入并清空过滤（输入外且无过滤时退出看板）。输入时字母快捷键作为查询文本，
@@ -246,8 +265,8 @@ tab_bar_right = [
 ]
 ```
 
-`--line` 打一行，形状 `team: 1 doing 2 todo · 1 blocked · 1 ✗`：前半段是未结束的卡按
-`doing`/`review`/`todo` 计数；`blocked` 是**卡住、等你处理的卡**（卡片自己写着 blocked，
+`--line` 打一行，形状 `team: 1 doing 2 todo · 2 queued · 1 blocked · 1 ✗`：前半段是未结束的卡按
+`doing`/`review`/`todo` 计数；非零等待投递数 `N queued` 紧随任务计数、位于 `blocked` 之前；`blocked` 是**卡住、等你处理的卡**（卡片自己写着 blocked，
 或 agent 在等你 / agent 掉了 / 干完没交棒，按卡去重）；`✗` 是 `.herdr/` 的校验问题数 ——
 坏卡会被静默跳过，不报的话你只会看到数字悄悄变小。**没事就不输出**（和
 `herdr-projects` 的 `needs-you --line` 一个规矩），不在团队项目里也什么都不输出。
@@ -260,8 +279,8 @@ cwd 是服务器启动时的目录（通常是你家目录），从那儿往上�
 改完记得 `herdr config check`，再 `herdr server reload-config`。
 
 和 `status` 有一处**有意的不同**：`console` 是容错启动的。`.herdr/` 里有坏卡不会拦着
-不让你看（看板恰恰是卡坏的时候最想看），坏卡会被跳过、并在帧里用 `✗` 横幅报出来 ——
-所以卡片总数可能比 `tasks/` 下的目录数少，看到横幅就是原因。
+不让你看（看板恰恰是卡坏的时候最想看），坏卡会被跳过、并在帧里的 `NEEDS YOU` 区用 `✗` 报出来 ——
+所以卡片总数可能比 `tasks/` 下的目录数少，看到这类提示就是原因。
 
 在 linked worktree 里跑会读**主检出**的 `.herdr/`（`findRoot` 的既有行为，见
 `scripts/lib/config.ts`）—— 那才是活的卡片，worktree 里那份是切出去时的过期副本。

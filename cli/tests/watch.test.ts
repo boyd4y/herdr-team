@@ -1,3 +1,4 @@
+import { newDelivery } from "../scripts/lib/delivery.ts";
 import { projectKey } from "../scripts/lib/team-scope.ts";
 import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
@@ -61,6 +62,20 @@ function task(
     body,
   };
 }
+
+function deliveryTask(id: string, state?: string): TaskCard {
+  const card = task(id, "flow", `Title ${id}`, "P1", "todo", "dev");
+  if (state !== undefined) {
+    card.meta["delivery"] = state === "invalid" ? "malformed" : {
+      ...newDelivery("dev", "dispatch", new Date("2026-10-17T00:00:00Z")),
+      id: "4f2abcde-1234-4000-8000-123456789abc", state, reason: "Waiting for capacity",
+    };
+  }
+  return card;
+}
+
+const taskRows = (frame: string[]): string[] => frame.map(stripAnsi)
+  .filter((line) => /^(?:  › |    )\d{4} /.test(line));
 
 const DEV = role("dev", true);
 const TEST = role("test");
@@ -477,6 +492,216 @@ describe("renderFrame", () => {
       expect(layout.tooSmall).toBe(false);
       expect(frame.length).toBeLessThanOrEqual(height);
     }
+  });
+});
+
+describe("Team Console delivery layout", () => {
+  const cards = () => [undefined, "queued", "sending", "submitted", "claimed", "uncertain", "invalid"]
+    .map((state, index) => deliveryTask(`000${index + 1}`, state));
+  const makeModel = (tasks = cards(), state: Partial<WatchState> = {}) =>
+    buildModel(projectOf(tasks), fakeHerdr(), freshState(state), "09:41:12", 2);
+  const frame = (m = makeModel(), width = 100, color = false) =>
+    renderFrame(m, { width, height: 80, color });
+  const roleRows = (lines: string[]): string[] => {
+    const start = lines.findIndex((line) => stripAnsi(line).includes("ROLES"));
+    const end = lines.findIndex((line, index) => index > start && stripAnsi(line).trim() === "");
+    return lines.slice(start + 1, end).map(stripAnsi);
+  };
+
+  test("flow glyphs align titles and preserve status and priority colors", () => {
+    const m = makeModel();
+    for (const width of [50, 69, 70, 99, 100, 120]) {
+      const rows = taskRows(frame(m, width));
+      expect(rows).toHaveLength(7);
+      rows.forEach((row, index) => {
+        expect(row[25]).toBe(["·", "◷", "→", "→", "●", "!", "!"][index]);
+        expect(row.indexOf(`Title 000${index + 1}`)).toBe(27);
+        expect(row).not.toMatch(/\[(queued|sending|submitted|claimed|uncertain|invalid)\]/);
+        expect(row.includes("feat/")).toBe(width >= 100);
+        expect(displayWidth(row)).toBe(width);
+      });
+    }
+    const colored = frame(m, 100, true).filter((line) => /^(?:  › |    )\d{4} /.test(line));
+    expect(colored[0]).toContain("\x1b[33mP1\x1b[0m");
+    expect(colored[1]).toContain("\x1b[2m◷\x1b[0m");
+    expect(colored[2]).toContain("\x1b[36m→\x1b[0m");
+    expect(colored[3]).toContain("\x1b[36m→\x1b[0m");
+    expect(colored[4]).toContain(" ● ");
+    expect(colored[5]).toContain("\x1b[33m!\x1b[0m");
+    expect(colored[6]).toContain("\x1b[31m!\x1b[0m");
+    const doing = deliveryTask("0010", "claimed");
+    doing.status = "doing";
+    expect(frame(makeModel([doing]), 100, true).join("\n")).toContain("\x1b[36mdoing\x1b[0m");
+  });
+
+  test("PENDING is a project-wide nonzero legend with compact responsive counts", () => {
+    const m = makeModel();
+    expect(frame(m).find((line) => line.includes("PENDING"))?.trim()).toBe(
+      "PENDING   ◷ 1 waiting   → 2 delivering   ● 1 claimed   ! 2 needs you",
+    );
+    expect(frame(m, 70).find((line) => line.includes("PENDING"))?.trim()).toBe(
+      "PENDING   ◷ 1 waiting  → 2 delivering  ● 1 claimed  ! 2 needs you",
+    );
+    for (const width of [40, 49, 50, 69]) {
+      expect(frame(m, width).find((line) => line.includes("PENDING"))?.trim()).toBe(
+        "PENDING   ◷ 1  → 2  ● 1  ! 2",
+      );
+    }
+    const queued = makeModel([deliveryTask("0001", "queued")]);
+    expect(frame(queued).find((line) => line.includes("PENDING"))?.trim()).toBe("PENDING   ◷ 1 waiting");
+    const filtered = makeModel(cards(), { query: "no match", searching: true });
+    expect(filtered.tasks).toHaveLength(0);
+    expect(frame(filtered).find((line) => line.includes("PENDING"))).toBe(
+      frame(m).find((line) => line.includes("PENDING")),
+    );
+    const clean = makeModel([deliveryTask("0001")]);
+    const without = frame(clean);
+    expect(without.join("\n")).not.toContain("PENDING");
+    expect(without[2]).toContain("TASKS");
+    const withPending = frame(queued);
+    expect(withPending[2]).toContain("PENDING");
+    expect(withPending[3]?.trim()).toBe("");
+    expect(withPending[4]).toContain("TASKS");
+    expect(computeLayout(queued, { width: 100, height: 80, color: false }).minHeight).toBe(
+      computeLayout(clean, { width: 100, height: 80, color: false }).minHeight + 2,
+    );
+  });
+
+  test("roles have aligned agent/status/active/queue columns and folded active IDs", () => {
+    const m = makeModel([]);
+    m.roles = [[], ["1001"], ["1001", "1002"], ["1001", "1002", "1003", "1004"]].map((current, index) => ({
+      role: `role${index}`, agent: "ht-535c-agent", herdrStatus: "working", current,
+      queued: index === 3 ? 12 : index, paneId: "w1M:p6", worktree: false,
+    }));
+    for (const width of [50, 69, 70, 99, 100]) {
+      const lines = frame(m, width);
+      const rows = roleRows(lines);
+      const header = lines.find((line) => line.includes("ROLES"))!;
+      expect(rows).toHaveLength(4);
+      expect(rows[0]).toContain("—");
+      expect(rows[1]).toContain("#1001");
+      expect(rows[2]).toContain("#1001 #1002");
+      expect(rows[3]).toContain("#1001 +3");
+      for (const row of rows) {
+        expect(row.indexOf("working")).toBe(header.indexOf("status"));
+        expect(row).not.toContain("w1M:p6");
+        expect(displayWidth(row)).toBe(width);
+      }
+      expect(rows.map((row) => row.trimEnd().split(/\s+/).at(-1))).toEqual(["0", "1", "2", "12"]);
+      expect(rows.every((row) => /\d$/.test(row))).toBe(true);
+      expect(rows[0]?.includes("ht-535c-agent")).toBe(width >= 70);
+      if (width < 70) expect(rows[0]).toContain("ht-535c…");
+    }
+    const perTask = frame(makeModel([deliveryTask("0001", "queued")]));
+    const dev = roleRows(perTask).find((row) => row.includes("dev"))!;
+    expect(dev).toContain("per-task");
+    expect(dev.trimEnd()).toMatch(/1$/);
+    expect(dev).not.toContain("starts on dispatch");
+  });
+
+  test("40-column tasks and roles show only the minimal columns", () => {
+    const m = makeModel();
+    m.roles[0] = { role: "dev", agent: "agent-name", herdrStatus: "idle", paneId: "w1:p1", worktree: false, queued: 2, current: ["0001"] };
+    for (const width of [40, 49]) {
+      for (const row of taskRows(frame(m, width))) {
+        expect(row.indexOf("Title")).toBe(15);
+        expect(row).not.toContain("P1");
+        expect(row).not.toContain("dev");
+        expect(row).not.toMatch(/[◷→●!]/);
+      }
+      const roles = roleRows(frame(m, width));
+      expect(roles[0]).toContain("dev");
+      expect(roles[0]).toContain("idle");
+      expect(roles[0]?.trimEnd()).toMatch(/2$/);
+      expect(roles.join("\n")).not.toContain("agent-name");
+      expect(roles.join("\n")).not.toContain("#0001");
+    }
+  });
+
+  test("NEEDS YOU consolidates all four warning categories and disappears when clean", () => {
+    const m = makeModel([]);
+    m.loadError = "disk error";
+    m.herdrOk = false;
+    m.inconsistencies = [
+      { kind: "delivery-uncertain", id: "0001", message: "0001 needs reconciliation" },
+      { kind: "agent-missing", id: "0002", message: "0002 is absent" },
+    ];
+    m.problems = ["tasks/0003 [rule 3] invalid role", "tasks/0004 [rule 3] invalid role"];
+    const lines = frame(m, 180);
+    const start = lines.findIndex((line) => line.includes("NEEDS YOU"));
+    expect(start).toBeGreaterThan(0);
+    expect(lines.filter((line) => line.includes("NEEDS YOU"))).toHaveLength(1);
+    expect(lines[start]).toContain("Failed to load .herdr/: disk error");
+    expect(lines[start + 1]).toContain("Herdr is unavailable");
+    expect(lines[start + 2]).toContain("[delivery-uncertain] 0001 needs reconciliation (2 total)");
+    expect(lines[start + 3]).toContain("tasks/0003 [rule 3] invalid role (run validate) (2 total)");
+    for (const line of lines.slice(start + 1, start + 4)) expect(line.startsWith("             ")).toBe(true);
+    const narrow = frame(m, 40);
+    const narrowStart = narrow.findIndex((line) => line.includes("NEEDS YOU"));
+    expect(narrow[narrowStart + 2]?.trimEnd()).toEndWith("(2 total)");
+    expect(narrow[narrowStart + 3]?.trimEnd()).toEndWith("(2 total)");
+    expect(frame(makeModel([])).join("\n")).not.toContain("NEEDS YOU");
+    expect(frame(makeModel([deliveryTask("0001", "uncertain")]), 180).join("\n")).toContain("(1 total)");
+  });
+
+  test("detail shows human flow, short delivery ID, reason, and the selected live agent/pane", () => {
+    const herdr = fakeHerdr();
+    herdr.live("dev-0001", "w1M:p6");
+    herdr.live("dev-0002", "w1M:p7");
+    herdr.state.agents.forEach((agent) => {
+      agent.tokens = { team_project: projectKey(projectOf([])) };
+      agent.agent_status = "working";
+    });
+    const tasks = [deliveryTask("0001", "submitted"), deliveryTask("0002", "claimed")];
+    const m = buildModel(projectOf(tasks), herdr, freshState(), "09:41:12", 2);
+    const text = frame(m, 120).join("\n");
+    expect(text).toContain("flow → delivering · delivery 4f2abcde… · Waiting for capacity");
+    expect(text).toContain("agent dev-0001 · working · w1M:p6");
+    expect(text).toContain("priority P1   status todo   role dev   repo .");
+    expect(text).toContain("handoff  —        depends_on —");
+    expect(text).toContain("branch   feat/0001-flow");
+    expect(text).toContain("任务描述");
+    const second = frame({ ...m, selectedIndex: 1 }, 120).join("\n");
+    expect(second).toContain("flow ● claimed");
+    expect(second).toContain("agent dev-0002 · working · w1M:p7");
+    expect(frame(makeModel([deliveryTask("0001", "invalid")]), 120).join("\n")).toContain("flow ! invalid");
+    expect(frame(makeModel([deliveryTask("0001")]), 120).join("\n")).toContain("flow · none");
+    expect(frame({ ...m, herdrOk: false }, 120).join("\n")).toContain("agent dev-0001 · unavailable · w1M:p6");
+  });
+
+  test("all responsive tiers fit width and height with pending, warnings, search, and empty lists", () => {
+    const full = makeModel(cards(), { searching: true, loadError: "load failure" });
+    full.herdrOk = false;
+    full.problems = ["validation problem", "another problem"];
+    const emptyRoles = { ...full, roles: [] };
+    const emptyTasks = makeModel(cards(), { query: "no matches", searching: true });
+    const empty = makeModel([]);
+    for (const m of [full, emptyRoles, emptyTasks, empty]) {
+      for (const width of [39, 40, 49, 50, 69, 70, 99, 100]) {
+        for (let height = 5; height <= 40; height++) {
+          for (const color of [false, true]) {
+            const opts = { width, height, color };
+            const lines = renderFrame(m, opts);
+            expect(lines.length).toBeLessThanOrEqual(height);
+            for (const line of lines) expect(displayWidth(stripAnsi(line))).toBe(width);
+            const layout = computeLayout(m, opts);
+            if (height === layout.minHeight && width >= 40) expect(layout.tooSmall).toBe(false);
+          }
+        }
+      }
+    }
+  });
+
+  test("new detail and warning fields sanitize control characters and preserve Unicode", () => {
+    const card = deliveryTask("0001", "claimed");
+    (card.meta["delivery"] as { reason: string }).reason = "等待\x1b[2J\ncapacity";
+    const m = makeModel([card]);
+    m.loadError = "读取\x1b[31m\nfailed";
+    m.taskAgents.set("0001", { name: "开发\x1b[2J", agent_status: "idle", pane_id: "w1:p1\n" });
+    const text = frame(m, 120).join("\n");
+    expect(text).toContain("等待[2Jcapacity");
+    expect(text).toContain("agent 开发[2J · idle · w1:p1");
+    expect(text).not.toContain("\x1b");
   });
 });
 
@@ -1001,6 +1226,19 @@ describe("formatStatusLine", () => {
     expect(line([task("0001", "a", "A", "P2", "todo", "dev")], dead)).toBe(
       "team: 1 todo · herdr ✗",
     );
+  });
+
+  test("queued deliveries appear between task counts and attention, without counting other flows", () => {
+    const queued = deliveryTask("0001", "queued");
+    const sending = deliveryTask("0002", "sending");
+    const submitted = deliveryTask("0003", "submitted");
+    const uncertain = deliveryTask("0004", "uncertain");
+    expect(line([queued, sending, submitted, uncertain])).toBe("team: 4 todo · 1 queued · 1 blocked");
+    expect(line([sending, submitted])).toBe("team: 2 todo");
+    const blocked = task("0005", "blocked", "Blocked", "P1", "blocked", "dev");
+    const broken = task("0006", "bad", "Bad", "P1", "todo", "dev");
+    delete broken.meta["title"];
+    expect(line([queued, blocked, broken])).toBe("team: 2 todo · 1 queued · 1 blocked · 1 ✗");
   });
 
   test("全静默时什么都不输出 —— 和 needs-you --line 一个规矩", () => {
