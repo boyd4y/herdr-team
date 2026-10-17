@@ -1,5 +1,9 @@
 import { spawnSync } from "node:child_process";
 import type { Herdr } from "./herdr.ts";
+import { sanitize } from "./text.ts";
+
+// Herdr truncates metadata token values at 80 Unicode characters (not bytes).
+const GIT_SUMMARY_MAX_CHARS = 80;
 
 export interface WorkspaceGit {
   files: number;
@@ -51,7 +55,13 @@ function gitSummary(git: WorkspaceGit): string {
   const changes = [`📄${git.files}`];
   if (git.ahead) changes.push(`↑${git.ahead}`);
   if (git.behind) changes.push(`↓${git.behind}`);
-  return [git.branch, changes.join(" ")].filter(Boolean).join(" · ");
+  const statistics = changes.join(" ");
+  const branch = Array.from(sanitize(git.branch ?? "").trimStart());
+  if (!branch.length) return statistics;
+  // Keep every count; elide only the branch so the stored value matches ours.
+  const budget = GIT_SUMMARY_MAX_CHARS - Array.from(statistics).length - 3;
+  const label = branch.length > budget ? `${branch.slice(0, budget - 1).join("")}…` : branch.join("");
+  return `${label} · ${statistics}`;
 }
 
 /** Root-only second row: Herdr cannot condition native git_status on linkage. */

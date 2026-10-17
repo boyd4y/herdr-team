@@ -126,6 +126,36 @@ describe("侧栏未提交文件数", () => {
     expect(syncWorkspaceGit(h, () => undefined)).toEqual({ updated: 0, failed: 0 });
   });
 
+  test.each([
+    { branch: "a".repeat(74), files: 0, ahead: 0, behind: 0, suffix: " · 📄0", shortened: false },
+    { branch: "a".repeat(75), files: 0, ahead: 0, behind: 0, suffix: " · 📄0", shortened: false },
+    { branch: "a".repeat(76), files: 0, ahead: 0, behind: 0, suffix: " · 📄0", shortened: true },
+    { branch: "a".repeat(77), files: 0, ahead: 0, behind: 0, suffix: " · 📄0", shortened: true },
+    { branch: "feature/" + "a".repeat(80), files: 12345, ahead: 123, behind: 4567, suffix: " · 📄12345 ↑123 ↓4567", shortened: true },
+    { branch: "开发/" + "🚀".repeat(72), files: 0, ahead: 0, behind: 0, suffix: " · 📄0", shortened: false },
+    { branch: "开发/" + "🚀".repeat(73), files: 12, ahead: 34, behind: 56, suffix: " · 📄12 ↑34 ↓56", shortened: true },
+  ])("long branch summaries preserve statistics and converge under Herdr's 80-character limit: %j", (snapshot) => {
+    const h = fakeHerdr({ workspaces: [{ workspace_id: "w1", label: "unchanged label", pane_count: 1, tab_count: 1,
+      tokens: { team_git_summary: Array.from(snapshot.branch + snapshot.suffix).slice(0, 80).join("") } }],
+      panes: [{ workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", cwd: "/repo" }] });
+    const report = h.reportWorkspaceMetadata;
+    h.reportWorkspaceMetadata = (id, tokens, source) => report(id, Object.fromEntries(Object.entries(tokens)
+      .map(([key, value]) => [key, value === null ? null : Array.from(value).slice(0, 80).join("")])), source);
+
+    expect(syncWorkspaceGit(h, () => snapshot)).toEqual({ updated: snapshot.shortened ? 1 : 0, failed: 0 });
+    const summary = h.state.workspaces[0]!.tokens!.team_git_summary!;
+    expect(Array.from(summary).length).toBeLessThanOrEqual(80);
+    expect(summary.endsWith(snapshot.suffix)).toBe(true);
+    expect(summary.includes("…")).toBe(snapshot.shortened);
+    if (!snapshot.shortened) expect(summary).toBe(snapshot.branch + snapshot.suffix);
+    else expect(summary).toContain("…" + snapshot.suffix);
+    // The retained branch prefix must contain complete Unicode code points.
+    expect(summary).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    expect(syncWorkspaceGit(h, () => snapshot)).toEqual({ updated: 0, failed: 0 });
+    expect(syncWorkspaceGit(h, () => snapshot)).toEqual({ updated: 0, failed: 0 });
+    expect(h.state.workspaces[0]!.label).toBe("unchanged label");
+  });
+
   test("classification changes and unavailable Git clear stale summaries and legacy counts", () => {
     const h = fakeHerdr({
       workspaces: [{ workspace_id: "w1", label: "开发 checkout", pane_count: 1, tab_count: 1,
@@ -226,7 +256,7 @@ else if (args[0] === 'workspace' && args[1] === 'report-metadata' && args[3] ===
   const target = state.workspaces.find(w => w.workspace_id === args[2]);
   for (let i = 5; i < args.length; i++) {
     if (args[i] === '--clear-token') delete target.tokens[args[++i]];
-    else if (args[i] === '--token') { const [key, ...value] = args[++i].split('='); target.tokens[key] = value.join('='); }
+    else if (args[i] === '--token') { const [key, ...value] = args[++i].split('='); target.tokens[key] = Array.from(value.join('=').trim()).filter(ch => !/[\\x00-\\x1f\\x7f-\\x9f]/.test(ch)).slice(0, 80).join('').trim(); }
     else throw new Error('Unexpected metadata option');
   }
   fs.writeFileSync(process.env.GIT_TEST_STATE, JSON.stringify(state));
@@ -250,6 +280,17 @@ process.stdout.write(JSON.stringify({result}));
     expect(run()).toEqual({ updated: 0, failed: 0 });
     const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]);
     expect(calls.filter((args) => args[1] === "report-metadata")).toHaveLength(4);
+    git("branch", "-m", "feature/" + "a".repeat(80));
+    expect(run()).toEqual({ updated: 1, failed: 0 });
+    const longSummary = state().workspaces[0].tokens.team_git_summary;
+    expect(Array.from(longSummary).length).toBe(80);
+    expect(longSummary.endsWith("… · 📄1")).toBe(true);
+    expect(run()).toEqual({ updated: 0, failed: 0 });
+    writeFileSync(join(repo, "another file"), "changed count");
+    expect(run()).toEqual({ updated: 1, failed: 0 });
+    expect(state().workspaces[0].tokens.team_git_summary.endsWith("… · 📄2")).toBe(true);
+    expect(run()).toEqual({ updated: 0, failed: 0 });
+    expect(state().workspaces[0].label).toBe("名字 w1");
     rmSync(join(repo, ".git"), { recursive: true, force: true });
     expect(run()).toEqual({ updated: 1, failed: 0 });
     expect(state().workspaces[0].tokens).not.toHaveProperty("team_git_summary");
