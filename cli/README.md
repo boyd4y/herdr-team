@@ -180,7 +180,8 @@ workspace 和 agent 的编号，不要求当前目录是团队项目。均不启
 `main · 📄2 ↑3 ↓1`。只显示非零的 ahead/behind 数；没有 upstream 时仍显示分支和文件数，
 但不显示箭头。Detached HEAD 不显示分支名。文件数包含暂存、未暂存和未跟踪文件，
 每个文件计一次、重命名计一次，忽略文件不计。Git 不可用时会清除摘要，不会显示 `📄0`。
-数据来自本地 Git 和 tracking refs，不会自动 fetch。
+数据来自本地 Git 和 tracking refs，不会自动 fetch。摘要字段最多 80 个 Unicode 字符；
+长分支名只会缩短显示前缀并以 `…` 结尾，完整的文件数和提交差异仍会显示，Git 中的实际分支名不变。
 
 链接 worktree（嵌套和单独显示的 workspace 都适用）只显示第一行名称标签，不显示
 文件数、ahead/behind 提交差异或额外的空白第二行。嵌套子 worktree 不重复显示归属编号；
