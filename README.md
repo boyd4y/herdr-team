@@ -24,7 +24,7 @@ herdr-team --help
 
 ## Start a project team
 
-From the project root, initialize a team. Choose a preset, or supply role definitions with `--roles-file`; see the [CLI guide](cli/README.md) and the bundled skill's [team setup reference](skill/references/team-setup.md) before accepting preset responsibilities.
+From the project root, initialize a team. Choose a preset, or supply role definitions with `--roles-file`; before accepting preset responsibilities, see the [CLI guide (Chinese)](cli/README.md) and the bundled skill's [team setup reference (Chinese)](skill/references/team-setup.md).
 
 ```sh
 herdr-team init --plan balanced
@@ -32,6 +32,8 @@ herdr-team validate
 ```
 
 Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project. Add a task with its owner and optional ordered handoff roles:
+
+To inspect roles, run `herdr-team role list`. Add a role with `herdr-team role add <name> --kind <kind>`; update an existing role's responsibilities with `herdr-team role add <name> --force --body <text>` or `--body-file <file>`; remove a role with `herdr-team role rm <name>`. Run `herdr-team up` after adding roles so they are started and reported.
 
 ```sh
 herdr-team add "Implement login" --role dev --handoff test
@@ -52,11 +54,11 @@ herdr-team status
 
 The `.herdr/` task card is the workflow record. Its `status` describes task progress (`todo`, `doing`, `review`, or terminal states). Herdr's live agent state describes whether a native session is available or working. The card's `delivery` record describes one queued or attempted assignment (`queued`, `sending`, `submitted`, `claimed`, or `uncertain`). These are related but distinct states.
 
-Each assignment has a unique delivery ID. The receiving agent must claim that ID before starting and pass the same ID to handoff. Busy, blocked, unknown, or unavailable receivers stay queued. Handoff appends an optional summary to the task's `task.md`, records the next owner, and queues the next delivery. A task with no remaining handoff roles is completed by its final owner. Review [queue and delivery details](cli/README.md#team-console) for state transitions and examples.
+Each assignment has a unique delivery ID. The receiving agent must claim that ID before starting and pass the same ID to handoff. Busy, blocked, unknown, or unavailable receivers stay queued. Handoff appends an optional summary to the task's `task.md`, records the next owner, and queues the next delivery. A task with no remaining handoff roles is completed by its final owner. See the [Chinese CLI guide's queue and delivery details](cli/README.md#team-console) for state transitions and examples.
 
 Console is the automatic scheduler and runs in the project's Team Console tab. Closing it pauses automatic delivery while queue records remain on disk; run `herdr-team up` or `herdr-team console` to resume. `console --observe`, `console --once`, and `console --line` are read-only views and do not schedule work. An uncertain delivery may already have reached an agent: inspect the agent and its task artifacts before a lead uses `herdr-team queue retry <id>`. A retry receives a new delivery ID. This queue prevents blind repeat sends; it cannot guarantee exactly-once execution by the underlying terminal or agent.
 
-Resident roles can resume a saved native session when Herdr's official integration reports its session ID. Install or update the matching Herdr integration (for example, `herdr integration install codex`) and let it report a session before shutdown. `herdr-team up --fresh` ignores saved session records for roles that need starting; already running agents are reused. See [session recovery](cli/README.md#快速开始) for limits and troubleshooting.
+Resident roles can resume a saved native session when Herdr's official integration reports its session ID. Install or update the matching Herdr integration (for example, `herdr integration install codex`) and let it report a session before shutdown. `herdr-team up --fresh` ignores saved session records for roles that need starting; already running agents are reused. See the [Chinese CLI guide](cli/README.md) for recovery limits and troubleshooting.
 
 ## Upgrade, remove, and troubleshoot
 
@@ -80,7 +82,7 @@ Common checks:
 - Agent session was not resumed: recovery depends on a supported Herdr integration reporting a session ID; inspect the error before trying `up --fresh`.
 - Delivery is uncertain: inspect task history, the receiving agent, and artifacts before explicitly retrying.
 
-For the complete command reference, queue details, native session behavior, and configuration boundaries, see the [CLI guide](cli/README.md). For development and pull requests, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For the complete command reference, queue details, native session behavior, and configuration boundaries, see the [CLI guide (Chinese)](cli/README.md). For development and pull requests, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contribute
 

@@ -33,6 +33,8 @@ herdr-team validate
 
 检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。创建任务时指定负责人和可选的交棒角色顺序：
 
+运行 `herdr-team role list` 查看角色；用 `herdr-team role add <name> --kind <kind>` 添加角色；用 `herdr-team role add <name> --force --body <text>` 或 `--body-file <file>` 更新现有角色职责；用 `herdr-team role rm <name>` 移除角色。添加角色后运行 `herdr-team up`，让新角色启动并上报信息。
+
 ```sh
 herdr-team add "Implement login" --role dev --handoff test
 herdr-team tasks
@@ -80,8 +82,8 @@ herdr plugin action invoke herdr-team.uninstall-cli
 - 没有恢复 agent session：恢复依赖受支持的 Herdr integration 上报 session ID；检查错误后再决定是否使用 `up --fresh`。
 - 投递状态为 uncertain：明确重试前先检查任务记录、接收 agent 和产物。
 
-完整命令参考、队列细节、原生 session 行为和配置边界见 [CLI 指南](cli/README.md)。开发与 Pull Request 说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+完整命令参考、队列细节、原生 session 行为和配置边界见 [CLI 指南](cli/README.md)。开发与 Pull Request 说明见[中文贡献指南](CONTRIBUTING.zh-CN.md)。
 
 ## 参与贡献
 
-欢迎提交 issue 和 pull request。请提供涉及的 Herdr、Node、Bun 和 agent integration 版本、准确命令、预期与实际行为，以及最小复现。请勿包含凭证、私有任务正文或 session ID。目录结构、本地插件测试和检查命令见[贡献指南](CONTRIBUTING.md)。
+欢迎提交 issue 和 pull request。请提供涉及的 Herdr、Node、Bun 和 agent integration 版本、准确命令、预期与实际行为，以及最小复现。请勿包含凭证、私有任务正文或 session ID。目录结构、本地插件测试和检查命令见[中文贡献指南](CONTRIBUTING.zh-CN.md)。
