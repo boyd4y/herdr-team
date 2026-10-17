@@ -6,7 +6,7 @@ Herdr Team is a public Herdr plugin for coordinating project-scoped agent teams.
 
 ## Install
 
-Herdr Team supports macOS and Linux. Install Herdr 0.9.3 or later, Node.js 22.20 or later (with `npm`/`npx`), and Bun 1.2 or later. The CLI installer requires Bun on `PATH`; the skill installer uses `npx` and may need network access the first time it downloads Skills CLI.
+Herdr Team supports macOS and Linux. Install [Herdr](https://herdr.dev) 0.9.3 or later, [Node.js](https://nodejs.org) 22.20 or later (with `npm`/`npx`), and [Bun](https://bun.sh) 1.2 or later. The CLI installer requires Bun on `PATH`; the skill installer uses `npx` and may need network access the first time it downloads Skills CLI.
 
 Install the public plugin from GitHub:
 
@@ -31,9 +31,11 @@ herdr-team init --plan balanced
 herdr-team validate
 ```
 
-Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project. Add a task with its owner and optional ordered handoff roles:
+Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project.
 
 To inspect roles, run `herdr-team role list`. Add a role with `herdr-team role add <name> --kind <kind>`; update an existing role's responsibilities with `herdr-team role add <name> --force --body <text>` or `--body-file <file>`; remove a role with `herdr-team role rm <name>`. Run `herdr-team up` after adding roles so they are started and reported.
+
+Add a task with its owner and optional ordered handoff roles:
 
 ```sh
 herdr-team add "Implement login" --role dev --handoff test
@@ -62,7 +64,7 @@ Resident roles can resume a saved native session when Herdr's official integrati
 
 ## Upgrade, remove, and troubleshoot
 
-To upgrade, update/reinstall `boyd4y/herdr-team` through Herdr's plugin manager so the bundled CLI, skill, and managed configuration are refreshed. If new event hooks or configuration are not active, use the plugin's `configure` action; a CLI update that requires refreshed hooks may also require relinking the plugin. Keep the user bin directory and Bun on Herdr's `PATH`.
+For a GitHub installation, upgrade by updating or reinstalling `boyd4y/herdr-team` through Herdr's plugin manager. For a locally linked checkout, run `herdr plugin link .` from the checkout root to refresh the plugin manifest and event hooks, then run `herdr plugin action invoke herdr-team.configure`. The `configure` action applies Herdr Team's managed layout and configuration and reloads config; it does not register changed event hooks by itself. Keep the user bin directory and Bun on Herdr's `PATH`.
 
 Before removing the plugin, remove the plugin-managed skill, Herdr configuration, and CLI shim with the corresponding actions:
 

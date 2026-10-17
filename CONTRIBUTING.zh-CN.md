@@ -31,6 +31,7 @@ cd cli
 bun install
 bun test
 bun run typecheck
+cd ..
 ```
 
 在仓库根目录运行插件和打包测试：
@@ -39,14 +40,14 @@ bun run typecheck
 node --test tests/*.test.cjs
 ```
 
-自动化测试使用临时项目目录和离线 Herdr 可执行文件，无需连接正在运行的 Herdr。手动集成测试请使用一次性 Herdr profile/session 和临时项目，不要使用个人 workspace 或全局配置。在该环境中 link 本检出并调用 setup：
+自动化测试使用临时项目目录和离线 Herdr 可执行文件，无需连接正在运行的 Herdr。手动集成 setup 会安装用户级 CLI 和 skill 文件，并写入 Herdr 用户配置。单独创建一个命名的 Herdr session 并不能隔离这些文件。请使用拥有独立 home、config 和 bin 目录的一次性环境（例如单独的开发用户或容器），或者明确选择在个人安装中测试；同时使用临时项目。在该环境的仓库根目录 link 本检出并调用 setup：
 
 ```sh
 herdr plugin link .
 herdr plugin action invoke herdr-team.install
 ```
 
-link 只注册插件；install action 会运行 setup 入口。测试后按[主 README](README.md#upgrade-remove-and-troubleshoot) 所述运行卸载 actions，再解除本地 link。不要用集成测试覆盖无关的 Herdr 配置或用户文件。
+link 只注册插件；install action 会运行 setup 入口。测试后按[中文 README](README.zh-CN.md#升级移除与故障排查) 所述运行卸载 actions，再解除本地 link。不要用集成测试覆盖无关的 Herdr 配置或用户文件。
 
 ## 修改约定
 

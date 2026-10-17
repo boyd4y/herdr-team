@@ -31,6 +31,7 @@ cd cli
 bun install
 bun test
 bun run typecheck
+cd ..
 ```
 
 Run plugin/package tests from the repository root:
@@ -39,7 +40,7 @@ Run plugin/package tests from the repository root:
 node --test tests/*.test.cjs
 ```
 
-Automated tests use temporary project directories and offline Herdr executables. They do not need a live Herdr session. For manual integration testing, use a disposable Herdr profile/session and a temporary project, not a personal workspace or global configuration. Link this checkout and invoke setup there:
+Automated tests use temporary project directories and offline Herdr executables. They do not need a live Herdr session. Manual integration setup installs user-level CLI and skill files and writes Herdr user configuration. A separate named Herdr session does not isolate those files. Use a disposable environment with its own home, config, and bin directories (for example, a separate development user or container), or knowingly test against your personal installation. Use a temporary project in that environment. From the repository root, link this checkout and invoke setup:
 
 ```sh
 herdr plugin link .

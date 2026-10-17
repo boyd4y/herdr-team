@@ -6,7 +6,7 @@ Herdr Team 是面向项目级 agent 团队协作的公开 Herdr 插件，内置 
 
 ## 安装
 
-Herdr Team 支持 macOS 和 Linux。请安装 Herdr 0.9.3 或更新版本、Node.js 22.20 或更新版本（含 `npm`/`npx`），以及 Bun 1.2 或更新版本。CLI 安装需要 Bun 在 `PATH` 中；skill 安装通过 `npx` 使用 Skills CLI，首次下载时可能需要网络。
+Herdr Team 支持 macOS 和 Linux。请安装 [Herdr](https://herdr.dev) 0.9.3 或更新版本、[Node.js](https://nodejs.org) 22.20 或更新版本（含 `npm`/`npx`），以及 [Bun](https://bun.sh) 1.2 或更新版本。CLI 安装需要 Bun 在 `PATH` 中；skill 安装通过 `npx` 使用 Skills CLI，首次下载时可能需要网络。
 
 从公开 GitHub 仓库安装插件：
 
@@ -31,9 +31,11 @@ herdr-team init --plan balanced
 herdr-team validate
 ```
 
-检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。创建任务时指定负责人和可选的交棒角色顺序：
+检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
 运行 `herdr-team role list` 查看角色；用 `herdr-team role add <name> --kind <kind>` 添加角色；用 `herdr-team role add <name> --force --body <text>` 或 `--body-file <file>` 更新现有角色职责；用 `herdr-team role rm <name>` 移除角色。添加角色后运行 `herdr-team up`，让新角色启动并上报信息。
+
+创建任务时指定负责人和可选的交棒角色顺序：
 
 ```sh
 herdr-team add "Implement login" --role dev --handoff test
@@ -62,7 +64,7 @@ Console 是自动调度器，在项目的 Team Console tab 中运行。关闭它
 
 ## 升级、移除与故障排查
 
-升级时，通过 Herdr 插件管理器更新或重新安装 `boyd4y/herdr-team`，以刷新内置 CLI、skill 和托管配置。如果新事件 hook 或配置尚未生效，请运行插件的 `configure` action；若 CLI 更新要求刷新 hook，也可能需要重新 link 插件。Herdr 的 `PATH` 中需保留用户 bin 目录和 Bun。
+GitHub 安装的插件请通过 Herdr 插件管理器更新或重新安装 `boyd4y/herdr-team`。本地 link 的开发检出请在仓库根目录运行 `herdr plugin link .`，以刷新插件 manifest 和事件 hook，然后运行 `herdr plugin action invoke herdr-team.configure`。`configure` action 会应用 Herdr Team 托管的布局与配置并 reload config；它本身不会注册已变更的事件 hook。Herdr 的 `PATH` 中需保留用户 bin 目录和 Bun。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 
