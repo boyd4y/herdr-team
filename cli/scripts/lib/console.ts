@@ -47,7 +47,9 @@ export function stopConsole(project: Project): void {
   });
 }
 
-export function ensureConsole(project: Project, herdr: Herdr, workspaceId: string): ConsoleOutcome {
+export function ensureConsole(project: Project, herdr: Herdr, workspaceId: string,
+  pause: (milliseconds: number) => void = Bun.sleepSync,
+): ConsoleOutcome {
   try {
     return withTeamLock(project, "console-launch", () => {
       const panes = herdr.paneList(workspaceId);
@@ -76,7 +78,14 @@ export function ensureConsole(project: Project, herdr: Herdr, workspaceId: strin
           return { action: "reused", paneId, tabId };
         }
       }
-      if (!herdr.paneIsShell(paneId)) throw new Error("Team Console pane is busy; leave it at a shell prompt and run up again");
+      // A newly created tab can report its shell's startup child as foreground.
+      // Wait briefly for a verified shell; never send keys to an unknown process.
+      let ready = herdr.paneIsShell(paneId);
+      for (let attempt = 0; !ready && attempt < 20; attempt++) {
+        pause(100);
+        ready = herdr.paneIsShell(paneId);
+      }
+      if (!ready) throw new Error(`Team Console pane ${paneId} is busy; leave it at a shell prompt and run up again`);
       const entry = join(import.meta.dir, "..", "cli.ts");
       writeRecord(ticket, { paneId, at: Date.now() });
       try { herdr.paneRun(paneId, `${shellQuote(process.execPath)} ${shellQuote(entry)} console --root ${shellQuote(project.root)}`); }

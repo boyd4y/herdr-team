@@ -51,7 +51,7 @@ test("a busy Console pane is never overwritten", () => fixture((root, h) => {
   h.paneIsShell = () => false;
   writeFileSync(runtimePath(p, "console-launch.json"), "{}");
   h.calls.length = 0;
-  expect(ensureConsole(p, h, "w1")).toMatchObject({ action: "failed", failure: expect.stringContaining("busy") });
+  expect(ensureConsole(p, h, "w1", () => {})).toMatchObject({ action: "failed", failure: expect.stringContaining("busy") });
   expect(h.calls).toEqual([]);
 }));
 
@@ -107,3 +107,26 @@ test("Console drives queued delivery and restores the terminal when quitting", a
     expect(h.calls.filter((c) => c.startsWith("agent prompt"))).toHaveLength(1);
   } finally { f.cleanup(); }
 });
+
+
+test("Console startup waits for transient shell initialization before sending one command", () => fixture((root, h) => {
+  const p = loadProject(root);
+  let checks = 0, waits = 0;
+  h.paneIsShell = () => ++checks >= 4;
+  const result = ensureConsole(p, h, "w1", (ms) => { expect(ms).toBe(100); waits++; });
+  expect(result.action).toBe("started");
+  expect(waits).toBe(3);
+  expect(h.calls.filter((call) => call.startsWith("pane run"))).toHaveLength(1);
+  expect(h.calls.filter((call) => call.startsWith("agent prompt"))).toHaveLength(0);
+}));
+
+test("Console startup has a bounded wait and reports the occupied pane without injecting input", () => fixture((root, h) => {
+  let checks = 0, waits = 0;
+  h.paneIsShell = () => { checks++; return false; };
+  const result = ensureConsole(loadProject(root), h, "w1", () => { waits++; });
+  expect(result.action).toBe("failed");
+  expect(result.failure).toContain("Team Console pane w1:");
+  expect(waits).toBe(20);
+  expect(checks).toBe(21);
+  expect(h.calls.some((call) => call.startsWith("pane run"))).toBe(false);
+}));
