@@ -97,12 +97,34 @@ describe("init --plan 的产物", () => {
           const table = section.split("\n").filter((line) => line.startsWith("|")).join("\n");
           expect(table).not.toBe("");
           expect(role.body).toContain(table);
-          expect(role.body).toContain("herdr-team handoff <id>");
+          expect(role.body).toContain("herdr-team handoff <id> --delivery ID");
+          expect(role.body).toContain("next owner is clear from the task card");
+          expect(role.body).toContain("directly to that role");
+          expect(role.body).toContain("report it to `lead` in the handoff summary");
+          expect(role.body).toContain("do not guess a role or make the user relay the work");
+          expect(role.body).toContain("`handoff` advances along the task card's handoff chain");
           if (role.name !== "lead") {
             expect(role.body).toContain("limited to `claim <id> --delivery ID`, `handoff <id> --delivery ID`, and read-only queries");
-            expect(role.body).toContain("do not create, merge, or delete branches, or modify main");
+            expect(role.body.toLowerCase()).toContain("do not create, merge, or delete branches, or modify main");
+            expect(role.body).toContain("lead owns edits to that chain");
+          } else {
+            expect(role.body).toContain("## Overall control");
+            expect(role.body).toContain("goal and acceptance criteria");
+            expect(role.body).toContain("dependencies and handoff order");
+            expect(role.body).toContain("`status` / `tasks` / `queue` / Team Console");
+            expect(role.body).toContain("route failures back to the owning role");
+            expect(role.body).toContain("decide when the goal is met");
+            expect(role.body).toContain("Lead does not implement application changes");
+            expect(role.body).toContain("## Goal loop (recommended, not required)");
+            expect(role.body).toContain("plan → add/dispatch → observe → review/handoff → re-plan");
+            expect(role.body).toContain("ordinary dispatch and review remain valid");
+            expect(role.body).toContain("No harness goal or loop command is required");
+            expect(role.body).toContain("## Flow ownership");
+            expect(role.body).toContain("fallback owner when the next owner is unclear");
+            expect(role.body).toContain("only lead edits that chain through the CLI");
           }
           if (role.name === "test") expect(role.body).toContain("`dev` to fix and `test` to verify");
+          if (role.name === "search") expect(role.body).not.toContain("You may commit changes");
         }
       } finally { cleanup(); }
     }
