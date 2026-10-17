@@ -1,0 +1,4 @@
+kind: codex
+model: sol-6.1
+worktree: true
+args: ["--no-daemon", "-m", gpt-6.1-sol]

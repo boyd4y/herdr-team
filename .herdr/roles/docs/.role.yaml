@@ -1,0 +1,3 @@
+kind: codex
+model: luna
+args: ["--no-daemon", "-m", gpt-6-luna]

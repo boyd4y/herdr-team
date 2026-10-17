@@ -1,0 +1,9 @@
+title: Correct upgrade and skill-removal documentation
+priority: P1
+status: done
+role: lead
+handoff: []
+depends_on: ["0002"]
+delivery: null
+pending_history: null
+completed_deliveries: ["902dd62c-3d5c-4fac-b52f-322cdc53a507", "54d3d4fa-2887-455b-aeff-38a931fd039f"]
