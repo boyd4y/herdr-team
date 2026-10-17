@@ -2,7 +2,7 @@ import { findRoot, loadProject } from "./config.ts";
 import { findRoleAgent, projectKey, projectAgents, roleAssignment } from "./team-scope.ts";
 import { badgeTokens, type Herdr } from "./herdr.ts";
 import type { Project, RoleCard } from "./types.ts";
-import { rememberRoleSession } from "./sessions.ts";
+import { rememberRoleSession, scopeForTaskSession } from "./sessions.ts";
 import { waitingDelivery } from "./delivery.ts";
 
 /** Keep display fields separate from the unique name used to address an agent. */
@@ -44,9 +44,11 @@ export function refreshSidebar(project: Project, herdr: Herdr, sessionsOnly = fa
       const assignment = roleAssignment(fresh, agent);
       if (!assignment) continue;
       try {
-        // Ambiguous resident roles must not overwrite each other's native session ID.
-        if (!assignment.taskId && !assignment.role.worktree) findRoleAgent(fresh, agents, assignment.role);
-        if (!assignment.taskId) rememberRoleSession(fresh, assignment.role, agent);
+        // Ambiguous role/task identities must not overwrite each other's native session ID.
+        findRoleAgent(fresh, agents, assignment.role, assignment.taskId);
+        const scope = assignment.taskId && agent.agent_session
+          ? scopeForTaskSession(fresh, herdr, assignment.role, assignment.taskId) : undefined;
+        if (!assignment.taskId || scope) rememberRoleSession(fresh, assignment.role, agent, scope);
         if (!sessionsOnly) reportRoleSidebar(fresh, herdr, agent.pane_id, assignment.role, assignment.taskId);
         result.updated++;
       } catch { result.failed++; }

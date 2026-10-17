@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { acceptanceFor, reviewFor, taskEnvironment, taskScoped, verifyCheckout } from "./execution.ts";
 import type { AgentInfo, Herdr } from "./herdr.ts";
 import { assertProjectWorkspace, availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents } from "./team-scope.ts";
+import { savedResumeArgs, rememberRoleSession } from "./sessions.ts";
 import { reportRoleSidebar } from "./sidebar.ts";
 import { worktreeBranch, type Project, type RoleCard, type TaskCard } from "./types.ts";
 
@@ -23,6 +24,11 @@ export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: 
     if (expected) {
       const cwd = live.foreground_cwd ?? live.cwd ?? herdr.paneList().find((p) => p.pane_id === live.pane_id)?.cwd;
       if (cwd !== join(expected, offset)) throw new Error("Reviewer session is outside this task worktree; reconcile it before retrying");
+    }
+    if (live.agent_session) {
+      const trees = herdr.worktreeList(repoPath).filter((tree) => tree.branch === worktreeBranch(task));
+      if (trees.length !== 1) throw new Error("Cannot identify this task checkout for session recovery");
+      rememberRoleSession(project, role, live, { taskId: task.id, cwd: join(trees[0]!.path, offset) });
     }
     return live;
   }
@@ -46,6 +52,8 @@ export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: 
     checkout = created[0]!.path;
   }
   bindProjectWorkspace(project, herdr, workspaceId, false);
+  const scope = { taskId: task.id, cwd: join(expected ?? checkout, offset) };
+  const resume = savedResumeArgs(project, role, scope);
   const env = { ...role.env, ...taskEnvironment(project, task, role.name) };
   const label = `${role.name}-${task.id}`;
   const tab = herdr.tabList(workspaceId).find((t) => t.label === label);
@@ -56,7 +64,14 @@ export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: 
   } else {
     paneId = herdr.tabCreate(workspaceId, label, join(expected ?? checkout, offset), env).paneId;
   }
-  herdr.agentStart(availableAgentName(project, herdr, role, task.id), role.kind, paneId, role.args ?? []);
+  try {
+    herdr.agentStart(availableAgentName(project, herdr, role, task.id), role.kind, paneId, [...(resume ?? []), ...(role.args ?? [])]);
+  } catch (error) {
+    if (resume) throw new Error(`Task session resume failed; inspect the saved session before retrying: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  }
   try { reportRoleSidebar(project, herdr, paneId, role, task.id); } catch { /* Presentation is best effort. */ }
-  return findRoleAgent(project, projectAgents(project, herdr), role, task.id);
+  const started = findRoleAgent(project, projectAgents(project, herdr), role, task.id);
+  if (started) rememberRoleSession(project, role, started, scope);
+  return started;
 }

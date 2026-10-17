@@ -1,3 +1,7 @@
+import { taskAgent } from "../scripts/lib/task-agent.ts";
+import { refreshSidebar } from "../scripts/lib/sidebar.ts";
+import { rememberRoleSession, roleSessionPath, savedResumeArgs, scopeForTaskSession } from "../scripts/lib/sessions.ts";
+import { down } from "../scripts/lib/launch.ts";
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -217,4 +221,97 @@ test("legacy unsent cards migrate to task sessions without changing already-issu
   expect(f.task("0002").meta.execution).toBe("task");
   expect(f.task("0002").meta.delivery).toMatchObject({ state: "submitted" });
   expect(JSON.parse(original).pane_id).toBe((f.task().meta.delivery as any).pane_id);
+}));
+
+// Recovery consumes Herdr's native agent_session; no hooks or transcript parsing here.
+test("task native IDs are saved independently by task and role, then Codex resumes exactly its own ID", () => fixture((f) => {
+  writeRole(f.root, "dev", roleMeta({ worktree: true, args: ["-m", "gpt-6.1-sol"] }));
+  f.add("First"); f.add("Second");
+  dispatch(f.load(), f.herdr); claimCurrent(f.root);
+  pumpQueue(f.load(), f.herdr);
+  const first = f.herdr.state.agents.find((a) => a.name === "dev-0001")!;
+  const second = f.herdr.state.agents.find((a) => a.name === "dev-0002")!;
+  first.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "first-native-session" };
+  second.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "second-native-session" };
+  expect(refreshSidebar(f.load(), f.herdr, true)).toEqual({ updated: 2, failed: 0 });
+  const role = f.load().roles.find((r) => r.name === "dev")!;
+  const a = scopeForTaskSession(f.load(), f.herdr, role, "0001"), b = scopeForTaskSession(f.load(), f.herdr, role, "0002");
+  expect(savedResumeArgs(f.load(), role, a)).toEqual(["resume", "first-native-session"]);
+  expect(savedResumeArgs(f.load(), role, b)).toEqual(["resume", "second-native-session"]);
+  expect(savedResumeArgs(f.load(), role)).toBeUndefined();
+  f.herdr.paneClose(first.pane_id!);
+  f.herdr.calls.length = 0;
+  taskAgent(f.load(), f.herdr, role, f.task());
+  expect(f.herdr.calls.find((c) => c.startsWith("agent start dev-0001"))).toContain('args=["resume","first-native-session","-m","gpt-6.1-sol"]');
+  expect(f.herdr.calls.some((c) => c.startsWith("worktree create"))).toBe(false);
+  expect(f.herdr.calls.some((c) => c.startsWith("agent prompt"))).toBe(false);
+}));
+
+test("task dev and test save different native sessions in the same worktree; down persists before closing", () => fixture((f) => {
+  f.add("First"); const { delivery } = f.submit();
+  const dev = f.herdr.state.agents.find((a) => a.name === "dev-0001")!;
+  const tester = f.herdr.state.agents.find((a) => a.name === "test-0001")!;
+  dev.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "dev-native" };
+  tester.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "test-native" };
+  const p = f.load(), devRole = p.roles.find((r) => r.name === "dev")!, testRole = p.roles.find((r) => r.name === "test")!;
+  const devScope = scopeForTaskSession(p, f.herdr, devRole, "0001"), testScope = scopeForTaskSession(p, f.herdr, testRole, "0001");
+  expect(devScope.cwd).toBe(testScope.cwd);
+  down(p, f.herdr);
+  expect(savedResumeArgs(p, devRole, devScope)).toEqual(["resume", "dev-native"]);
+  expect(savedResumeArgs(p, testRole, testScope)).toEqual(["resume", "test-native"]);
+  // Reading/saving session identity cannot advance the delivery or handoff chain.
+  expect(f.task().meta.delivery).toMatchObject({ id: delivery, state: "claimed" });
+}));
+
+test("task late reports preserve existing IDs when absent and reject wrong checkout or duplicate task identities", () => fixture((f) => {
+  f.add("First"); dispatch(f.load(), f.herdr);
+  const agent = f.herdr.state.agents.find((a) => a.name === "dev-0001")!;
+  const role = f.load().roles.find((r) => r.name === "dev")!;
+  const scope = scopeForTaskSession(f.load(), f.herdr, role, "0001");
+  expect(savedResumeArgs(f.load(), role, scope)).toBeUndefined();
+  agent.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "correct-id" };
+  refreshSidebar(f.load(), f.herdr, true);
+  agent.agent_session = undefined;
+  refreshSidebar(f.load(), f.herdr, true);
+  expect(savedResumeArgs(f.load(), role, scope)).toEqual(["resume", "correct-id"]);
+  rememberRoleSession(f.load(), role, { ...agent, cwd: f.root,
+    agent_session: { source: "herdr:codex", agent: "codex", kind: "id", value: "wrong-cwd" } }, scope);
+  expect(savedResumeArgs(f.load(), role, scope)).toEqual(["resume", "correct-id"]);
+  expect(savedResumeArgs(f.load(), { ...role, kind: "grok" }, scope)).toBeUndefined();
+  expect(savedResumeArgs(f.load(), role, { ...scope, cwd: f.root })).toBeUndefined();
+  f.herdr.state.agents.push({ ...agent, name: "duplicate", pane_id: "duplicate-pane" });
+  expect(refreshSidebar(f.load(), f.herdr, true).failed).toBe(2);
+  expect(savedResumeArgs(f.load(), role, scope)).toEqual(["resume", "correct-id"]);
+}));
+
+test("failed task resume never falls back to a fresh session and keeps the original saved ID", () => fixture((f) => {
+  f.add("First"); dispatch(f.load(), f.herdr);
+  const agent = f.herdr.state.agents.find((a) => a.name === "dev-0001")!;
+  const role = f.load().roles.find((r) => r.name === "dev")!;
+  const scope = scopeForTaskSession(f.load(), f.herdr, role, "0001");
+  rememberRoleSession(f.load(), role, { ...agent,
+    agent_session: { source: "herdr:codex", agent: "codex", kind: "id", value: "resume-me" } }, scope);
+  f.herdr.paneClose(agent.pane_id!);
+  let attempts = 0;
+  f.herdr.agentStart = () => { attempts++; throw new Error("session unavailable"); };
+  expect(() => taskAgent(f.load(), f.herdr, role, f.task())).toThrow(/Task session resume failed/);
+  expect(attempts).toBe(1);
+  expect(savedResumeArgs(f.load(), role, scope)).toEqual(["resume", "resume-me"]);
+}));
+
+test("task records do not leak to other tasks or projects and malformed records stop restart", () => fixture((f) => {
+  f.add("First"); f.add("Second"); dispatch(f.load(), f.herdr); pumpQueue(f.load(), f.herdr);
+  const role = f.load().roles.find((r) => r.name === "dev")!;
+  const a = scopeForTaskSession(f.load(), f.herdr, role, "0001"), b = scopeForTaskSession(f.load(), f.herdr, role, "0002");
+  rememberRoleSession(f.load(), role, {
+    agent_session: { source: "herdr:codex", agent: "codex", kind: "id", value: "only-first" } }, a);
+  expect(savedResumeArgs(f.load(), role, b)).toBeUndefined();
+  const other = makeProject();
+  try { expect(savedResumeArgs(loadProject(other.root), role, a)).toBeUndefined(); } finally { other.cleanup(); }
+  const first = f.herdr.state.agents.find((a) => a.name === "dev-0001")!;
+  f.herdr.paneClose(first.pane_id!);
+  writeFileSync(roleSessionPath(f.load(), role, a), "{bad");
+  f.herdr.calls.length = 0;
+  expect(() => taskAgent(f.load(), f.herdr, role, f.task())).toThrow(/session record/);
+  expect(f.herdr.calls.some((c) => c.startsWith("agent start"))).toBe(false);
 }));

@@ -30,7 +30,10 @@ Herdr agent 内部名称可能包含项目命名空间；不要凭侧栏角色�
 `up` 默认恢复已记录的常驻角色原生会话（输出 `resumed`）；`up --fresh` 忽略记录，
 只对待启动角色开新会话，运行中的 agent 始终复用。记录依赖 Herdr 官方 integration 上报
 session ID，没有记录时新建；恢复失败先读错误，不盲目重派任务或丢弃旧会话。
-隔离角色仍由 `dispatch` 按任务启动。
+任务会话按项目、任务号、角色及 worktree cwd 分开恢复；同任务 dev/test 共用 checkout，
+各自保留会话。任务角色在队列投递时启动，`up` 不预先拉起。Team 只读取 Herdr 的
+`agent_session`，不要另建 session 识别 hook 或按最近会话猜 ID。
+会话恢复不改变 delivery 状态，`uncertain` 仍需核对后由 lead 显式重试。
 
 ## 命令归属
 

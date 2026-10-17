@@ -7,7 +7,7 @@ import { withTeamLock } from "./runtime.ts";
 import { basename, join } from "node:path";
 import { HerdrError, type Herdr } from "./herdr.ts";
 import { reportRoleSidebar } from "./sidebar.ts";
-import { forgetRoleSession, rememberRoleSession, savedResumeArgs } from "./sessions.ts";
+import { forgetRoleSession, scopeForTaskSession, rememberRoleSession, savedResumeArgs } from "./sessions.ts";
 import { availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents, resolveProjectWorkspace, roleAssignment } from "./team-scope.ts";
 import { findTask } from "./task.ts";
 import {
@@ -266,7 +266,9 @@ export function down(project: Project, herdr: Herdr): DownResult {
     }
 
     // Persist before closing: a failed write must leave the recoverable agent alive.
-    rememberRoleSession(project, assignment!.role, agent);
+    const scope = assignment!.taskId && agent.agent_session
+      ? scopeForTaskSession(project, herdr, assignment!.role, assignment!.taskId) : undefined;
+    rememberRoleSession(project, assignment!.role, agent, scope);
     herdr.paneClose(paneId);
     stopped.push({ role, agent: name, paneId });
   }

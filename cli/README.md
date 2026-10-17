@@ -111,7 +111,10 @@ herdr-team up --fresh
 `up`、`down` 关停前、sidebar 刷新以及 agent 状态变化事件会保存当前已上报的 ID。
 插件事件只写本地记录，不发送消息、不回写 metadata，无 daemon。
 直接强制关闭 pane 前若尚未捕获 ID，就没有可恢复记录。
-隔离 worktree 角色仍由 `dispatch` 按任务启动，不参与 `up` 的角色会话恢复。
+任务会话按项目、任务号和角色分别保存，并校验对应 worktree 的 cwd；开发和测试即使共用
+一个 worktree，也各自恢复自己的原生会话。任务角色仍由队列实际投递时启动，不由 `up`
+预先拉起。恢复会话不会重放任务、改变 delivery 状态或绕过 `uncertain` 的人工核对。
+Team 只读取 Herdr 的 `agent_session`，无需另装 Team 专用的 CLI hook，也不解析会话文件。
 GitHub 安装请通过 Herdr 插件管理器更新或重新安装。更新本地 link 的检出时，在仓库根目录运行 `herdr plugin link .` 以加载更新后的 manifest 和事件钩子，再运行 `herdr plugin action invoke herdr-team.install` 更新内置 CLI、skill 并应用托管配置。`herdr-team.configure` 只应用托管布局/配置并 reload config，不会注册更新后的 hook，也不会更新 CLI 或 skill。
 
 `dispatch [<id>]` 将 todo 卡持久化入队，并尝试立即投递一条符合条件的任务。
