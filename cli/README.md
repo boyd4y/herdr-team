@@ -19,7 +19,7 @@ node --test tests/*.test.cjs
 
 ## 快速开始
 
-先按 [插件安装说明](../README.md#安装) 一次安装 CLI、skill 和 sidebar，再直接运行：
+先按 [English installation guide](../README.md#install) 一次安装 CLI、skill 和 sidebar，再直接运行：
 
 ```sh
 herdr-team --help
