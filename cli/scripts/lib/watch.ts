@@ -1,4 +1,4 @@
-import { projectAgents } from "./team-scope.ts";
+import { findRoleAgent, projectAgents } from "./team-scope.ts";
 import { deliveryFor, deliveryState } from "./delivery.ts";
 /**
  * Team Console renderer and terminal loop。
@@ -200,6 +200,9 @@ export interface WatchState {
 
 export interface WatchModel {
   projectName: string;
+  /** Project-wide delivery counts, independent of search and --all. */
+  pending: PendingCounts;
+  taskAgents: Map<string, AgentInfo>;
   consoleMode?: boolean;
   /** 已格式化好的时钟，由驱动传进来 —— 渲染里读时钟就没法测了。 */
   now: string;
@@ -254,9 +257,18 @@ export function buildModel(
   const tasks = filterTasks(candidates, state.query);
 
   const selectedIndex = resolveSelection({ id: state.selectedId, index: state.selectedIndex }, tasks);
+  const taskAgents = new Map<string, AgentInfo>();
+  for (const task of project.tasks) {
+    const role = project.roles.find((r) => r.name === task.role);
+    if (role === undefined) continue;
+    const agent = findRoleAgent(project, agents, role, role.worktree ? task.id : undefined);
+    if (agent !== undefined) taskAgents.set(task.id, agent);
+  }
 
   return {
     projectName: basename(project.root),
+    pending: pendingCounts(project.tasks),
+    taskAgents,
     now,
     intervalSeconds,
     showAll: state.showAll,
@@ -266,7 +278,11 @@ export function buildModel(
     tasks,
     openCount,
     totalCount: project.tasks.length,
-    roles: roleStatusesFrom(project, agents),
+    roles: roleStatusesFrom(project, agents).map((role) => ({
+      ...role,
+      current: role.current ?? project.tasks.filter((task) => task.role === role.role &&
+        !isTerminal(task.status) && task.status !== "todo").map((task) => task.id),
+    })),
     inconsistencies: herdrOk ? findInconsistencies(project, agents) : [],
     problems: validateProject(project).map((p) => `${p.file} [rule ${p.rule}] ${p.message}`),
     herdrOk,
@@ -279,13 +295,12 @@ export function buildModel(
 // ------------------------------------------------------------------ 渲染
 
 const MIN_WIDTH = 40;
-/** 详情块固定占的行数：分隔线 + 3 行字段 + task.md 表头 + 空行。 */
-const DETAIL_CHROME = 6;
+/** Detail separator + five metadata lines + task.md heading. */
+const DETAIL_CHROME = 7;
 /** 没有选中项时，整帧的固定开销：标题栏 + 两个空行 + 两个表头 + 空行 + 底栏。 */
 const FIXED_NO_DETAIL = 7;
 const MIN_TASKS = 3;
 const MIN_ROLES = 1;
-const TASKS_FIXED_COLS = 25;
 const BODY_INDENT = 2;
 
 const RESET = "\x1b[0m";
@@ -355,31 +370,67 @@ export function bodyLines(task: TaskCard, width: number): string[] {
   return wrapTo(sanitize(task.body, true), Math.max(1, width - BODY_INDENT));
 }
 
-/** 警告横幅：每种最多一行。返回的是「行数」，内容在 renderFrame 里拼。 */
-function bannerEntries(model: WatchModel): { glyph: string; text: string; code?: string }[] {
-  const out: { glyph: string; text: string; code?: string }[] = [];
+interface PendingCounts {
+  waiting: number;
+  delivering: number;
+  claimed: number;
+  needsYou: number;
+}
 
+function pendingCounts(tasks: TaskCard[]): PendingCounts {
+  const counts = { waiting: 0, delivering: 0, claimed: 0, needsYou: 0 };
+  for (const task of tasks) {
+    switch (deliveryState(task)) {
+      case "queued": counts.waiting++; break;
+      case "sending":
+      case "submitted": counts.delivering++; break;
+      case "claimed": counts.claimed++; break;
+      case "uncertain":
+      case "invalid": counts.needsYou++; break;
+    }
+  }
+  return counts;
+}
+
+function pendingEntries(model: WatchModel): { glyph: string; count: number; label: string; code?: string }[] {
+  const counts = model.pending;
+  return [
+    { glyph: "◷", count: counts.waiting, label: "waiting", code: DIM },
+    { glyph: "→", count: counts.delivering, label: "delivering", code: CYAN },
+    { glyph: "●", count: counts.claimed, label: "claimed" },
+    { glyph: "!", count: counts.needsYou, label: "needs you", code: YELLOW },
+  ].filter((entry) => entry.count > 0);
+}
+
+function flow(task: TaskCard): { glyph: string; name: string; code?: string } {
+  switch (deliveryState(task)) {
+    case "queued": return { glyph: "◷", name: "waiting", code: DIM };
+    case "sending":
+    case "submitted": return { glyph: "→", name: "delivering", code: CYAN };
+    case "claimed": return { glyph: "●", name: "claimed" };
+    case "uncertain": return { glyph: "!", name: "uncertain", code: YELLOW };
+    case "invalid": return { glyph: "!", name: "invalid", code: RED };
+    default: return { glyph: "·", name: "none", code: DIM };
+  }
+}
+
+/** One NEEDS YOU line per category, retaining the first item and total. */
+function bannerEntries(model: WatchModel): { glyph: string; text: string; total?: number; code?: string }[] {
+  const out: { glyph: string; text: string; total?: number; code?: string }[] = [];
   if (model.loadError !== null) {
     out.push({ glyph: "⚠", text: `Failed to load .herdr/: ${model.loadError}`, code: YELLOW });
   }
   if (!model.herdrOk) {
-    out.push({
-      glyph: "⚠",
-      text: "Herdr is unavailable; role status missing. Run `herdr-team status` for details",
-      code: YELLOW,
-    });
+    out.push({ glyph: "⚠", text: "Herdr is unavailable; role status missing. Run `herdr-team status` for details", code: YELLOW });
   }
   const first = model.inconsistencies[0];
   if (first !== undefined) {
-    const more = model.inconsistencies.length > 1 ? `(${model.inconsistencies.length} total)` : "";
-    out.push({ glyph: "⚠", text: `[${first.kind}] ${first.message}${more}`, code: YELLOW });
+    out.push({ glyph: "⚠", text: `[${first.kind}] ${first.message}`, total: model.inconsistencies.length, code: YELLOW });
   }
   const problem = model.problems[0];
   if (problem !== undefined) {
-    const more = model.problems.length > 1 ? `(${model.problems.length} total; run validate)` : "";
-    out.push({ glyph: "✗", text: `${problem}${more}`, code: RED });
+    out.push({ glyph: "✗", text: `${problem} (run validate)`, total: model.problems.length, code: RED });
   }
-
   return out;
 }
 
@@ -392,8 +443,10 @@ export function computeLayout(model: WatchModel, opts: FrameOpts): Layout {
   // 漏掉它，空列表 + 多角色的组合就会比终端高一行的帧撞出去，画面失同步。
   const emptyRows = (model.tasks.length === 0 ? 1 : 0) + (model.roles.length === 0 ? 1 : 0);
   const fixed = (hasDetail ? FIXED_NO_DETAIL + DETAIL_CHROME : FIXED_NO_DETAIL) + emptyRows +
-    (model.searching ? 1 : 0);
-  const minHeight = fixed + bannerRows + MIN_TASKS + MIN_ROLES + (hasDetail ? 1 : 0);
+    (model.searching ? 1 : 0) + (pendingEntries(model).length > 0 ? 2 : 0);
+  const minTasks = Math.min(MIN_TASKS, model.tasks.length);
+  const minRoles = Math.min(MIN_ROLES, model.roles.length);
+  const minHeight = fixed + bannerRows + minTasks + minRoles + (hasDetail ? 1 : 0);
 
   if (opts.width < MIN_WIDTH || opts.height < minHeight) {
     return { taskRows: 0, roleRows: 0, bodyRows: 0, bannerRows, tooSmall: true, minHeight };
@@ -405,13 +458,13 @@ export function computeLayout(model: WatchModel, opts: FrameOpts): Layout {
 
   // 先给正文留一块，剩下的按 6:4 分给任务和角色区，各自再按内容封顶。
   const bodyRows = hasDetail
-    ? Math.max(1, Math.min(Math.floor(avail * 0.4), avail - (MIN_TASKS + MIN_ROLES)))
+    ? Math.max(1, Math.min(Math.floor(avail * 0.4), avail - (minTasks + minRoles)))
     : 0;
   avail -= bodyRows;
 
   const taskRows = Math.max(
     Math.min(MIN_TASKS, taskCount),
-    Math.min(Math.floor(avail * 0.6), Math.max(0, avail - MIN_ROLES), taskCount),
+    Math.min(Math.floor(avail * 0.6), Math.max(0, avail - minRoles), taskCount),
   );
   avail -= taskRows;
   const roleRows = Math.max(0, Math.min(avail, roleCount));
@@ -471,6 +524,22 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
   push(cell(left, width - rightW, BOLD, color) + cell(right, rightW, DIM, color));
   blank();
 
+  const pending = pendingEntries(model);
+  if (pending.length > 0) {
+    const compact = width < 70;
+    const gap = width < 100 ? "  " : "   ";
+    let remaining = width - 11;
+    let line = cell(" PENDING   ", 11, BOLD, color);
+    for (const [index, entry] of pending.entries()) {
+      const text = `${index > 0 ? gap : ""}${entry.glyph} ${entry.count}${compact ? "" : ` ${entry.label}`}`;
+      const size = Math.min(displayWidth(text), remaining);
+      line += cell(text, size, entry.code, color);
+      remaining -= size;
+    }
+    push(line + cell("", remaining));
+    blank();
+  }
+
   // --- 任务
   const filtering = model.searching || model.query !== "";
   const matches = `  (${model.tasks.length}/${model.candidateCount})`;
@@ -504,11 +573,10 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
 
   // --- 角色
   const roleHidden = model.roles.length - layout.roleRows;
-  const roleMark = roleHidden > 0 ? `⋯ ${roleHidden} roles hidden` : "";
-  push(
-    cell(" ROLES", width - Math.min(displayWidth(roleMark), Math.max(0, width - 12)), BOLD, color) +
-      cell(roleMark, Math.min(displayWidth(roleMark), Math.max(0, width - 12)), DIM, color),
-  );
+  push(roleColumns({
+    role: roleHidden > 0 ? `ROLES ⋯${roleHidden}` : "ROLES",
+    agent: "agent", herdrStatus: "status", active: "active", queue: "queue",
+  }, width, color, true));
   if (model.roles.length === 0) {
     push(cell("  (no roles)", width, DIM, color));
   }
@@ -519,8 +587,15 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
 
   // --- 警告横幅（每种一行，见 bannerEntries）
   const entries = bannerEntries(model);
-  for (const entry of entries) {
-    push(cell(` ${entry.glyph} ${entry.text}`, width, entry.code, color));
+  for (const [index, entry] of entries.entries()) {
+    const label = index === 0 ? " NEEDS YOU   " : "             ";
+    const suffix = entry.total === undefined ? "" : ` (${entry.total} total)`;
+    const suffixW = displayWidth(suffix);
+    const text = sanitize(`${entry.glyph} ${entry.text}`);
+    const textW = Math.min(displayWidth(text), width - 13 - suffixW);
+    push(cell(label, 13, index === 0 ? BOLD : undefined, color) +
+      cell(text, textW, entry.code, color) + cell(suffix, suffixW, entry.code, color) +
+      cell("", width - 13 - textW - suffixW));
   }
   if (entries.length > 0) blank();
 
@@ -531,18 +606,28 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
     push(cell(head + "─".repeat(Math.max(0, width - displayWidth(head))), width, BOLD, color));
     push(
       cell(
-        ` priority ${selected.priority}   status ${selected.status}   role ${selected.role}   repo ${selected.repo}`,
+        sanitize(` priority ${selected.priority}   status ${selected.status}   role ${selected.role}   repo ${selected.repo}`),
         width,
       ),
     );
     const handoff = selected.handoff.length > 0 ? selected.handoff.join(" → ") : "—";
     const deps = selected.dependsOn.length > 0 ? selected.dependsOn.join(", ") : "—";
-    push(cell(` handoff  ${handoff}        depends_on ${deps}`, width));
+    push(cell(sanitize(` handoff  ${handoff}        depends_on ${deps}`), width));
     const role = model.roles.find((r) => r.role === selected.role);
     const branch = role?.worktree === true ? worktreeBranch(selected) : "—";
-    let delivery = deliveryState(selected) ?? "";
-    try { const d = deliveryFor(selected); if (d?.reason) delivery += `: ${d.reason}`; } catch { /* Validation banner explains malformed records. */ }
-    push(cell(` branch   ${branch}${delivery ? `   delivery ${delivery}` : ""}`, width, DIM, color));
+    push(cell(sanitize(` branch   ${branch}`), width, DIM, color));
+    const deliveryFlow = flow(selected);
+    let deliveryInfo = "";
+    try {
+      const delivery = deliveryFor(selected);
+      if (delivery !== undefined) {
+        deliveryInfo = ` · delivery ${truncate(delivery.id, 9)}${delivery.reason ? ` · ${delivery.reason}` : ""}`;
+      }
+    } catch { /* The NEEDS YOU block explains malformed delivery records. */ }
+    push(cell(sanitize(` flow ${deliveryFlow.glyph} ${deliveryFlow.name}${deliveryInfo}`), width, deliveryFlow.code, color));
+    const agent = model.taskAgents.get(selected.id);
+    const agentStatus = !model.herdrOk ? "unavailable" : agent?.agent_status ?? (role?.worktree ? "absent" : role?.herdrStatus ?? "absent");
+    push(cell(sanitize(` agent ${agent?.name ?? role?.agent ?? "—"} · ${agentStatus} · ${agent?.pane_id ?? role?.paneId ?? "—"}`), width, DIM, color));
 
     const mdHead = " ── task.md ";
     push(cell(mdHead + "─".repeat(Math.max(0, width - displayWidth(mdHead))), width, DIM, color));
@@ -553,7 +638,6 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
     for (const line of body.slice(scroll, scroll + layout.bodyRows)) {
       push(cell(`  ${line}`, width));
     }
-    blank();
   }
 
   // --- 底栏
@@ -568,48 +652,63 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
   return lines;
 }
 
-/** 一列任务的显示宽度核算：gutter2 + 标记2 + id4 + 空格 + 优先级2 + 空格 + 状态5 + 空格 + 角色6 + 空格。 */
+/** Fixed metadata widths keep every task title at the same display column. */
 function taskRow(task: TaskCard, model: WatchModel, selected: boolean, width: number, color: boolean): string {
   const gutter = selected ? "  › " : "    ";
-  const head =
-    gutter +
-    `${cell(sanitize(task.id), 4)} ${cell(sanitize(task.priority), 2, priorityStyle(task.priority), color)} ` +
-    `${cell(task.status, 5, statusStyle(task.status), color)} ${cell(sanitize(task.role), 6)} `;
-
-  const rest = width - TASKS_FIXED_COLS;
-  const role = model.roles.find((r) => r.role === task.role);
-  const branch = role?.worktree === true ? worktreeBranch(task) : "—";
-  const delivery = deliveryState(task);
-  const title = `${delivery ? `[${delivery}] ` : ""}${sanitize(task.title)}`;
-
-  if (rest < 24) {
-    return head + cell(title, Math.max(0, width - TASKS_FIXED_COLS), undefined, color);
+  let head = `${gutter}${cell(sanitize(task.id), 4)} `;
+  if (width < 50) {
+    head += `${cell(task.status, 5, statusStyle(task.status), color)} `;
+    return head + cell(sanitize(task.title), width - 15, selected ? BOLD : undefined, color);
   }
+  const deliveryFlow = flow(task);
+  head += `${cell(sanitize(task.priority), 2, priorityStyle(task.priority), color)} ` +
+    `${cell(task.status, 5, statusStyle(task.status), color)} ${cell(sanitize(task.role), 6)} ` +
+    `${cell(deliveryFlow.glyph, 1, deliveryFlow.code, color)} `;
+  const rest = width - 27;
+  if (width < 100) {
+    return head + cell(sanitize(task.title), rest, selected ? BOLD : undefined, color);
+  }
+  const role = model.roles.find((r) => r.role === task.role);
+  const branch = sanitize(role?.worktree === true ? worktreeBranch(task) : "—");
   const branchW = Math.min(28, Math.floor(rest * 0.45));
-  const titleW = rest - branchW - 1;
-  return (
-    head +
-    cell(title, titleW, selected ? BOLD : undefined, color) +
-    " " +
-    cell(branch, branchW, DIM, color)
-  );
+  return head + cell(sanitize(task.title), rest - branchW - 1, selected ? BOLD : undefined, color) +
+    " " + rightCell(branch, branchW, DIM, color);
 }
 
-const ROLE_FIXED_COLS = 29; // 缩进2 + 角色8 + agent10 + herdrStatus9
+function rightCell(text: string, width: number, code?: string, color = false): string {
+  const value = truncate(text, width);
+  return cell(" ".repeat(Math.max(0, width - displayWidth(value))) + value, width, code, color);
+}
+
+function roleColumns(
+  values: { role: string; agent: string; herdrStatus: string; active: string; queue: string },
+  width: number,
+  color: boolean,
+  header = false,
+  worktree = false,
+): string {
+  const queueW = Math.max(5, displayWidth(values.queue));
+  const statusW = 9;
+  const roleW = width < 50 ? width - 2 - 2 - statusW - queueW : width < 70 ? 8 : 12;
+  const first = `  ${cell(sanitize(values.role), roleW, BOLD, color)} `;
+  const status = cell(sanitize(values.herdrStatus), statusW, header ? BOLD : worktree ? DIM : undefined, color);
+  const queue = rightCell(values.queue, queueW, header ? BOLD : undefined, color);
+  if (width < 50) return first + status + " " + queue;
+  const agentW = width < 70 ? 8 : Math.min(24, Math.floor(width / 4));
+  const activeW = width - (2 + roleW + 1 + agentW + 1 + statusW + 1 + 1 + queueW);
+  return first + cell(sanitize(values.agent), agentW, header ? BOLD : DIM, color) + " " + status + " " +
+    cell(sanitize(values.active), activeW, header ? BOLD : undefined, color) + " " + queue;
+}
 
 function roleRow(role: RoleStatus, width: number, color: boolean): string {
-  const head =
-    `  ${cell(sanitize(role.role), 8, BOLD, color)}` +
-    `${cell(sanitize(role.agent ?? "—"), 10, DIM, color)}` +
-    `${cell(role.herdrStatus, 9, role.worktree ? DIM : undefined, color)}`;
-
-  // 隔离角色没有常驻 agent 也没有 pane，那两列天生是空的 —— 说清楚，
-  // 免得被当成「agent 掉了」。
-  const note = role.current !== undefined
-    ? `active ${role.current.map((id) => `#${id}`).join(",") || "—"}  queued ${role.queued ?? 0}`
-    : role.worktree ? "starts on dispatch" : "";
-  const tail = [role.paneId ?? "", note].filter((s) => s !== "").join("   ");
-  return head + cell(tail, Math.max(0, width - ROLE_FIXED_COLS), DIM, color);
+  const current = role.current ?? [];
+  const active = current.length > 2
+    ? `#${current[0]} +${current.length - 1}`
+    : current.map((id) => `#${id}`).join(" ") || "—";
+  return roleColumns({
+    role: role.role, agent: role.agent ?? "—", herdrStatus: role.herdrStatus,
+    active, queue: String(role.queued ?? 0),
+  }, width, color, false, role.worktree);
 }
 
 /** 渲染成可直接打印的文本（`--once` / 非 TTY 用）。 */
@@ -635,9 +734,10 @@ const LINE_STATUS_ORDER = ["doing", "review", "todo"] as const;
 const NEEDS_ATTENTION = new Set(["blocked", "agent-missing", "maybe-finished", "delivery-uncertain"]);
 
 /**
- * 标签栏那一行，形状：`team: 1 doing 2 todo · 1 blocked · 1 ✗`
+ * 标签栏那一行，形状：`team: 1 doing 2 todo · 2 queued · 1 blocked · 1 ✗`
  *
  * - 前半段：未结束的卡按 doing / review / todo 计数，只列非零的
+ * - `queued`：全项目 queued 投递数，非零时紧跟任务状态计数
  * - `blocked`：**卡住、等你处理的卡**。按卡去重 —— 卡片自己写着 blocked，
  *   或者 agent 在等你 / agent 掉了 / 干完没交棒，同一张卡只算一次
  * - `✗`：`.herdr/` 的校验问题数。**必须露出来** —— 坏卡会被静默跳过，
@@ -663,6 +763,7 @@ export function formatStatusLine(model: WatchModel): string {
   }
 
   const tail: string[] = [];
+  if (model.pending.waiting > 0) tail.push(`${model.pending.waiting} queued`);
   if (attention.size > 0) tail.push(`${attention.size} blocked`);
   if (model.problems.length > 0) tail.push(`${model.problems.length} ✗`);
   if (!model.herdrOk) tail.push("herdr ✗");
