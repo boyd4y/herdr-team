@@ -40,7 +40,7 @@ describe("handoff —— 队列非空：交给下一个角色", () => {
       expect(prompts[0]).toContain("我是谁");
       expect(prompts[0]).toContain("你是文档");
       expect(prompts[0]).toContain(join(p.herdrDir, "tasks/0001-a"));
-      expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "docs")?.pane_id}`))).toBe(true);
+      expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "docs-0001")?.pane_id}`))).toBe(true);
     });
   });
 
@@ -70,15 +70,15 @@ describe("handoff —— 队列非空：交给下一个角色", () => {
     );
   });
 
-  test("下游没有存活 agent 时不 prompt，但任务照常流转", () => {
+  test("下游没有存活 agent 时创建任务会话并交付", () => {
     withProject((root) => writeTask(root, "0001-a", taskMeta({ status: "doing", handoff: ["docs"] })), (p) => {
       const herdr = fakeHerdr(); // docs 不在
       const result = handoff(p, herdr, "0001");
 
-      expect(herdr.calls.some((c) => c.startsWith("agent prompt"))).toBe(false);
-      expect(result.prompted).toBe(false);
+      expect(herdr.calls.some((c) => c.startsWith("agent prompt"))).toBe(true);
+      expect(result.prompted).toBe(true);
       expect(result.to).toBe("docs");
-      expect(result.note).toContain("up");
+      expect(herdr.state.agents.some((agent) => agent.name === "docs-0001")).toBe(true);
       // 任务记录的是"该谁做"，不是"agent 在不在"
       expect(loadProject(p.root).tasks[0]?.role).toBe("docs");
     });

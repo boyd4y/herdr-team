@@ -62,6 +62,10 @@ Console 是自动调度器，在项目的 Team Console tab 中运行。关闭它
 
 如果 Herdr 官方 integration 上报了 session ID，常驻角色可以恢复之前的原生会话。请安装或更新对应的 Herdr integration（例如 `herdr integration install codex`），并确保它在关闭前上报 session。`herdr-team up --fresh` 会忽略待启动角色的已保存记录；正在运行的 agent 仍会复用。限制和排查方式见 [CLI 会话恢复说明](cli/README.md#快速开始)。
 
+并发单位是任务：每个任务有自己的 worktree 和角色会话，`dev-0046` / `dev-0047`、`test-0050` / `test-0052` 可同时运行。dev 与 test 默认复用同一任务 checkout，验收时 dev 暂停写入。用 `handoff <id> --delivery ID --commit SHA` 提交验收。同一任务内部串行，不同任务可同时处于开发或验收阶段。test 用 `--accept SHA --summary TEXT` 通过，或 `--reject --summary TEXT` 直接退回原 dev。最后一次验收交棒进入合并队列，尚未合入前不会标 done。依赖只用于实际需要的接口或数据结构，文档可以独立提前准备。
+
+`herdr-team merge list` 查看验收结果，`merge next` 或 `merge <id> --migrate 'command'` 在同一串行锁内合入验收 commit 并运行可选本地迁移。Console 不自动合并。分支有新提交必须重新验收；失败/中断先检查效果再 `merge retry <id>`，其他任务继续执行。任务会话提供独立数据库名、Redis 前缀和端口，测试服务需要按[CLI 指南](cli/README.md#按任务开发验收与合并)使用这些变量。
+
 ## 升级、移除与故障排查
 
 GitHub 安装的插件请通过 Herdr 插件管理器更新或重新安装 `boyd4y/herdr-team`。更新本地 link 的检出时，请在仓库根目录运行 `herdr plugin link .`，刷新插件 manifest 和事件 hook；然后运行 `herdr plugin action invoke herdr-team.install`，更新内置 CLI、skill 并应用托管配置。`configure` action 只应用 Herdr Team 托管的布局与配置并 reload config；它不会注册已变更的事件 hook，也不会更新 CLI 和 skill。Herdr 的 `PATH` 中需保留用户 bin 目录和 Bun。

@@ -71,8 +71,10 @@ JSON 形状 —— 一个数组，每项一张角色卡：
 `worktree` / `cwd` / `args` / `env`），外加 `body` 作为 `prompt.md` 的散文。
 `name` 和 `kind` 必填。
 
-**`worktree: true` 只给写代码的角色** —— 它意味着每个任务开一个 git worktree 隔离，
-agent 名变成 `<role>-<id>`。见 [herdr-format.md](herdr-format.md#隔离与常驻)。
+所有新投递任务都会按任务隔离，角色只定义职责、harness 和模型，任务 agent 名是 `<role>-<id>`。
+`worktree: true` 现用于跳过该角色的常驻对话 tab；它不再控制 dev/test 是否可以并发。
+同一任务 dev/test 共用 checkout，按开发、验收顺序串行推进，不同任务并发。
+见 [herdr-format.md](herdr-format.md#隔离与常驻)。
 
 **你自己不拼元数据。** CLI 负责写 —— 保证字段顺序稳定、缩进正确、该加引号的加引号。
 手写 YAML 是这类工具最容易出错的地方，不要碰。

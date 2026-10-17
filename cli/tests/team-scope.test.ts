@@ -55,19 +55,22 @@ describe("两个项目同名角色、同号任务的隔离", () => {
     expect(dispatch(a, herdr, "0001")[0]!.action).toBe("dispatched");
     expect(handoff(loadProject(a.root), herdr, "0001", new Date(), { summary: "项目 A 的交付记录。", delivery: claimCurrent(a.root) }).prompted).toBe(true);
     const prompts = herdr.calls.filter((call) => call.startsWith("agent prompt"));
-    expect(prompts.map((call) => call.split(" ")[2])).toEqual(["a:p-dev", "a:p-docs"]);
+    expect(prompts).toHaveLength(2);
+    const ownedPanes = projectAgents(a, herdr).map((agent) => agent.pane_id);
+    expect(prompts.every((call) => ownedPanes.includes(call.split(" ")[2]))).toBe(true);
+    expect(prompts.some((call) => call.split(" ")[2]?.startsWith("b:"))).toBe(false);
     expect(readFileSync(join(b.herdrDir, "tasks/0001-a/.task.yaml"), "utf8")).toBe(foreignTask);
     expect(loadProject(a.root).tasks[0]!.role).toBe("docs");
     expect(loadProject(a.root).tasks[0]!.body).toContain("项目 A 的交付记录。");
   }));
 
-  test("只存在另一个项目的同名 agent 时，dispatch 不派出、handoff 不误投", () => fixture((a, b, herdr) => {
+  test("只有外项目同名 agent 时创建自己的任务会话，不误投", () => fixture((a, b, herdr) => {
     herdr.state.agents = ["dev", "docs"].map((name) => ({ name, pane_id: `b:p-${name}`, workspace_id: "b", tokens: { team_project: projectKey(b) } }));
-    expect(dispatch(a, herdr, "0001")[0]!.action).toBe("queued");
-    expect(loadProject(a.root).tasks[0]!.status).toBe("todo");
+    expect(dispatch(a, herdr, "0001")[0]!.action).toBe("dispatched");
+    expect(loadProject(a.root).tasks[0]!.status).toBe("doing");
     expect(() => handoff(loadProject(a.root), herdr, "0001")).toThrow(/Claim/);
-    expect(herdr.calls.some((call) => call.startsWith("agent prompt"))).toBe(false);
-    expect(buildReport(loadProject(a.root), herdr, false).roles.every((role) => role.herdrStatus === "absent")).toBe(true);
+    expect(herdr.calls.filter((call) => call.startsWith("agent prompt")).every((call) => !call.split(" ")[2]?.startsWith("b:"))).toBe(true);
+    expect(buildReport(loadProject(a.root), herdr, false).roles.find((role) => role.role === "dev")!.herdrStatus).toBe("per-task");
   }));
 
   test("sidebar 和 down 不更新、不关停另一个项目的同名角色", () => fixture((a, b, herdr) => {
@@ -114,7 +117,7 @@ test("两个项目的隔离任务 0001 各起自己的 worktree agent", () => fi
 
 test("handoff retains a queued delivery when the target is ambiguous", () => fixture((a, _b, herdr) => {
   herdr.state.agents = ["one", "two"].map((name) => ({ name, pane_id: `a:p-${name}`, workspace_id: "a",
-    tokens: { team_project: projectKey(a), team_role: "docs" } }));
+    tokens: { team_project: projectKey(a), team_role: "docs", team_task_id: "0001" } }));
   const file = join(a.herdrDir, "tasks/0001-a/.task.yaml");
   const before = readFileSync(file, "utf8");
   expect(handoff(a, herdr, "0001")).toMatchObject({ prompted: false, queueState: "queued" });

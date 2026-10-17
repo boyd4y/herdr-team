@@ -28,7 +28,7 @@ export interface RoleSpec {
   kind: string;
   model?: string;
   /** 显示短名和启动参数分开写着 —— 这里只放 `kind` / `args` / `env`。 */
-  /** true = 按任务开 worktree 隔离；缺省 = 常驻项目 workspace。 */
+  /** Skip the resident conversation tab; dispatched work is always task-scoped. */
   worktree?: boolean;
   cwd?: string;
   args?: string[];

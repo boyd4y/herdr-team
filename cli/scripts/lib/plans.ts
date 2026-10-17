@@ -27,7 +27,7 @@ type ModelName = keyof typeof MODELS;
 interface Blueprint {
   name: string;
   model: ModelName;
-  /** true = 每个任务一个 git worktree。只给写代码的角色。 */
+  /** Skip the optional resident conversation tab. */
   worktree?: boolean;
   body: string;
 }
@@ -76,7 +76,7 @@ const DISPATCHER_BODY = [
   "",
   "- **Ask the user when requirements are unclear. Do not decide for them.**",
   "- Names describe roles (`reviewer`, `builder`), rather than agent kinds (`codex`) or informal descriptions.",
-  "- Use `--worktree` for coding roles: it isolates each task in its own Git worktree.",
+  "- Task execution always uses task workspaces. `--worktree` only suppresses the resident conversation tab.",
   "- `role rm` intentionally rejects roles referenced by active tasks.",
   "",
   "First claim the delivery ID from your assignment prompt. When done, use that same ID with `herdr-team handoff <id> --delivery ID --summary \"results; artifact paths; validation; risks and next steps\"`; use --summary-file F for long summaries. The summary is optional and appended by the CLI. Do not edit task cards yourself.",
@@ -107,7 +107,7 @@ const TEST_BODY = [
   "| --- | --- |",
   "| Write test cases; run validation and skill tests; compare documentation with implementation; report defects with reproduction evidence | Modify implementation, skill files (`SKILL.md`, `references/`), package docs, or task cards directly |",
   "",
-  "Report defects and missing tasks to `lead`. Do not create task cards or merge development branches yourself.",
+  "Return review defects directly to the original developer with `handoff --reject --summary TEXT`; report missing tasks or unclear ownership to `lead`. Do not create task cards or merge development branches yourself.",
   "",
   "Report issues for `dev` to fix and `test` to verify. Requests to check documentation permit review and reporting; leave corrections to the developer.",
   "",
@@ -187,7 +187,15 @@ export function planRoles(plan: PlanName): RoleSpec[] {
       name: bp.name,
       kind: model.kind,
       model: bp.model,
-      body: bp.body,
+      body: `${bp.body}
+
+## Task execution protocol
+
+Roles define responsibilities, not exclusive execution slots. Different tasks run concurrently; resident conversations do not occupy task sessions. Default flow: dev ⇄ test → merge queue. Declare only real interface/data dependencies; prepare documentation independently or before commit acceptance.
+
+Dev and test normally reuse the task worktree. Commit all changes and hand off with --commit SHA --summary TEXT; stop writing while test owns the checkout. Test must configure isolated services with HERDR_TEAM_TEST_DATABASE, HERDR_TEAM_REDIS_PREFIX and HERDR_TEAM_PORT/PORT, then use --accept SHA --summary TEXT or --reject --summary TEXT. Rejection returns directly to the original developer. Final acceptance queues integration, not completion. New commits require new acceptance.
+
+Lead integrates accepted work through herdr-team merge next or merge <id> [--migrate COMMAND]. Only integration and local migration share a serial lock. Inspect failed/interrupted effects before merge retry <id>. Do not merge or run shared local migrations from dev/test sessions.`,
     };
     if (args.length > 0) spec.args = args;
     if ("env" in model) spec.env = { ...model.env };

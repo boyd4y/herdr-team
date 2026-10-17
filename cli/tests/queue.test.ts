@@ -19,6 +19,9 @@ function setup() {
   writeTask(p.root, "0001-a", taskMeta({ handoff: ["docs", "dev"] }));
   writeTask(p.root, "0002-b", taskMeta());
   const herdr = runningWorkspace();
+  // Existing task sessions, distinct from any resident conversation tabs.
+  herdr.state.agents[0]!.tokens = { ...herdr.state.agents[0]!.tokens, team_role: "dev", team_task_id: "0001" };
+  herdr.state.agents[1]!.tokens = { ...herdr.state.agents[1]!.tokens, team_role: "docs", team_task_id: "0001" };
   const load = () => loadProject(p.root);
   const task = (id = "0001") => load().tasks.find((t) => t.id === id)!;
   const prompts = () => herdr.calls.filter((c) => c.startsWith("agent prompt"));
@@ -45,12 +48,12 @@ test.each(["working", "blocked", "unknown"])("busy receiver %s waits on disk, th
   expect(deliveryFor(f.task())!.id).toBe(id);
 }));
 
-test("a claimed assignment holds its role even when the terminal looks idle", () => fixture((f) => {
+test("a claimed task session does not hold the role for other tasks", () => fixture((f) => {
   dispatch(f.load(), f.herdr);
   const first = claimCurrent(f.root);
   pumpQueue(f.load(), f.herdr);
-  expect(deliveryFor(f.task("0002"))!.state).toBe("queued");
-  expect(f.prompts()).toHaveLength(1);
+  expect(deliveryFor(f.task("0002"))!.state).toBe("submitted");
+  expect(f.prompts()).toHaveLength(2);
   const result = handoff(f.load(), f.herdr, "0001", new Date(), { delivery: first, summary: "Implementation complete" });
   expect(result.to).toBe("docs");
   // The released dev role and the docs handoff both remain durable; one send per pump.

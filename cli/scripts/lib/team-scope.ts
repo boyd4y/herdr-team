@@ -79,6 +79,12 @@ export function roleAssignment(project: Project, agent: AgentInfo): { role: Role
   const name = agent.name ?? agent.display_agent;
   const roles = declaredRole === undefined ? project.roles : project.roles.filter((role) => role.name === declaredRole);
   for (const role of roles) {
+    const declaredTask = agent.tokens?.team_role === role.name ? agent.tokens.team_task_id : undefined;
+    if (declaredTask && /^[0-9]{4}$/.test(declaredTask)) return { role, taskId: declaredTask };
+    const taskSuffix = name?.startsWith(`${role.name}-`) ? name.slice(role.name.length + 1)
+      : name?.startsWith(`${scopedAgentName(project, role.name)}-`) ? name.slice(scopedAgentName(project, role.name).length + 1) : undefined;
+    const inferredTask = taskSuffix && /^([0-9]{4})(?:-|$)/.exec(taskSuffix)?.[1];
+    if (inferredTask) return { role, taskId: inferredTask };
     if (!role.worktree) {
       if (name === role.name || name === scopedAgentName(project, role.name) ||
         (agent.tokens?.team_role === role.name && !agent.tokens.team_task_id)) return { role };

@@ -1,3 +1,4 @@
+import { acceptanceFor, commitId, git, integrationFor, reviewFor, taskRepo, taskScoped, verifyCheckout } from "./execution.ts";
 import { stamp } from "./records.ts";
 export { appendRecord, stamp } from "./records.ts";
 export { assignmentPrompt } from "./assignment.ts";
@@ -11,7 +12,15 @@ import { commitTaskTransition, flushTaskHistory, pumpQueue } from "./queue.ts";
 import { withTeamLock } from "./runtime.ts";
 import { refreshSidebar } from "./sidebar.ts";
 import { findTask, TaskError } from "./task.ts";
-import { TASK_BODY, isTerminal, isolatedAgentName, type Project, type TaskCard } from "./types.ts";
+import { TASK_BODY, isTerminal, isolatedAgentName, worktreeBranch, type Project, type TaskCard } from "./types.ts";
+
+export interface HandoffOptions {
+  summary?: string;
+  delivery?: string;
+  commit?: string;
+  accept?: string;
+  reject?: boolean;
+}
 
 export interface HandoffResult {
   id: string;
@@ -42,7 +51,7 @@ export interface HandoffResult {
  */
 export function agentNameForTask(project: Project, card: TaskCard): string {
   const role = project.roles.find((r) => r.name === card.role);
-  return role?.worktree === true ? isolatedAgentName(card.role, card.id) : card.role;
+  return taskScoped(card, role) ? isolatedAgentName(card.role, card.id) : card.role;
 }
 
 /**
@@ -53,7 +62,7 @@ export function agentNameForTask(project: Project, card: TaskCard): string {
  */
 export function handoff(
   project: Project, herdr: Herdr, id: string, now: Date = new Date(),
-  options: { summary?: string; delivery?: string } = {},
+  options: HandoffOptions = {},
 ): HandoffResult {
   if (!herdr.envOk()) throw new TaskError("Run handoff inside a Herdr pane (HERDR_ENV=1).");
   const result = withTeamLock(project, "queue", () => handoffLocked(loadProject(project.root), herdr, id, now, options));
@@ -71,7 +80,7 @@ export function handoff(
 
 function handoffLocked(
   project: Project, herdr: Herdr, id: string, now: Date,
-  options: { summary?: string; delivery?: string },
+  options: HandoffOptions,
 ): HandoffResult {
   flushTaskHistory(project, findTask(project, id));
   project = loadProject(project.root);
@@ -85,6 +94,7 @@ function handoffLocked(
       previousStatus: card.status, prompted: false, summarySaved: false, taskPath, duplicate: true,
       note: `Delivery ${options.delivery} was already handed off; no changes made.` };
   }
+  if (integrationFor(card)) throw new TaskError("This task already awaits integration; use merge or explicitly reassign it for new review");
   if (currentDelivery && (options.delivery !== currentDelivery.id || currentDelivery.state !== "claimed")) {
     throw new TaskError("Claim the current delivery first, then hand off with its --delivery ID");
   }
@@ -109,11 +119,58 @@ function handoffLocked(
 
   const from = card.role;
   const previousStatus = card.status;
+  if ([options.commit !== undefined, options.accept !== undefined, options.reject === true].filter(Boolean).length > 1) {
+    throw new TaskError("Use only one of --commit, --accept, or --reject");
+  }
+  const review = reviewFor(card);
+  let accepted = acceptanceFor(card);
+  if (options.reject) {
+    if (!review || card.role !== review.reviewer || !summary) throw new TaskError("Only the assigned reviewer can reject; include a defect summary");
+    const queued = newDelivery(review.developer, "handoff", now);
+    persist({ role: review.developer, handoff: [review.reviewer, ...card.handoff], status: "doing",
+      delivery: queued, review: null, acceptance: null, integration: null },
+      `- Rejected ${review.commit}; returned to ${review.developer}`, review.developer);
+    return { id, from, to: review.developer, status: "doing", previousStatus, prompted: false,
+      ...summaryReceipt, delivery: queued.id, queueState: "queued", note: `${id} returned to ${review.developer} for fixes.${deliveryNote}` };
+  }
+  if (options.accept) {
+    if (!review || card.role !== review.reviewer) throw new TaskError("Only the assigned reviewer can accept this commit");
+    const commit = commitId(project, card, options.accept);
+    if (commit !== review.commit) throw new TaskError("Acceptance must name the exact commit assigned for review");
+    if (!summary) throw new TaskError("Acceptance requires a validation summary");
+    {
+      const trees = herdr.worktreeList(taskRepo(project, card)).filter((t) => t.branch === worktreeBranch(card));
+      if (trees.length !== 1) throw new TaskError("Cannot identify the task review checkout");
+      verifyCheckout(trees[0]!.path, commit);
+    }
+    accepted = { commit, role: card.role };
+  } else if (review && card.role === review.reviewer && !accepted) {
+    throw new TaskError("Review the assigned commit, then hand off with --accept SHA or --reject");
+  }
+  let reviewPatch: Record<string, unknown> = options.accept ? { acceptance: accepted } : {};
+  if (options.commit) {
+    const next = card.handoff[0];
+    if (!next || next === card.role) throw new TaskError("A commit handoff requires a different next reviewer");
+    const commit = commitId(project, card, options.commit);
+    const repo = taskRepo(project, card);
+    if (git(repo, "rev-parse", `refs/heads/${worktreeBranch(card)}`) !== commit) throw new TaskError("Submit the current task branch tip for review");
+    reviewPatch = { execution: "task", review: { commit, developer: card.role, reviewer: next }, acceptance: null, integration: null };
+  } else if (card.meta.execution === "task" && card.handoff[0] === "test" && !accepted) {
+    throw new TaskError("Submit a committed version to test with --commit SHA");
+  }
+
+  if (card.handoff.length === 0 && accepted) {
+    persist({ status: "review", delivery: null, acceptance: accepted,
+      integration: { state: "queued", commit: accepted.commit, queued_at: now.toISOString() } },
+      `- Accepted ${accepted.commit}; queued for serial integration`, "merge queue");
+    return { id, from, to: null, status: "review", previousStatus, prompted: false,
+      ...summaryReceipt, queueState: "merge-queued", note: `${id} queued for merge at ${accepted.commit}.${deliveryNote}` };
+  }
 
   if (card.handoff.length === 0) {
     // 最后一个负责人干完了 —— 没有下一步，整个任务收尾。
     const status = "done";
-    persist({ status, delivery: null }, `- ${stamp(now)}  done  (${previousStatus} → ${status})`, "done");
+    persist({ ...reviewPatch, status, delivery: null }, `- ${stamp(now)}  done  (${previousStatus} → ${status})`, "done");
     refreshSidebar(project, herdr);
 
     // 收尾就该把 worktree 收掉，否则每做一个任务就多留一个 checkout。
@@ -142,7 +199,7 @@ function handoffLocked(
   const rest = card.handoff.slice(1);
   const status = "review";
   const queued = newDelivery(next, "handoff", now);
-  persist({ role: next, handoff: rest, status, delivery: queued },
+  persist({ ...reviewPatch, role: next, handoff: rest, status, delivery: queued },
     `- ${stamp(now)}  → ${next}  (${previousStatus} → ${status})`, next);
   refreshSidebar(project, herdr);
   return { id, from, to: next, status, previousStatus, prompted: false,

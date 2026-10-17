@@ -115,16 +115,18 @@ herdr-team up --fresh
 GitHub 安装请通过 Herdr 插件管理器更新或重新安装。更新本地 link 的检出时，在仓库根目录运行 `herdr plugin link .` 以加载更新后的 manifest 和事件钩子，再运行 `herdr plugin action invoke herdr-team.install` 更新内置 CLI、skill 并应用托管配置。`herdr-team.configure` 只应用托管布局/配置并 reload config，不会注册更新后的 hook，也不会更新 CLI 或 skill。
 
 `dispatch [<id>]` 将 todo 卡持久化入队，并尝试立即投递一条符合条件的任务。
-未指定 id 时入队全部 todo 卡；指定不存在或非 todo 的 id 会报错。队列按 priority、入队时间和 id 排序，依赖进入终态后才可投递。
-同一角色一次只处理一个任务，包括隔离 worktree 角色。接收方只有 `idle` / `done` 时才接收；
-`working`、`blocked`、`unknown` 或不在线时保持排队。隔离角色在实际派送时创建或复用 worktree/agent。
+未指定 id 时入队全部 todo 卡；指定不存在或非 todo 的 id 会报错。队列按 priority、入队时间和 id 排序，只有显式依赖全部 `done` 后才可投递，取消不代表接口已经交付。不要因计划顺序添加依赖。
+并发单位是任务，不是角色：`dev-0046`、`dev-0047` 或 `test-0050`、`test-0052` 可以同时工作。
+每个任务一个工作分支和 Herdr workspace，同一任务的各角色使用自己的 tab/会话，默认复用该任务 worktree。
+接收会话只有 `idle` / `done` 时才接收；忙碌或异常只阻塞它所属的任务。常驻角色 tab 用于对话，不占任务执行槽。
+旧卡片中尚未发送的队列项会在投递前迁移为任务会话；已发出的 delivery 保持原 pane，避免重复执行。
 
 队列直接保存在 `.task.yaml` 的 `delivery` 中，无数据库和独立系统服务：
 
-- `queued`：等待依赖、角色或 agent 可用。
+- `queued`：等待真实依赖或该任务的 agent 可用。
 - `sending`：已记录目标 pane，正在提交输入。
 - `submitted`：Herdr 已接受输入，等待 agent 领取。
-- `claimed`：agent 已运行 `claim`，占用角色直至交棒。
+- `claimed`：agent 已运行 `claim`，占用该任务会话直至交棒，不占用整个角色。
 - `uncertain`：无法确认送达、提交后 60 秒未领取，或已领取的 agent 丢失/换会话；暂停自动重发。
 
 每次分配带唯一 delivery ID。agent 必须先运行消息中给出的领取命令，完成时使用同一个 ID：
@@ -148,6 +150,46 @@ herdr-team queue drain
 `retry` 仅接受 uncertain 项，并分配新 ID，使旧领取令牌失效；`drain` 手动尝试投递一条，便于 Console 关闭时使用。
 取消、改派角色或强制退回 todo 会清除旧 delivery。尚未入队的旧任务保持原行为；一旦进入新队列，就必须领取并携带 ID 交棒。
 任务变更通过项目排他锁串行，历史写入可在重启后补齐。队列避免盲目重复发送，并不保证底层终端消息恰好执行一次。
+
+### 按任务开发、验收与合并
+
+最短流程：`dev ⇄ test → merge queue`。例如 `add "Fix login" --role dev --handoff test`。
+开发者提交后交棒，验收者必须核对并记录同一个 commit：
+
+```sh
+herdr-team handoff 0046 --delivery <dev-delivery> --commit <sha> --summary "Implemented; ready for review"
+herdr-team handoff 0046 --delivery <test-delivery> --reject --summary "Reproduction steps and defects"
+# 或者通过验收：
+herdr-team handoff 0046 --delivery <test-delivery> --accept <sha> --summary "Tested <sha>; validation results"
+```
+
+默认 dev/test 复用同一个任务 worktree，交给 test 后 dev 暂停修改；开始测试和接受结果时都检查 HEAD 和干净状态。
+同一任务按 `dev → test` 串行推进，不支持开发和验收同时修改工作区；不同任务可以并行。
+拒绝会直接返回提交该版本的 dev，并保留原验收角色和后续交棒链。再次提交后使用新的 commit 验收。
+通过验收后的最后一次交棒进入合并队列，保持 `review`，不会提前标记 done 或回收 worktree。
+文档可用独立任务提前准备，也可以在提交验收前补齐；验收后继续提交修改需要重新验收该版本。
+
+每个任务/角色会话会注入 `HERDR_TEAM_TASK_ID`、`HERDR_TEAM_NAMESPACE`、`HERDR_TEAM_TEST_DATABASE`、
+`HERDR_TEAM_REDIS_PREFIX`、`HERDR_TEAM_PORT` 和 `PORT`。数据库名与 Redis 前缀包含项目、任务和角色，
+端口由系统分配并记录，启动前检查占用。测试项目需用这些变量创建独立测试数据库、设置 Redis key 前缀和监听端口；
+插件不会猜测或覆盖 `DATABASE_URL`，也不会自动创建数据库/Redis 服务。无法配置隔离时应报告阻塞，不能改用共享库。
+端口检查与服务真正启动之间仍有竞争窗口，服务绑定失败时应报告并处理冲突。
+
+合入主分支与显式指定的本地迁移共用独立串行锁，不占 dev/test/对话执行槽：
+
+```sh
+herdr-team merge list
+herdr-team merge next
+herdr-team merge 0046 --migrate 'bun run db:migrate'
+```
+
+`merge next` 选择队列中的下一张卡；也可以指定 id。仅在任务 repo 的 `main` / `master` 主检出执行，
+工作区除 `.herdr/` 外不能有已跟踪修改。命令只合入验收的 SHA，要求任务分支 tip 仍与其相等，再在同一锁内运行可选迁移。
+成功后才标记 `done`；`clean` 可以回收任务 worktree。Console 不自动合并或执行迁移。
+失败会标记 `blocked` 并保留冲突/迁移效果，其他独立任务继续开发、验收和入队；其他 queued 项仍可手动合入。
+先检查主检出、解决冲突并确认迁移效果，再用 `merge retry <id>` 显式重新入队。
+进程中断留下 `running` 时同样必须核对，不自动重试。分支新增提交会阻止合入，需重新验收，不能直接 retry 绕过。
+迁移已经部分执行时，重试前需确认其幂等性；CLI 不会自动回滚或猜测是否需要重跑。
 
 `up --json` 返回 workspace、角色结果和 `console`（started / reused / failed）；会话恢复为 `resumed`，记录保存失败附带 `sessionWarning`。
 

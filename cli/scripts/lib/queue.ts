@@ -82,23 +82,31 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
     for (const original of pending) {
       if (stopped()) break;
       fresh = loadProject(project.root);
-      const task = findTask(fresh, original.id);
+      let task = findTask(fresh, original.id);
       const d = deliveryFor(task)!;
+      // Migrate only unsent work. Already-issued deliveries keep their original pane.
+      if (task.meta.execution !== "task") {
+        writeTaskMeta(fresh, task, { execution: "task" });
+        fresh = loadProject(project.root);
+        task = findTask(fresh, original.id);
+      }
       const hold = (reason: string) => {
         save(fresh, task, { ...d, reason });
         outcomes.push({ id: task.id, state: "queued", reason });
       };
       if (d.role !== task.role) { hold("Assignment changed; cancel or requeue this delivery"); continue; }
-      const waiting = task.dependsOn.filter((dep) => !fresh.tasks.some((t) => t.id === dep && isTerminal(t.status)));
+      const waiting = task.dependsOn.filter((dep) => !fresh.tasks.some((t) => t.id === dep && t.status === "done"));
       if (waiting.length) { hold(`Waiting for ${waiting.join(", ")}`); continue; }
-      const occupied = fresh.tasks.find((other) => other.id !== task.id && other.role === task.role &&
-        !isTerminal(other.status) && (deliveryFor(other) ? deliveryFor(other)!.state !== "queued" : other.status !== "todo"));
-      if (occupied) { hold(`Role is processing #${occupied.id}`); continue; }
       const role = fresh.roles.find((r) => r.name === task.role);
       if (!role) { hold(`Role ${task.role} is unavailable`); continue; }
       let agent;
       try { agent = taskAgent(fresh, herdr, role, task); }
       catch (error) { hold(`Agent startup failed: ${error instanceof Error ? error.message : String(error)}`); continue; }
+      if (agent?.pane_id) {
+        const occupied = fresh.tasks.find((other) => other.id !== task.id && !isTerminal(other.status) &&
+          deliveryFor(other)?.pane_id === agent!.pane_id && deliveryFor(other)?.state !== "queued");
+        if (occupied) { hold(`Session is processing #${occupied.id}`); continue; }
+      }
       if (!agent?.pane_id) { hold("Waiting for agent; run herdr-team up"); continue; }
       if (!["idle", "done"].includes(agent.agent_status ?? "unknown")) {
         hold(`Agent is ${agent.agent_status ?? "unknown"}`); continue;

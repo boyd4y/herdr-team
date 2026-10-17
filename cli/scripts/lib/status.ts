@@ -1,3 +1,4 @@
+import { integrationFor, taskScoped } from "./execution.ts";
 import { findRoleAgent, projectAgents } from "./team-scope.ts";
 import type { AgentInfo, Herdr } from "./herdr.ts";
 import { padTo, truncate } from "./text.ts";
@@ -55,10 +56,10 @@ export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleSta
   return project.roles.map((role) => {
     const owned = project.tasks.filter((t) => t.role === role.name && !isTerminal(t.status));
     const queue = owned.some((t) => deliveryState(t)) ? {
-      current: owned.filter((t) => !waitingDelivery(t) && (deliveryState(t) || t.status !== "todo")).map((t) => t.id),
+      current: owned.filter((t) => !integrationFor(t) && !waitingDelivery(t) && (deliveryState(t) || t.status !== "todo")).map((t) => t.id),
       queued: owned.filter(waitingDelivery).length,
     } : {};
-    if (role.worktree) {
+    if (role.worktree || owned.some((t) => taskScoped(t))) {
       // 隔离角色的 agent 跟着任务走，没有常驻的那个。
       return { role: role.name, agent: null, herdrStatus: "per-task", paneId: null, worktree: true, ...queue };
     }
@@ -87,6 +88,11 @@ export function findInconsistencies(
 
   for (const task of project.tasks) {
     if (isTerminal(task.status)) continue;
+    const integration = integrationFor(task);
+    if (integration) {
+      if (integration.state === "blocked") out.push({ kind: "integration-blocked", id: task.id, message: `${task.id}: integration blocked; inspect merge list before retrying` });
+      continue;
+    }
     const delivery = deliveryState(task);
     if (delivery === "queued") continue;
     if (delivery === "uncertain" || delivery === "invalid") {
@@ -100,8 +106,8 @@ export function findInconsistencies(
     const role = project.roles.find((r) => r.name === task.role);
     if (role === undefined) continue;
 
-    const agentName = role.worktree ? isolatedAgentName(role.name, task.id) : task.role;
-    const live = findRoleAgent(project, agents, role, role.worktree ? task.id : undefined);
+    const agentName = taskScoped(task, role) ? isolatedAgentName(role.name, task.id) : task.role;
+    const live = findRoleAgent(project, agents, role, taskScoped(task, role) ? task.id : undefined);
     const status = live?.agent_status ?? "absent";
 
     if (task.status === "doing") {
@@ -155,7 +161,7 @@ export function formatTasks(tasks: TaskCard[], roles: RoleCard[]): string {
   ];
   for (const t of tasks) {
     const role = roles.find((r) => r.name === t.role);
-    const branch = role?.worktree === true ? worktreeBranch(t) : "—";
+    const branch = taskScoped(t, role) ? worktreeBranch(t) : "—";
     lines.push(
       `  ${pad(t.id, 6)}${pad(t.title, 30)}${pad(t.priority, 10)}${pad(t.status, 10)}${pad(t.role, 16)}${branch}`,
     );
@@ -175,6 +181,7 @@ export function formatTaskDetail(task: TaskCard): string {
     `dependsOn: [${task.dependsOn.join(", ")}]`,
     `repo: ${task.repo}`,
     `dir: ${task.dir}`,
+    ...(integrationFor(task) ? [`integration: ${integrationFor(task)!.state} ${integrationFor(task)!.commit}`] : []),
     ...(deliveryState(task) ? [`delivery: ${deliveryState(task)}`] : []),
     "",
     task.body,
@@ -191,7 +198,7 @@ export function formatReport(report: StatusReport): string {
   } else {
     lines.push(`  ${pad("id", 6)}${pad("title", 28)}${pad("priority", 10)}${pad("status", 10)}${pad("role", 16)}delivery`);
     for (const t of report.tasks) {
-      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(t.status, 10)}${pad(t.role, 16)}${deliveryState(t) ?? "—"}`);
+      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(t.status, 10)}${pad(t.role, 16)}${integrationFor(t) ? `merge-${integrationFor(t)!.state}` : deliveryState(t) ?? "—"}`);
     }
   }
 

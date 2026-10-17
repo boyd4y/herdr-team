@@ -82,7 +82,7 @@ export function forgetRoleSession(project: Project, role: RoleCard): void {
 
 /** Called only with a project-verified role/agent pair. Missing reports keep prior IDs. */
 export function rememberRoleSession(project: Project, role: RoleCard, agent: AgentInfo): void {
-  if (role.worktree || !agent.agent_session || !resumeArgs(role.kind, agent.agent_session)) return;
+  if (role.worktree || agent.tokens?.team_task_id || !agent.agent_session || !resumeArgs(role.kind, agent.agent_session)) return;
   const actualCwd = agent.foreground_cwd ?? agent.cwd;
   if (actualCwd !== undefined && canonicalCwd(actualCwd) !== roleCwd(project, role)) return;
   const record: SavedSession = {

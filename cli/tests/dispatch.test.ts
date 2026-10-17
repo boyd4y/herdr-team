@@ -27,12 +27,20 @@ const args = process.argv.slice(2);
 state.calls.push(args);
 const [command, sub] = args;
 let result = {};
+state.tabs ??= [];
+state.panes ??= [];
 if (command === "workspace" && sub === "list") {
   result = { workspaces: [{ workspace_id: "w1", label: "myproj" }] };
 } else if (command === "tab" && sub === "list") {
-  result = { tabs: [{ workspace_id: "w1", tab_id: "w1:t1", label: "docs" }] };
+  result = { tabs: [{ workspace_id: "w1", tab_id: "w1:t1", label: "docs" }, ...state.tabs] };
+} else if (command === "tab" && sub === "create") {
+  const ws = args[args.indexOf("--workspace") + 1], n = state.tabs.length + 2;
+  const tab = { workspace_id: ws, tab_id: ws + ":t" + n, label: args[args.indexOf("--label") + 1] };
+  const pane = { workspace_id: ws, tab_id: tab.tab_id, pane_id: ws + ":p" + n, cwd: args[args.indexOf("--cwd") + 1] };
+  state.tabs.push(tab); state.panes.push(pane);
+  result = { tab, root_pane: pane };
 } else if (command === "pane" && sub === "list") {
-  result = { panes: [{ workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", cwd: process.env.HERDR_TEST_ROOT }] };
+  result = { panes: [{ workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", cwd: process.env.HERDR_TEST_ROOT }, ...state.panes] };
 } else if (command === "agent" && sub === "list") {
   result = { agents: state.agents };
 } else if (command === "worktree" && sub === "list") {

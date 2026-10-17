@@ -14,6 +14,7 @@ import {
 } from "./types.ts";
 import { emitYaml } from "./yaml.ts";
 import { formatProblems, validateTaskDependencies } from "./validate.ts";
+import { integrationFor } from "./execution.ts";
 import { loadProject } from "./config.ts";
 import { withTeamLock } from "./runtime.ts";
 
@@ -157,6 +158,7 @@ export function createTask(project: Project, opts: CreateOptions): CreatedTask {
         title,
         priority: opts.priority,
         status: "todo",
+        execution: "task",
         role: opts.role,
         handoff: opts.handoff,
         depends_on: dependsOn,
@@ -197,6 +199,7 @@ export function editTask(
 function editTaskLocked(project: Project, id: string, patch: EditOptions, force: boolean): { dir: string } {
   const card = findTask(project, id);
 
+  if (integrationFor(card)?.state === "running") throw new TaskError("Integration is running; wait for it to finish before editing this task");
   if (isTerminal(card.status)) {
     throw new TaskError(`${id} is terminal (${card.status}); create a new task instead of editing it`);
   }
@@ -229,6 +232,9 @@ function editTaskLocked(project: Project, id: string, patch: EditOptions, force:
   if (patch.status !== undefined) meta["status"] = patch.status;
   if (patch.role !== undefined && patch.role !== card.role || patch.status === "todo" || patch.status === "cancelled") {
     meta["delivery"] = null;
+    meta["review"] = null;
+    meta["acceptance"] = null;
+    meta["integration"] = null;
   }
   if (Object.keys(meta).length > 0) writeTaskMeta(project, card, meta);
 

@@ -165,15 +165,15 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
     });
   });
 
-  test("常驻角色不开 worktree，仍用 tab agent", () => {
+  test("常驻对话角色也使用独立任务 worktree", () => {
     withProject(
       (root) => writeTask(root, "0001-a", taskMeta({ role: "docs" })),
       (p) => {
         const herdr = fakeHerdr();
         herdr.live("docs");
         dispatch(p, herdr);
-        expect(herdr.calls.some((c) => c.startsWith("worktree create"))).toBe(false);
-        expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "docs")?.pane_id}`))).toBe(true);
+        expect(herdr.calls.some((c) => c.startsWith("worktree create"))).toBe(true);
+        expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "docs-0001")?.pane_id}`))).toBe(true);
       },
     );
   });

@@ -45,8 +45,8 @@ export function refreshSidebar(project: Project, herdr: Herdr, sessionsOnly = fa
       if (!assignment) continue;
       try {
         // Ambiguous resident roles must not overwrite each other's native session ID.
-        if (!assignment.role.worktree) findRoleAgent(fresh, agents, assignment.role);
-        rememberRoleSession(fresh, assignment.role, agent);
+        if (!assignment.taskId && !assignment.role.worktree) findRoleAgent(fresh, agents, assignment.role);
+        if (!assignment.taskId) rememberRoleSession(fresh, assignment.role, agent);
         if (!sessionsOnly) reportRoleSidebar(fresh, herdr, agent.pane_id, assignment.role, assignment.taskId);
         result.updated++;
       } catch { result.failed++; }

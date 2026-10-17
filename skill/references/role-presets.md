@@ -45,7 +45,8 @@ herdr-team init --plan balanced
 | `search` | 否 | 外网搜索、X |
 | `docs`（可选） | 否 | 维护 README、Skill 和参考文档；实现与文档不一致时报告，不擅自改变行为 |
 
-**隔离（`worktree: true`）只给写代码的角色。** 其余常驻项目 workspace，不隔离。
+执行始终按任务隔离，角色只定义职责与模型。`worktree: true` 表示 `up` 不预起该角色的常驻对话 tab。
+所有角色均可有多个任务会话；dev/test 默认共用本任务 checkout，验收中 dev 暂停修改。
 详见 [herdr-format.md](herdr-format.md#隔离与常驻)。
 
 ## 各角色的定义
@@ -110,7 +111,7 @@ Lead keeps task-card handoff chains accurate and is the fallback owner when the 
 
 - **Ask the user when requirements are unclear. Do not decide for them.**
 - Names describe roles (`reviewer`, `builder`), rather than agent kinds (`codex`) or informal descriptions.
-- Use `--worktree` for coding roles: it isolates each task in its own Git worktree.
+- Task execution always uses task workspaces. `--worktree` only suppresses the resident conversation tab.
 - `role rm` intentionally rejects roles referenced by active tasks.
 
 First claim the delivery ID from your assignment prompt. When done, use that same ID with `herdr-team handoff <id> --delivery ID --summary "results; artifact paths; validation; risks and next steps"`; use --summary-file F for long summaries. The summary is optional and appended by the CLI. Do not edit task cards yourself.
@@ -161,7 +162,7 @@ You are the tester. Review documentation without editing it.
 | --- | --- |
 | Write test cases; run validation and skill tests; compare documentation with implementation; report defects with reproduction evidence | Modify implementation, skill files (`SKILL.md`, `references/`), package docs, or task cards directly |
 
-Report defects and missing tasks to `lead`. Do not create task cards or merge development branches yourself.
+Return review defects directly to the original developer with `handoff --reject --summary TEXT`; report missing tasks or unclear ownership to `lead`. Do not create task cards or merge development branches yourself.
 
 Report issues for `dev` to fix and `test` to verify. Requests to check documentation permit review and reporting; leave corrections to the developer.
 
@@ -326,3 +327,12 @@ Claude Code 不认后端自定义的模型名（会报 `unrecognized_model`）�
 
 kimi 的默认模型来自 `~/.kimi-code/config.toml` 的 `default_model`（当前是 `kimi-code/k3`）。
 默认值可能变，所以角色要钉住就显式写 `args: ["-m", "kimi-code/k3"]`。
+
+## Commit acceptance and integration
+
+Default flow: `dev ⇄ test → merge queue`. All task sessions are independent of resident conversations.
+Dev commits first, then runs `handoff <id> --delivery ID --commit SHA --summary TEXT`.
+Dev pauses writes in the shared task checkout during review. Different tasks run concurrently; each task advances one stage at a time.
+Test validates that SHA with isolated task database/Redis/port settings, then uses `--accept SHA --summary TEXT` or `--reject --summary TEXT`.
+Final acceptance queues integration. Lead uses `merge next` / `merge <id> [--migrate COMMAND]`; inspect failures before `merge retry <id>`.
+Only real interface/data dependencies gate execution; documentation can proceed independently before final verification.

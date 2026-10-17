@@ -1,3 +1,4 @@
+import { integrationFor, taskScoped } from "./execution.ts";
 import { findRoleAgent, projectAgents } from "./team-scope.ts";
 import { deliveryFor, deliveryState } from "./delivery.ts";
 /**
@@ -261,7 +262,7 @@ export function buildModel(
   for (const task of project.tasks) {
     const role = project.roles.find((r) => r.name === task.role);
     if (role === undefined) continue;
-    const agent = findRoleAgent(project, agents, role, role.worktree ? task.id : undefined);
+    const agent = findRoleAgent(project, agents, role, taskScoped(task, role) ? task.id : undefined);
     if (agent !== undefined) taskAgents.set(task.id, agent);
   }
 
@@ -375,11 +376,18 @@ interface PendingCounts {
   delivering: number;
   claimed: number;
   needsYou: number;
+  integration: number;
 }
 
 function pendingCounts(tasks: TaskCard[]): PendingCounts {
-  const counts = { waiting: 0, delivering: 0, claimed: 0, needsYou: 0 };
+  const counts = { waiting: 0, delivering: 0, claimed: 0, needsYou: 0, integration: 0 };
   for (const task of tasks) {
+    const integration = integrationFor(task);
+    if (integration && integration.state !== "done") {
+      counts.integration++;
+      if (integration.state === "blocked") counts.needsYou++;
+      continue;
+    }
     switch (deliveryState(task)) {
       case "queued": counts.waiting++; break;
       case "sending":
@@ -399,10 +407,13 @@ function pendingEntries(model: WatchModel): { glyph: string; count: number; labe
     { glyph: "→", count: counts.delivering, label: "delivering", code: CYAN },
     { glyph: "●", count: counts.claimed, label: "claimed" },
     { glyph: "!", count: counts.needsYou, label: "needs you", code: YELLOW },
+    { glyph: "⇥", count: counts.integration, label: "merge", code: CYAN },
   ].filter((entry) => entry.count > 0);
 }
 
 function flow(task: TaskCard): { glyph: string; name: string; code?: string } {
+  const integration = integrationFor(task);
+  if (integration) return { glyph: integration.state === "blocked" ? "!" : "⇥", name: `merge-${integration.state}`, code: integration.state === "blocked" ? YELLOW : CYAN };
   switch (deliveryState(task)) {
     case "queued": return { glyph: "◷", name: "waiting", code: DIM };
     case "sending":
@@ -614,10 +625,10 @@ export function renderFrame(model: WatchModel, opts: FrameOpts): string[] {
     const deps = selected.dependsOn.length > 0 ? selected.dependsOn.join(", ") : "—";
     push(cell(sanitize(` handoff  ${handoff}        depends_on ${deps}`), width));
     const role = model.roles.find((r) => r.role === selected.role);
-    const branch = role?.worktree === true ? worktreeBranch(selected) : "—";
+    const branch = (selected.meta.execution === "task" || role?.worktree) ? worktreeBranch(selected) : "—";
     push(cell(sanitize(` branch   ${branch}`), width, DIM, color));
     const deliveryFlow = flow(selected);
-    let deliveryInfo = "";
+    let deliveryInfo = integrationFor(selected) ? ` · ${integrationFor(selected)!.commit.slice(0, 12)}${integrationFor(selected)!.reason ? ` · ${integrationFor(selected)!.reason}` : ""}` : "";
     try {
       const delivery = deliveryFor(selected);
       if (delivery !== undefined) {
@@ -669,7 +680,7 @@ function taskRow(task: TaskCard, model: WatchModel, selected: boolean, width: nu
     return head + cell(sanitize(task.title), rest, selected ? BOLD : undefined, color);
   }
   const role = model.roles.find((r) => r.role === task.role);
-  const branch = sanitize(role?.worktree === true ? worktreeBranch(task) : "—");
+  const branch = sanitize((task.meta.execution === "task" || role?.worktree) ? worktreeBranch(task) : "—");
   const branchW = Math.min(28, Math.floor(rest * 0.45));
   return head + cell(sanitize(task.title), rest - branchW - 1, selected ? BOLD : undefined, color) +
     " " + rightCell(branch, branchW, DIM, color);

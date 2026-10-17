@@ -1,3 +1,4 @@
+import { taskScoped } from "./execution.ts";
 import { loadProject } from "./config.ts";
 import { deliveryFor } from "./delivery.ts";
 import { enqueueTasks, pumpQueue } from "./queue.ts";
@@ -59,7 +60,7 @@ export function workspaceLabelFor(project: Project): string {
 /** 逻辑角色标识，仅供显示；发送目标必须通过项目归属定位到 pane。 */
 export function agentNameFor(project: Project, card: TaskCard): string {
   const role = project.roles.find((r) => r.name === card.role);
-  return role?.worktree === true ? isolatedAgentName(card.role, card.id) : card.role;
+  return taskScoped(card, role) ? isolatedAgentName(card.role, card.id) : card.role;
 }
 
 /** 常驻角色在项目 workspace 里的 pane。先按 tab label 找，找不到就建。 */
@@ -214,9 +215,9 @@ export function dispatch(project: Project, herdr: Herdr, id?: string): DispatchO
     return { id: taskId, role: task.role,
       action: delivery.state === "submitted" || delivery.state === "claimed" ? "dispatched"
         : delivery.state === "uncertain" ? "uncertain"
-        : task.dependsOn.some((id) => !fresh.tasks.some((t) => t.id === id && isTerminal(t.status))) ? "waiting-on-deps" : "queued",
+        : task.dependsOn.some((id) => !fresh.tasks.some((t) => t.id === id && t.status === "done")) ? "waiting-on-deps" : "queued",
       ...(delivery.reason ? { reason: delivery.reason } : {}),
-      ...(task.repo && project.roles.find((r) => r.name === task.role)?.worktree ? {
+      ...(taskScoped(task, project.roles.find((r) => r.name === task.role)) ? {
         branch: worktreeBranch(task),
         workspaceId: herdr.agentList().find((a) => a.pane_id === delivery.pane_id)?.workspace_id,
       } : {}),

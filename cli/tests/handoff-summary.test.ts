@@ -104,7 +104,7 @@ test("真实 CLI 支持 summary / summary-file，校验输入后才流转，并�
 function herdrForSummary(root: string): void {
   const executable = join(root, "offline-herdr");
   writeFileSync(executable, `#!${process.execPath}
-const result = {agents:[{name:"docs",pane_id:"w1:p1",agent_status:"idle"}],workspaces:[],panes:[{pane_id:"w1:p1",workspace_id:"w1",cwd:${JSON.stringify(root)}}],worktrees:[]};
+const result = {agents:[{name:"docs-0001",pane_id:"w1:p1",agent_status:"idle"}],workspaces:[],panes:[{pane_id:"w1:p1",workspace_id:"w1",cwd:${JSON.stringify(root)}}],worktrees:[]};
 process.stdout.write(JSON.stringify({result}));
 `);
 }

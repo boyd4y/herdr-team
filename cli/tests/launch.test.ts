@@ -208,11 +208,11 @@ describe("派活", () => {
     );
   });
 
-  test("角色没有存活 agent 就不派", () => {
+  test("角色没有存活 agent 时启动任务会话", () => {
     withTasks(
       (root) => writeTask(root, "0001-a", taskMeta()),
       (p) => {
-        expect(dispatch(p, fakeHerdr())[0]?.action).toBe("queued");
+        expect(dispatch(p, fakeHerdr())[0]?.action).toBe("dispatched");
       },
     );
   });
@@ -239,7 +239,7 @@ describe("派活", () => {
       (p) => {
         const herdr = runningWorkspace();
         dispatch(p, herdr);
-        expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "dev")?.pane_id}`))).toBe(true);
+        expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "dev-0001")?.pane_id}`))).toBe(true);
       },
     );
   });

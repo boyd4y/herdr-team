@@ -52,7 +52,7 @@
 | --- | :--: | --- | --- |
 | `kind` | ✅ | enum | 见 [kind 枚举](#kind-枚举)。**agent 类型** —— 是属性，不是身份 |
 | `model` | | str | **只用于显示的短名**（`sol-6.1` / `ds-flash`）。真正的模型由 `args` / `env` 决定 |
-| `worktree` | | bool | `true` = 这个角色**按任务隔离**；缺省 `false` = 常驻。见 [隔离与常驻](#隔离与常驻) |
+| `worktree` | | bool | `true` = 不预起常驻对话 tab；任务执行始终按任务隔离。见 [隔离与常驻](#隔离与常驻) |
 | `cwd` | | str | 相对项目根；**禁止 `..` 逃逸项目根** |
 | `args` | | list[str] | 透传给该 agent 的可执行文件 |
 | `env` | | map[str,str] | 起 tab 时用 `herdr tab create --env` 钉死环境变量 |
@@ -101,6 +101,10 @@
 | `role` | ✅ | str | **当前负责人**。必须解析到存在的角色 |
 | `handoff` | | list[str] | **剩余流转队列**（有序）。每项必须解析到存在的角色 |
 | `depends_on` | | list[str] | 每项必须解析到存在的任务 `id`；**禁止环** |
+| `execution` | | str | 新任务为 `task`；未发送的旧队列投递前自动迁移 |
+| `review` | | object | commit、developer、reviewer ；由 CLI 管理 |
+| `acceptance` | | object | 验收 commit 与 role；由 CLI 管理 |
+| `integration` | | object | 验收 commit 与 queued/running/blocked/done；由 CLI 管理 |
 | `repo` | | str | 开 worktree 用的仓库，相对项目根。缺省 `.`（项目根本身） |
 
 **没有 `id`。** 它来自目录名。
@@ -128,10 +132,12 @@
 | 建卡 | `backend` | `[reviewer]` | `todo` |
 | 接手 | `backend` | `[reviewer]` | `doing` |
 | 交棒 | `reviewer` | `[]` | `review` |
-| 通过 | `reviewer` | `[]` | `done` |
+| 验收通过 | `reviewer` | `[]` | `review`（merge queue） |
+| 合入与迁移成功 | `reviewer` | `[]` | `done` |
 
 **`handoff` 空不等于任务完成** —— 它只说明当前这个负责人是最后一个。所以交棒给最后一个角色后
-状态是 `review`；**那个角色自己再交一次**才变 `done`。
+状态是 `review`。有 commit 验收的任务最后交棒进入合并队列，合入成功才变 `done`；
+未提交 commit 验收的纯调研/文档任务仍可由最后负责人交棒完成。
 
 最后一次 `handoff` 到 `done` 时会尝试回收 worktree；`clean` 则扫描所有
 `done` / `cancelled` 任务。两者都在任务的 `repo`（缺省 `.`）中按
@@ -142,33 +148,28 @@
 
 ## 隔离与常驻
 
-`up` 只起常驻角色，`dispatch` 才派任务；角色分成两类，**落在完全不同的地方**：
+`up` 起常驻对话 tab 和 Console，`dispatch` 创建任务执行会话。角色不是独占执行槽。
 
+```text
+project workspace
+  lead / docs / test conversation tabs
+  Team Console
+  task 0046 workspace: feat/0046-fix-login
+    dev-0046 → test-0046 (same checkout; dev pauses writes during review)
+  task 0047 workspace: feat/0047-calendar
+    dev-0047 → test-0047 (independent checkout)
 ```
-项目 workspace "my-app"              ← 家
-├── tab lead         agent "lead"         常驻，主分支
-└── tab test         agent "test"         常驻
 
-feature workspace "0001 修登录"           ← 挂在上面成组
-└── tab dev          agent "dev-0001"      在自己 worktree 里
-                     侧边栏自动显示 branch: feat/0001-fix-login
-```
+`worktree: true` 只让 `up` 跳过该角色的常驻对话 tab；无论此值如何，执行会话都按任务创建。
+同一任务共享一个分支与 workspace，各角色拥有自己的 tab；同一角色可以同时执行多张任务。
+全局名字冲突时使用项目命名空间，侧栏保留职责与任务编号。
 
-| | `worktree` 缺省 / `false` | `worktree: true` |
-| --- | --- | --- |
-| 起在哪 | 项目 workspace 的一个 tab | **每个任务一个 git worktree**，独立 workspace 挂在项目下成组 |
-| 什么时候起 | `up` 时一次起好，常驻 | **`dispatch` 派活时**才起（来活了才出现） |
-| agent 逻辑名 | 角色名（`lead`） | `<role>-<id>`（`dev-0001`）；全局重名时用项目命名空间 |
-| 侧边栏 | 第一行：归属编号、角色、harness；第二行：模型、任务 ID | 同样分两行，内部命名空间不进入显示名 |
-| workspace 名 | 项目根目录名 | **分支名**（`feat/0001-fix-login`）—— 一眼看出是哪个 feature |
-| 分支 | 项目当前分支 | `feat/<id>-<slug>` |
-| 适合 | 调度、文档、测试、调研 | **写代码** —— 并行改同一仓库不会互相踩 |
-
-隔离用的是 Herdr 原生的 `worktree create`：它建 git worktree、开成新 workspace、
-挂在源 repo workspace 下，**分支名由侧边栏的 `branch` token 自动显示**，不用额外标。
-
-一个 agent 名对应一个任务，所以**同一个角色可以同时在多个任务上**（`dev-0001`
-和 `dev-0002` 各在自己的 worktree 里），互不打架。
+`handoff --commit SHA` 固定验收版本，测试前与接受时核对干净 checkout 和 HEAD。
+同一任务 dev/test 复用 worktree，按阶段串行，dev 在 test 持有任务时停止写入。
+`--reject --summary TEXT` 直接退回原 dev；`--accept SHA --summary TEXT` 通过。
+验收后的最后一次交棒进入 integration 队列，只有 `merge next/<id>` 成功才算 done。
+合入与可选 `--migrate COMMAND` 共用一个串行锁；执行和对话不占这个锁。
+旧的已发送 delivery 不改接收 pane，避免双重执行。
 
 ## id 与目录名
 

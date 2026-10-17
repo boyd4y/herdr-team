@@ -42,13 +42,7 @@ export interface RoleCard {
   cwd?: string;
   args?: string[];
   env?: Record<string, string>;
-  /**
-   * 这个角色是否按任务隔离。
-   *
-   * `true` = 每来一个任务就开一个 git worktree（独立 workspace、独立分支），
-   * agent 名是 `<role>-<id>`。写代码的角色该开。
-   * `false`（默认）= 常驻项目 workspace 的一个 tab，agent 名就是角色名。
-   */
+  /** Skip the resident conversation tab. Task execution always owns a worktree. */
   worktree: boolean;
   /** prompt.md 的内容；文件不存在时为空串。 */
   body: string;

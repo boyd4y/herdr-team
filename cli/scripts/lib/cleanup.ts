@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, unlinkSync } from "node:fs";
+import { runtimePath } from "./runtime.ts";
 import { assertProjectWorkspace } from "./team-scope.ts";
 import { join } from "node:path";
 import type { Herdr } from "./herdr.ts";
@@ -30,6 +32,15 @@ export interface CleanupResult {
  * **不 force。** Git 有未提交的东西时会拒绝，这时只报出来让人决定 ——
  * 悄悄丢掉别人没提交的工作是最不该发生的事。
  */
+function releaseTaskResources(project: Project, card: TaskCard): void {
+  if (!isTerminal(card.status)) return;
+  const path = runtimePath(project, "resources");
+  if (!existsSync(path)) return;
+  for (const name of readdirSync(path)) {
+    if (name.startsWith(`${card.id}-`) && name.endsWith(".json")) unlinkSync(join(path, name));
+  }
+}
+
 export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): CleanupResult {
   const branch = worktreeBranch(card);
 
@@ -48,6 +59,7 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
 
   const found = trees.find((t) => t.branch === branch);
   if (found === undefined) {
+    releaseTaskResources(project, card);
     return { id: card.id, branch, action: "absent", note: `No checkout for ${branch} (not created or already removed)` };
   }
 
@@ -76,6 +88,7 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
     };
   }
 
+  releaseTaskResources(project, card);
   return {
     id: card.id,
     branch,

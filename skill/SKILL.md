@@ -78,7 +78,8 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 | `validate` | 校验 `.herdr/`：角色卡、任务卡、引用完整性、依赖环 |
 | `add <title>` | 建一张任务卡（算 id、译 slug、校验引用、写卡） |
 | `edit <id>` | 改一张卡；已派出的要 `--force`，终态的不许改 |
-| `handoff <id> --delivery ID` | 推进流转 —— 交给下一个角色，或最后一个角色收尾（顺带回收 worktree） |
+| `handoff <id> --delivery ID` | 交棒；`--commit SHA` 提交验收，`--accept SHA` 通过，`--reject --summary TEXT` 直接退原 dev |
+| `merge list/next/<id>` | 验收后的串行合入队列；`--migrate COMMAND` 在同一锁内运行本地迁移 |
 | `role add/rm/list` | **运行期增删改角色**。已有角色用 `add --force --body` 更新职责；新增后跑 `up` 纳入管理 |
 | `tasks [<id>]` | 列出任务，或按 id 查看单张任务详情（含正文，不问 Herdr）；列表支持 `--all` / `--role` / `--status` |
 | `status` | 合并「卡片写的」和「Herdr 里真实的」两侧状态 |
@@ -86,7 +87,7 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 | `claim <id> --delivery ID` | 工作前领取消息指定的唯一分配 ID；重复领取不要启动第二份工作 |
 | `queue [list\|retry\|drain]` | 查询队列；lead 核对 uncertain 项后 retry；drain 手动尝试投递 |
 | `up` | 只起常驻角色、纳入新角色并更新侧栏；同时创建或复用 Team Console tab；不自动入队 todo（幂等；要在 Herdr pane 里跑） |
-| `dispatch [<id>]` | 将所有 `todo` 或指定一张入队，尝试投递；Console 后续按优先级和依赖处理，隔离角色此时才起 worktree/agent（要在 Herdr pane 里跑） |
+| `dispatch [<id>]` | 将所有 `todo` 或指定一张入队，尝试投递；Console 后续按优先级和依赖处理，所有角色此时才起任务 worktree/会话（要在 Herdr pane 里跑） |
 | `clean` | 按任务分支回收已结束任务留下的 worktree，不受当前角色是否隔离影响 |
 | `down` | **关停团队的 agent**，不动 workspace（`--workspace` 才连容器一起关） |
 
@@ -143,7 +144,8 @@ CLI 就是照它实现的 —— 卡片不合规时 CLI 会报出来，不要去
 每个项目一个调度进程；关闭会暂停自动投递，队列不会丢失。`console --observe`、`--once` 和 `--line` 为只读模式。
 交互式 Console 将任务状态、delivery flow 与 agent 可用性分开展示：`PENDING` 汇总非零投递状态，任务行用 FLOW 符号，角色表列出 active 任务和 queue 数，`NEEDS YOU` 收集警告；标签栏只读行会在任务计数后显示非零的 `N queued`。详细布局和窄屏行为见 [CLI Team Console 文档](../cli/README.md#team-console)。
 Console 只投递 delivery 已入队的任务，不自动处理未入队的历史 todo。
-同一角色一次处理一个任务，隔离角色也串行。Herdr 状态必须 idle/done 才发送；working/blocked/unknown 时等待。
+执行槽按任务分配，角色只定义职责和模型。不同任务的 dev/test 可以并发；常驻对话 tab 不占执行槽。
+每个任务一个 worktree/workspace，同一任务的角色会话共享它。test 接手后 dev 暂停写入，同一任务内部串行，不同任务并发。Herdr 接收会话必须 idle/done 才发送。
 派活消息内包含 claim 和 handoff 的完整命令，必须使用同一个 delivery ID 和绝对 --root。
 重复 claim 返回 duplicate，不能启动第二份工作；重复 handoff 不会再次推进。
 发送异常或提交后 60 秒未领取会标 uncertain，停止自动重发；先核对原 agent/产物，再由 lead `queue retry <id>`。
@@ -151,6 +153,19 @@ Console 只投递 delivery 已入队的任务，不自动处理未入队的历�
 
 任务的 `handoff` 列表是后续角色顺序；`delivery` 是当前这一棒的投递记录，两者用途不同。
 `add` 只建卡，`dispatch [<id>]` 才入队；handoff 自动将下一棒入队，不需再次 dispatch。
-Herdr idle/done 只是终端可接收输入；claimed 任务必须明确 handoff 才释放角色。
+Herdr idle/done 只是终端可接收输入；claimed 任务必须明确 handoff 才释放自己的任务会话。
 关闭 Console 只停止自动轮询；显式执行 dispatch、handoff、queue drain 仍可立即尝试一次投递。
 已有项目 prompt.md 不自动覆盖，运行中的 agent 不自动重读 Skill；每次派活附带当前 delivery 的完整命令。
+
+## 任务并发与验收
+
+最短流程 `dev ⇄ test → merge queue`。只为实际需要的接口/数据结构声明 `--depends-on`，不因计划顺序串联，
+依赖只有 `done` 才满足。文档可以独立并行准备，功能验收后核实；不要占住唯一 docs/test 槽。
+开发者提交所有变更后使用 `handoff <id> --delivery ID --commit SHA --summary TEXT`，测试针对该 SHA。
+验收者使用 `--accept SHA --summary TEXT` 记录 commit 与验证结果，或 `--reject --summary TEXT` 直接退回原 dev。
+通过后进入 merge queue，不等于已合入。新增提交必须重新验收；不要在验收后追加提交再沿用旧结论。
+测试必须使用会话中的 HERDR_TEAM_TEST_DATABASE、HERDR_TEAM_REDIS_PREFIX、HERDR_TEAM_PORT/PORT 配置独立资源；
+CLI 只提供变量与端口检查，不代建服务或改 DATABASE_URL。隔离未配置好应报告该任务阻塞，其他任务继续。
+只有 lead 执行 `merge next` / `merge <id> [--migrate COMMAND]`，合入与迁移共用串行锁，和对话会话无关。
+Console 不自动合并。失败/中断需要检查产物和迁移效果，显式 `merge retry <id>`；不能盲目重试。
+旧的已发出 delivery 仍完成原会话；尚未发送的队列会在投递前自动切换为任务会话。

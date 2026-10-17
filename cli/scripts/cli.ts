@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cleanupAll } from "./lib/cleanup.ts";
 import { findRoot, loadProject } from "./lib/config.ts";
+import { mergeRows, mergeTask, retryMerge } from "./lib/integration.ts";
 import { handoff } from "./lib/handoff.ts";
 import { init, InitError, parseRoleSpecs, readRolesFile } from "./lib/init.ts";
 import { describePlan, isPlanName, PLAN_NAMES, planRoles } from "./lib/plans.ts";
@@ -52,7 +53,8 @@ Commands:
   validate              Validate roles, tasks, and references
   add <title>           Create a task
   edit <id>             Edit a task
-  handoff <id>          Advance a task to its next owner
+  handoff <id>          Advance a task or record commit acceptance
+  merge [next|<id>]     Integrate accepted work serially; optional --migrate CMD
   role <list|add|rm>    Manage roles; run up after adding roles
   tasks [<id>]          List tasks or read full task details
   status                Show task and live agent status
@@ -547,9 +549,9 @@ async function cmdConsole(args: string[]): Promise<number> {
 }
 
 function cmdHandoff(args: string[]): number {
-  const parsed = parseArgs(args, ["root", "summary", "summary-file", "delivery"]);
+  const parsed = parseArgs(args, ["root", "summary", "summary-file", "delivery", "commit", "accept"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team handoff <id> [--delivery ID] [--summary TEXT | --summary-file FILE] [--root DIR] [--json]\nSave the handoff and queue the next owner. Queue-managed tasks require their claimed delivery ID; repeated IDs do not advance twice.\n");
+    process.stdout.write("Usage: herdr-team handoff <id> [--delivery ID] [--summary TEXT | --summary-file FILE] [--commit SHA | --accept SHA | --reject] [--root DIR] [--json]\n--commit submits a pinned review in the task worktree; --accept records that exact version; --reject returns defects to its original developer. Final acceptance enters the merge queue.\nSave the handoff and queue the next owner. Queue-managed tasks require their claimed delivery ID; repeated IDs do not advance twice.\n");
     return 0;
   }
   const id = parsed.pos[0];
@@ -566,9 +568,30 @@ function cmdHandoff(args: string[]): number {
 
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
-  const result = handoff(project, herdrClient(), id, new Date(), { summary, delivery: parsed.values.get("delivery") });
+  const result = handoff(project, herdrClient(), id, new Date(), { summary, delivery: parsed.values.get("delivery"), commit: parsed.values.get("commit"), accept: parsed.values.get("accept"), reject: parsed.flags.has("reject") });
 
   return out(parsed, result, `✓ ${result.note}`);
+}
+
+function cmdMerge(args: string[]): number {
+  const parsed = parseArgs(args, ["root", "migrate"]);
+  if (parsed.flags.has("help")) {
+    process.stdout.write("Usage: herdr-team merge [list | next | <id> | retry <id>] [--migrate COMMAND] [--root DIR] [--json]\nMerge accepted commits and run optional local migrations under one integration lock. Console never merges automatically. Inspect blocked/interrupted operations before retrying.\n");
+    return 0;
+  }
+  const project = loadValidated(resolveRoot(parsed.values.get("root")));
+  const sub = parsed.pos[0] ?? "list";
+  if (sub === "list" && parsed.pos.length <= 1) {
+    const rows = mergeRows(project);
+    return out(parsed, rows, rows.length ? rows.map((r) => `${r.id}  ${r.state}  ${r.commit}${r.reason ? `  ${r.reason}` : ""}`).join("\n") : "No accepted tasks awaiting integration.");
+  }
+  if (sub === "retry" && parsed.pos.length === 2) {
+    retryMerge(project, parsed.pos[1]!);
+    return out(parsed, { id: parsed.pos[1], state: "queued" }, `Requeued integration #${parsed.pos[1]} after reconciliation.`);
+  }
+  if (parsed.pos.length !== 1 || sub !== "next" && !/^\d{4}$/.test(sub)) throw new UsageError("Use merge list, merge next, merge <id>, or merge retry <id>");
+  const result = mergeTask(project, sub === "next" ? undefined : sub, parsed.values.get("migrate"));
+  return out(parsed, result, `Integrated #${result.id} at ${result.commit}.`);
 }
 
 function cmdUp(args: string[]): number {
@@ -860,6 +883,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdAdd(rest);
     case "edit":
       return cmdEdit(rest);
+    case "merge":
+      return cmdMerge(rest);
     case "handoff":
       return cmdHandoff(rest);
     case "role":
