@@ -64,7 +64,7 @@ Console 是自动调度器，在项目的 Team Console tab 中运行。关闭它
 
 ## 升级、移除与故障排查
 
-GitHub 安装的插件请通过 Herdr 插件管理器更新或重新安装 `boyd4y/herdr-team`。本地 link 的开发检出请在仓库根目录运行 `herdr plugin link .`，以刷新插件 manifest 和事件 hook，然后运行 `herdr plugin action invoke herdr-team.configure`。`configure` action 会应用 Herdr Team 托管的布局与配置并 reload config；它本身不会注册已变更的事件 hook。Herdr 的 `PATH` 中需保留用户 bin 目录和 Bun。
+GitHub 安装的插件请通过 Herdr 插件管理器更新或重新安装 `boyd4y/herdr-team`。更新本地 link 的检出时，请在仓库根目录运行 `herdr plugin link .`，刷新插件 manifest 和事件 hook；然后运行 `herdr plugin action invoke herdr-team.install`，更新内置 CLI、skill 并应用托管配置。`configure` action 只应用 Herdr Team 托管的布局与配置并 reload config；它不会注册已变更的事件 hook，也不会更新 CLI 和 skill。Herdr 的 `PATH` 中需保留用户 bin 目录和 Bun。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 
@@ -74,7 +74,9 @@ herdr plugin action invoke herdr-team.unconfigure
 herdr plugin action invoke herdr-team.uninstall-cli
 ```
 
-然后通过 Herdr 插件管理器移除插件。本地开发 link 则在上述 action 后运行 `herdr plugin unlink herdr-team`。这些 action 会保留用户修改过的文件，以及 Herdr Team 托管块之外的配置。`herdr-team down` 只停止团队 agent，默认保留项目 workspace；它不是卸载命令。
+`unconfigure` 只移除 Herdr Team 托管的配置块，并保留块外内容。`uninstall-cli` 只删除未修改且记录为插件所有的 CLI shim；用户编辑或替换过的 shim 会保留。`uninstall-skill` 会委托 Skills CLI 移除 skill，不保证保留已安装 skill 内的修改。重新安装或移除前，请先备份自定义的 skill 修改。
+
+然后通过 Herdr 插件管理器移除插件。本地开发 link 则在上述 action 后运行 `herdr plugin unlink herdr-team`。`herdr-team down` 只停止团队 agent，默认保留项目 workspace；它不是卸载命令。
 
 常见检查：
 

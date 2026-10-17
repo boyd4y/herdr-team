@@ -64,7 +64,7 @@ Resident roles can resume a saved native session when Herdr's official integrati
 
 ## Upgrade, remove, and troubleshoot
 
-For a GitHub installation, upgrade by updating or reinstalling `boyd4y/herdr-team` through Herdr's plugin manager. For a locally linked checkout, run `herdr plugin link .` from the checkout root to refresh the plugin manifest and event hooks, then run `herdr plugin action invoke herdr-team.configure`. The `configure` action applies Herdr Team's managed layout and configuration and reloads config; it does not register changed event hooks by itself. Keep the user bin directory and Bun on Herdr's `PATH`.
+For a GitHub installation, upgrade by updating or reinstalling `boyd4y/herdr-team` through Herdr's plugin manager. For a locally linked checkout, run `herdr plugin link .` from the checkout root to refresh the plugin manifest and event hooks, then run `herdr plugin action invoke herdr-team.install` to refresh the bundled CLI, skill, and managed configuration. The `configure` action only applies Herdr Team's managed layout and configuration and reloads config; it does not register changed event hooks or refresh the CLI and skill. Keep the user bin directory and Bun on Herdr's `PATH`.
 
 Before removing the plugin, remove the plugin-managed skill, Herdr configuration, and CLI shim with the corresponding actions:
 
@@ -74,7 +74,9 @@ herdr plugin action invoke herdr-team.unconfigure
 herdr plugin action invoke herdr-team.uninstall-cli
 ```
 
-Then remove the plugin using Herdr's plugin manager. For a local development link, use `herdr plugin unlink herdr-team` after those actions. These actions preserve user-modified files and configuration outside Herdr Team's managed blocks. `herdr-team down` stops the team's agents but keeps the project workspace by default; it is not an uninstall command.
+`unconfigure` removes only Herdr Team's managed configuration block and preserves content outside it. `uninstall-cli` removes an unchanged plugin-owned CLI shim; edited or replaced shims are left in place. `uninstall-skill` delegates removal to Skills CLI and does not promise to preserve edits inside the installed skill, so copy any custom skill changes before reinstalling or removing it.
+
+Then remove the plugin using Herdr's plugin manager. For a local development link, use `herdr plugin unlink herdr-team` after those actions. `herdr-team down` stops the team's agents but keeps the project workspace by default; it is not an uninstall command.
 
 Common checks:
 

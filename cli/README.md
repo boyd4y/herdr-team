@@ -112,7 +112,7 @@ herdr-team up --fresh
 插件事件只写本地记录，不发送消息、不回写 metadata，无 daemon。
 直接强制关闭 pane 前若尚未捕获 ID，就没有可恢复记录。
 隔离 worktree 角色仍由 `dispatch` 按任务启动，不参与 `up` 的角色会话恢复。
-升级后重新 `herdr plugin link /path/to/herdr-team` 加载新增事件钩子，并更新已安装 CLI。
+GitHub 安装请通过 Herdr 插件管理器更新或重新安装。更新本地 link 的检出时，在仓库根目录运行 `herdr plugin link .` 以加载更新后的 manifest 和事件钩子，再运行 `herdr plugin action invoke herdr-team.install` 更新内置 CLI、skill 并应用托管配置。`herdr-team.configure` 只应用托管布局/配置并 reload config，不会注册更新后的 hook，也不会更新 CLI 或 skill。
 
 `dispatch [<id>]` 将 todo 卡持久化入队，并尝试立即投递一条符合条件的任务。
 未指定 id 时入队全部 todo 卡；指定不存在或非 todo 的 id 会报错。队列按 priority、入队时间和 id 排序，依赖进入终态后才可投递。
@@ -179,8 +179,8 @@ workspace 和 agent 的编号，不要求当前目录是团队项目。均不启
 标签栏定时命令可使用 `HERDR_ENV=1 herdr-team console --line --follow --sync-git`，
 在输出原团队状态前更新所有 workspace 的文件数；仅此显式选项会写 workspace metadata，
 `--line` 本身不调度任务。刷新频率由 Herdr 该 command 的 `interval_seconds` 控制。
-新增 workspace 与 agent 由插件事件钩子自动同步。升级后重新 `herdr plugin link`
-加载钩子，再从 Herdr 菜单选择 `reload config` 应用布局。
+新增 workspace 与 agent 由插件事件钩子自动同步。更新本地链接的事件钩子时按上面的升级步骤操作；
+只需重新应用布局时运行 `herdr-team.configure` action，它会保存托管配置并 reload config。
 
 ### Team Console
 
