@@ -148,7 +148,7 @@ PR 方案中 test 通过后才发布 PR；review 的通过/拒绝决定是否允
 用户已有具体任务和验收要求时，再用 `add`、`dispatch ID` 派发；不要编造一张业务任务试运行。
 选定的 PR 流程通过一次真实任务确认 dev → test → PR → review → 合并；缺失条件记录清楚，不把写配置成功当作运行已验证。
 
-用户关于 `.herdr/` 是否纳入 Git 的偏好按本会话或项目约定处理；无约定时说明选择，不自动改 ignore 或提交业务仓库。
+默认共享 `.herdr/` 团队配置，tasks、reports 等本机记录由内部 `.gitignore` 忽略；具体规则见下节。已有明确的项目约定优先。
 
 ## init 不覆盖已有文件
 
@@ -181,10 +181,22 @@ herdr-team role add dev --force --body "你负责实现功能和同步接口文�
 
 - **不要未经确认就写角色卡。** 可以扫项目、可以提议，但用户没点头之前不落盘。
 - **`init` 不生成任务卡。** 任务是用户的意图，不是从项目结构能推出来的东西。建卡走 `herdr-team add`。
-- **不要创建 `.herdr/` 之外的任何文件。**
+- **团队文件写在 `.herdr/` 内。** Git 忽略规则按下节处理，不额外创建业务文件。
 
-## 一个待用户决定的问题
+## 跨机器共享团队配置
 
-`.herdr/` 可能包含个人身份信息和内部分工，**是否纳入 Git 由用户决定**。
+默认将 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选的 `workflow.json` 纳入 Git，另一台机器 clone 后即可复用团队定义。
+`init` / `onboard` 会创建以下 `.herdr/.gitignore`；已有文件原样保留，`--force` 也不覆盖：
 
-`init` 不改 `.gitignore`，只提示这个问题。
+```gitignore
+/tasks/
+/reports/
+/.retired-ids
+/projects/
+/worktrees/
+```
+
+`init` 不改项目根 `.gitignore`。若旧规则整体忽略 `.herdr/`，由 Skill 按用户约定移除该规则，
+改为内部忽略。已被 Git 跟踪的任务与报告需用 `git rm --cached` 取消跟踪，保留磁盘文件。
+任务进度、报告、会话与 worktree 不随团队配置跨机器恢复；新机器仍需安装工具并登录。
+角色卡使用相对路径和可共享的模型配置，凭证放在各机器的登录或环境中，不写进 Git。

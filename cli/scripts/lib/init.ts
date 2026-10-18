@@ -21,6 +21,14 @@ const IDENTITY_TEMPLATE = `# Identity
 
 const DEFAULT_ROLE_BODY = "You own this work.\n\nWhen done, run `herdr-team handoff <id>`. Do not edit task cards yourself.\n";
 
+const GITIGNORE_TEMPLATE = `# Share team configuration; keep local execution records out of Git.
+/tasks/
+/reports/
+/.retired-ids
+/projects/
+/worktrees/
+`;
+
 export class InitError extends Error {}
 
 export interface RoleSpec {
@@ -127,6 +135,13 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
   const skipped: string[] = [];
 
   mkdirSync(project.herdrDir, { recursive: true });
+
+  const ignorePath = join(project.herdrDir, ".gitignore");
+  if (existsSync(ignorePath)) skipped.push(".gitignore");
+  else {
+    writeFileSync(ignorePath, GITIGNORE_TEMPLATE);
+    created.push(".gitignore");
+  }
 
   const identityPath = join(project.herdrDir, "identity.md");
   if (existsSync(identityPath)) {

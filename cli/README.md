@@ -49,6 +49,11 @@ herdr-team add "Implement login" --role dev
 herdr-team tasks
 ```
 
+默认共享 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选 `workflow.json`，不整体忽略 `.herdr/`。
+`init` / `onboard` 创建内部 `.gitignore`，忽略 tasks、reports、.retired-ids、projects、worktrees；
+已有忽略文件原样保留，包括 `--force`。CLI 不改项目根 `.gitignore`，旧整目录忽略规则由 Skill 按项目约定调整。
+已跟踪的本机文件用 `git rm --cached` 取消跟踪，保留磁盘内容；任务和会话不随配置跨机器恢复。
+
 ### 先选工作流，再定角色
 
 工作流是可选建议，不是所有项目必须遵守的固定流程。CLI 不根据模型预设偷偷改变已有项目的流程。

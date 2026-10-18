@@ -1,0 +1,6 @@
+# Share team configuration; keep local execution records out of Git.
+/tasks/
+/reports/
+/.retired-ids
+/projects/
+/worktrees/

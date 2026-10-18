@@ -20,6 +20,11 @@ herdr-team <命令>
 
 安装 Herdr Team 插件后直接运行 `herdr-team`。
 
+团队配置默认纳入 Git，以便跨机器共享 `.herdr/identity.md`、`roles/` 和 `workflow.json`。
+`init` / `onboard` 创建 `.herdr/.gitignore`，忽略 tasks、reports、已删除任务 ID 与 Herdr 本机目录；已有忽略文件原样保留。
+不要整体忽略 `.herdr/`。已有整目录忽略规则由 Skill 按用户约定调整；已跟踪的本机记录只取消 Git 跟踪，保留磁盘文件。
+凭证通过各机器的登录或本机环境提供，不写入共享角色卡。
+
 **你不自己算 id、不自己校验引用、不自己拼 frontmatter。** 那些是代码的活；用判断去替代它们就会出错。
 
 ## 项目边界

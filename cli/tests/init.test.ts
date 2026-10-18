@@ -6,6 +6,9 @@ import { init, InitError, parseRoleSpecs } from "../scripts/lib/init.ts";
 import { ROLE_BODY, ROLE_META } from "../scripts/lib/types.ts";
 import { validateProject } from "../scripts/lib/validate.ts";
 import { makeBareProject } from "./helpers.ts";
+import { git } from "../scripts/lib/execution.ts";
+import { createTask } from "../scripts/lib/task.ts";
+import { readWorkflow, workflowPreset, writeWorkflow } from "../scripts/lib/workflow.ts";
 
 /** 一个只有 .herdr/identity.md 的空项目。 */
 function bareProject(): { root: string; cleanup: () => void } {
@@ -70,7 +73,47 @@ describe("init —— 骨架", () => {
   });
 });
 
+test("team configuration survives a Git clone while local tasks and runtime records stay behind", () => {
+  const { root, cleanup } = bareProject();
+  try {
+    init(loadProject(root), [{ name: "dev", kind: "codex", body: "Build the assigned change." }]);
+    writeWorkflow(loadProject(root), workflowPreset("direct"));
+    createTask(loadProject(root), { title: "Local task", role: "dev", handoff: [], priority: "P2", body: "Local execution record" });
+    for (const dir of ["reports", "projects", "worktrees"]) {
+      mkdirSync(join(root, ".herdr", dir), { recursive: true });
+      writeFileSync(join(root, ".herdr", dir, "local.txt"), "machine-specific data");
+    }
+    writeFileSync(join(root, ".herdr/.retired-ids"), "0000\n");
+    git(root, "init", "-b", "main");
+    git(root, "add", ".herdr");
+    expect(git(root, "ls-files", ".herdr").split("\n")).toEqual([
+      ".herdr/.gitignore", ".herdr/identity.md", ".herdr/roles/.gitkeep", ".herdr/roles/dev/.role.yaml", ".herdr/roles/dev/prompt.md", ".herdr/workflow.json",
+    ]);
+    git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "Share team configuration");
+    const clone = join(root, "..", "other-machine");
+    git(root, "clone", "--no-hardlinks", root, clone);
+    const shared = loadProject(clone);
+    expect(shared.roles.map((role) => [role.name, role.kind, role.body])).toEqual(loadProject(root).roles.map((role) => [role.name, role.kind, role.body]));
+    expect(readWorkflow(shared)).toEqual(workflowPreset("direct"));
+    expect(shared.hasIdentity).toBe(true);
+    expect(shared.tasks).toEqual([]);
+    expect(shared.retiredIds).toEqual([]);
+    expect(existsSync(join(root, ".herdr/tasks/0001-local-task/task.md"))).toBe(true);
+  } finally { cleanup(); }
+});
+
 describe("init —— 不覆盖已有内容", () => {
+  test("preserves custom ignore rules even with force and never edits the root ignore file", () => {
+    const { root, cleanup } = bareProject();
+    try {
+      writeFileSync(join(root, ".gitignore"), "*.local\n");
+      writeFileSync(join(root, ".herdr/.gitignore"), "/private-notes/\n");
+      const result = init(loadProject(root), [], true);
+      expect(result.skipped).toContain(".gitignore");
+      expect(readFileSync(join(root, ".herdr/.gitignore"), "utf8")).toBe("/private-notes/\n");
+      expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe("*.local\n");
+    } finally { cleanup(); }
+  });
   test("已有 identity.md 就跳过", () => {
     const { root, cleanup } = bareProject();
     try {

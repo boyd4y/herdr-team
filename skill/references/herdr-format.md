@@ -9,6 +9,7 @@
 
 ```
 <project>/.herdr/
+├── .gitignore                  忽略本机任务与运行记录，保留共享团队定义
 ├── identity.md                 我的身份（纯 Markdown，无元数据）
 ├── .retired-ids                已删除任务的 id，一行一个，只追加
 ├── roles/
@@ -34,6 +35,10 @@
 没有冗余就没有漂移。
 
 `.retired-ids` 首次 `rm` 时才创建。扫描跳过以 `.` 开头的条目。
+
+团队定义（`.gitignore`、`identity.md`、`roles/`、可选 `workflow.json`）默认纳入 Git，供跨机器复用。
+内部 `.gitignore` 忽略 `tasks/`、`reports/`、`.retired-ids`、`projects/` 和 `worktrees/`。
+任务与机器会话独立保留在本地，不整体忽略 `.herdr/`。
 
 ## `identity.md`
 
