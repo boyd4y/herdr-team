@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, openSync, closeSync, readFileSync, renameSync, u
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { badgeTokens, type Herdr, type WorkspaceInfo } from "./herdr.ts";
+import { roleAgentLabel } from "./team-scope.ts";
 
 export const BADGE_COLOR_COUNT = 8; // Must match the fixed sidebar color slots in bin/configure.js.
 interface Badge { label: string; slot: number }
@@ -87,8 +88,11 @@ export function syncWorkspaceBadges(herdr: Herdr, file = badgeStatePath()): { up
       report("workspace", workspace.workspace_id, workspace.tokens, nested ? undefined : badges.get(workspace.workspace_id), workspace.label);
     }
     for (const agent of agents) {
+      const role = agent.tokens?.team_role;
+      const taskId = agent.tokens?.team_task_id;
       if (agent.pane_id) report("pane", agent.pane_id, agent.tokens, agent.workspace_id ? badges.get(agent.workspace_id) : undefined,
-        agent.tokens?.team_role ?? agent.display_agent ?? agent.name ?? agent.agent ?? "agent");
+        role ? roleAgentLabel(role, taskId && /^[0-9]{4}$/.test(taskId) ? taskId : undefined)
+          : agent.display_agent ?? agent.name ?? agent.agent ?? "agent");
     }
     return result;
   } finally { closeSync(descriptor); unlinkSync(lock); }

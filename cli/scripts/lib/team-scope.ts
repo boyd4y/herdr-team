@@ -6,6 +6,11 @@ import { isolatedAgentName, type Project, type RoleCard } from "./types.ts";
 
 export class TeamScopeError extends Error {}
 
+/** Human-readable identity stays distinct even when live names need a namespace. */
+export function roleAgentLabel(role: string, taskId?: string): string {
+  return taskId === undefined ? role : `${role}-${taskId}`;
+}
+
 export function projectKey(project: Pick<Project, "root">): string {
   let root = project.root;
   try { root = realpathSync(root); } catch { /* Validation handles absent roots. */ }
@@ -85,7 +90,7 @@ export function roleAssignment(project: Project, agent: AgentInfo): { role: Role
       : name?.startsWith(`${scopedAgentName(project, role.name)}-`) ? name.slice(scopedAgentName(project, role.name).length + 1) : undefined;
     const inferredTask = taskSuffix && /^([0-9]{4})(?:-|$)/.exec(taskSuffix)?.[1];
     if (inferredTask) return { role, taskId: inferredTask };
-    if (!role.worktree) {
+    if (!role.worktree || role.name === "lead") {
       if (name === role.name || name === scopedAgentName(project, role.name) ||
         (agent.tokens?.team_role === role.name && !agent.tokens.team_task_id)) return { role };
     } else {

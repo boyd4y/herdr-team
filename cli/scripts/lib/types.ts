@@ -42,7 +42,7 @@ export interface RoleCard {
   cwd?: string;
   args?: string[];
   env?: Record<string, string>;
-  /** Skip the resident conversation tab. Task execution always owns a worktree. */
+  /** Skip the resident conversation tab, except lead which is always resident. */
   worktree: boolean;
   /** prompt.md 的内容；文件不存在时为空串。 */
   body: string;

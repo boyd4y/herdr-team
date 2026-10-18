@@ -1,7 +1,7 @@
 import { taskAgent } from "../scripts/lib/task-agent.ts";
 import { refreshSidebar } from "../scripts/lib/sidebar.ts";
 import { rememberRoleSession, roleSessionPath, savedResumeArgs, scopeForTaskSession } from "../scripts/lib/sessions.ts";
-import { down } from "../scripts/lib/launch.ts";
+import { down, up } from "../scripts/lib/launch.ts";
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -71,6 +71,30 @@ test("new task execution ignores resident role slots and busy conversations", ()
   expect(f.herdr.state.agents.some((a) => a.name === "dev-0002")).toBe(true);
   expect(f.herdr.calls.filter((c) => c.startsWith("worktree create"))).toHaveLength(2);
   expect(f.herdr.calls.some((c) => c.startsWith("agent prompt conversation"))).toBe(false);
+}));
+
+test("lead always starts one resident session and queues its tasks without creating task agents", () => fixture((f) => {
+  writeRole(f.root, "lead", roleMeta({ worktree: true }));
+  const started = up(f.load(), f.herdr);
+  expect(started.roles.find((role) => role.role === "lead")!.action).toBe("started");
+  up(f.load(), f.herdr);
+  expect(f.herdr.state.agents.filter((agent) => agent.name === "lead")).toHaveLength(1);
+  writeTask(f.root, "0001-a", taskMeta({ role: "lead", execution: "task" }));
+  writeTask(f.root, "0002-b", taskMeta({ role: "lead", execution: "task" }));
+  dispatch(f.load(), f.herdr);
+  const first = claimCurrent(f.root);
+  const lead = f.herdr.state.agents.find((agent) => agent.name === "lead")!;
+  lead.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "lead-native" };
+  refreshSidebar(f.load(), f.herdr);
+  const role = f.load().roles.find((role) => role.name === "lead")!;
+  expect(savedResumeArgs(f.load(), role)).toEqual(["resume", "lead-native"]);
+  expect(lead.tokens).toMatchObject({ team_session: "resident", team_task: "#0001" });
+  expect(pumpQueue(f.load(), f.herdr)).toMatchObject([{ id: "0002", state: "queued", reason: "Session is processing #0001" }]);
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery: first, summary: "Planning complete" });
+  pumpQueue(f.load(), f.herdr);
+  expect(f.task("0002").meta.delivery).toMatchObject({ state: "submitted", pane_id: lead.pane_id });
+  expect(f.herdr.state.agents.some((agent) => agent.name?.startsWith("lead-"))).toBe(false);
+  expect(f.herdr.calls.some((call) => call.startsWith("worktree create"))).toBe(false);
 }));
 
 test("two independent test sessions run concurrently; advancing an accepted branch requires new review", () => fixture((f) => {

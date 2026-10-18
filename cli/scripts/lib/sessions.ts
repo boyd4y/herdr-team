@@ -80,7 +80,7 @@ export function hasSessionArgs(role: RoleCard): boolean {
 }
 
 export function savedResumeArgs(project: Project, role: RoleCard, scope?: TaskSessionScope): string[] | undefined {
-  if ((!scope && role.worktree) || hasSessionArgs(role)) return;
+  if ((!scope && role.worktree && role.name !== "lead") || hasSessionArgs(role)) return;
   let saved: SavedSession;
   try { saved = JSON.parse(readFileSync(roleSessionPath(project, role, scope), "utf8")); }
   catch (error) {
@@ -99,7 +99,7 @@ export function forgetRoleSession(project: Project, role: RoleCard, scope?: Task
 
 /** Called only with a project-verified role/agent pair. Missing reports keep prior IDs. */
 export function rememberRoleSession(project: Project, role: RoleCard, agent: AgentInfo, scope?: TaskSessionScope): void {
-  if ((!scope && (role.worktree || agent.tokens?.team_task_id)) ||
+  if ((!scope && ((role.worktree && role.name !== "lead") || agent.tokens?.team_task_id)) ||
       (scope && agent.tokens?.team_task_id !== undefined && agent.tokens.team_task_id !== scope.taskId) ||
       !agent.agent_session || !resumeArgs(role.kind, agent.agent_session)) return;
   const actualCwd = agent.foreground_cwd ?? agent.cwd;

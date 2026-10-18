@@ -6,6 +6,7 @@ import { projectKey } from "./team-scope.ts";
 import type { Project, RoleCard, TaskCard } from "./types.ts";
 
 export function taskScoped(task: TaskCard, role?: RoleCard): boolean {
+  if ((role?.name ?? task.role) === "lead") return false;
   return task.meta.execution === "task" || role?.worktree === true;
 }
 

@@ -113,6 +113,7 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     assert(applied.includes('key = "prefix+t"'));
     assert(applied.includes('command = "herdr-team console --observe"'));
     assert(applied.includes('"$team_label", "$team_harness"'));
+    assert(applied.includes('["$team_session", "$team_model", "$team_task"]'));
     assert(applied.includes('"$team_label"], ["$team_git_summary"]]'));
     assert(!applied.includes('"agent", "$team_harness"'));
     assert(!applied.includes(', "workspace"]'));

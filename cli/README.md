@@ -90,6 +90,9 @@ herdr-team dispatch
 ```
 
 `up` 启动或复用常驻 agent、更新归属和侧栏，并在项目 workspace 中创建或复用 **Team Console** tab，保持当前焦点。它不自动将已有 todo 卡入队；Console 会继续处理先前已入队的任务。
+侧栏常驻会话显示角色名（如 `test`），第二行标注 `resident`；任务会话显示 `test-0061`、
+`docs-0062` 等角色与任务号，第二行标注 `task`。任务会话的工作不会重复挂在同角色的常驻会话下。
+`lead` 始终复用项目内唯一的常驻会话，lead 的任务排队处理，不创建 `lead-任务号` 会话。
 项目身份与角色职责随 `dispatch` / `handoff` 的实际任务发送。
 
 常驻角色退出后，再次 `up` 默认用已保存的原生 session ID 恢复，输出 `resumed`。

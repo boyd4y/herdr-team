@@ -122,7 +122,7 @@ export function up(project: Project, herdr: Herdr, options: { fresh?: boolean } 
   let residentIndex = 0;
 
   for (const role of roles) {
-    if (role.worktree) {
+    if (role.worktree && role.name !== "lead") {
       // 隔离角色不预起 —— 来活了才在它自己的 worktree 里出现。
       outcomes.push({ role: role.name, tab: null, paneId: null, action: "deferred", reported: null });
       continue;

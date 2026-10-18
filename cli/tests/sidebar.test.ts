@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { loadProject } from "../scripts/lib/config.ts";
 import { dispatch, up } from "../scripts/lib/launch.ts";
 import { handoff } from "../scripts/lib/handoff.ts";
 import { refreshSessionSidebar, refreshSidebar } from "../scripts/lib/sidebar.ts";
+import { syncWorkspaceBadges } from "../scripts/lib/workspace-badges.ts";
 import { claimCurrent, fakeHerdr, makeProject, roleMeta, runningWorkspace, taskMeta, twoResidentRoles, writeRole, writeTask } from "./helpers.ts";
 
 describe("agent sidebar 的两行信息", () => {
@@ -14,7 +16,7 @@ describe("agent sidebar 的两行信息", () => {
       herdr.state.agents[0]!.tokens = { team_task: "#9999" };
       up(loadProject(root), herdr);
       expect(herdr.state.agents[0]).toMatchObject({ name: "dev", display_agent: "dev",
-        tokens: { team_harness: "codex", team_model: "sol-6.1" } });
+        tokens: { team_harness: "codex", team_model: "sol-6.1", team_session: "resident" } });
       expect(herdr.state.agents[0]!.tokens).not.toHaveProperty("team_task");
     } finally { cleanup(); }
   });
@@ -26,11 +28,12 @@ describe("agent sidebar 的两行信息", () => {
       writeTask(root, "0001-a", taskMeta({ handoff: ["docs"] }));
       const herdr = runningWorkspace();
       dispatch(loadProject(root), herdr, "0001");
-      expect(herdr.state.agents[0]!.tokens?.team_task).toBe("#0001");
-      expect(herdr.state.agents[1]!.tokens?.team_task).toBeUndefined();
+      const dev = herdr.state.agents.find((agent) => agent.name === "dev-0001")!;
+      expect(dev.tokens?.team_task).toBe("#0001");
+      expect(herdr.state.agents.slice(0, 2).every((agent) => !agent.tokens?.team_task)).toBe(true);
       handoff(loadProject(root), herdr, "0001", new Date(), { delivery: claimCurrent(root) });
-      expect(herdr.state.agents[0]!.tokens?.team_task).toBeUndefined();
-      expect(herdr.state.agents[1]!.tokens?.team_task).toBe("#0001");
+      expect(dev.tokens?.team_task).toBeUndefined();
+      expect(herdr.state.agents.find((agent) => agent.name === "docs-0001")!.tokens?.team_task).toBe("#0001");
       handoff(loadProject(root), herdr, "0001", new Date(), { delivery: claimCurrent(root) });
       expect(herdr.state.agents.every((agent) => agent.tokens?.team_task === undefined)).toBe(true);
     } finally { cleanup(); }
@@ -47,8 +50,34 @@ describe("agent sidebar 的两行信息", () => {
       expect(herdr.state.agents).toHaveLength(1);
       expect(loadProject(root).tasks[1]!.meta.delivery).toMatchObject({ state: "queued" });
       expect(herdr.state.agents.map((agent) => [agent.name, agent.display_agent, agent.tokens])).toMatchObject([
-        ["dev-0001", "dev", { team_harness: "codex", team_model: "sol-6.1", team_task: "#0001" }],
+        ["dev-0001", "dev-0001", { team_harness: "codex", team_model: "sol-6.1", team_task: "#0001", team_session: "task" }],
       ]);
+    } finally { cleanup(); }
+  });
+
+  test("resident and task labels stay distinct across badge refreshes and completed tasks", () => {
+    const { root, cleanup } = makeProject();
+    try {
+      twoResidentRoles(root);
+      writeTask(root, "0001-a", taskMeta({ execution: "task" }));
+      const herdr = runningWorkspace();
+      dispatch(loadProject(root), herdr, "0001");
+      const resident = herdr.state.agents.find((agent) => agent.name === "dev")!;
+      const task = herdr.state.agents.find((agent) => agent.name === "dev-0001")!;
+      const file = join(root, "badges.json");
+      syncWorkspaceBadges(herdr, file);
+      refreshSidebar(loadProject(root), herdr);
+      syncWorkspaceBadges(herdr, file);
+      expect(resident).toMatchObject({ display_agent: "dev", tokens: { team_session: "resident" } });
+      expect(resident.tokens).not.toHaveProperty("team_task");
+      expect(task).toMatchObject({ display_agent: "dev-0001", tokens: { team_session: "task", team_task_id: "0001", team_task: "#0001" } });
+      const label = Object.entries(task.tokens!).find(([key]) => /^team_workspace_c[0-7]$/.test(key))?.[1];
+      expect(label).toMatch(/ dev-0001$/);
+      writeTask(root, "0001-a", taskMeta({ execution: "task", status: "done" }));
+      refreshSidebar(loadProject(root), herdr);
+      syncWorkspaceBadges(herdr, file);
+      expect(task.display_agent).toBe("dev-0001");
+      expect(task.tokens).not.toHaveProperty("team_task");
     } finally { cleanup(); }
   });
 

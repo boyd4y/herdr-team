@@ -148,6 +148,7 @@ CLI 就是照它实现的 —— 卡片不合规时 CLI 会报出来，不要去
 交互式 Console 将任务状态、delivery flow 与 agent 可用性分开展示：`PENDING` 汇总非零投递状态，任务行用 FLOW 符号，角色表列出 active 任务和 queue 数，`NEEDS YOU` 收集警告；标签栏只读行会在任务计数后显示非零的 `N queued`。详细布局和窄屏行为见 [CLI Team Console 文档](../cli/README.md#team-console)。
 Console 只投递 delivery 已入队的任务，不自动处理未入队的历史 todo。
 执行槽按任务分配，角色只定义职责和模型。不同任务的 dev/test 可以并发；常驻对话 tab 不占执行槽。
+`lead` 是例外：每个项目仅一个常驻 lead，所有 lead 任务复用它并排队，不创建按任务的 lead 会话。
 每个任务一个 worktree/workspace，同一任务的角色会话共享它。test 接手后 dev 暂停写入，同一任务内部串行，不同任务并发。Herdr 接收会话必须 idle/done 才发送。
 派活消息内包含 claim 和 handoff 的完整命令，必须使用同一个 delivery ID 和绝对 --root。
 重复 claim 返回 duplicate，不能启动第二份工作；重复 handoff 不会再次推进。

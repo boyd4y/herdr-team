@@ -193,6 +193,8 @@ export function planRoles(plan: PlanName): RoleSpec[] {
 
 Roles define responsibilities, not exclusive execution slots. Different tasks run concurrently; resident conversations do not occupy task sessions. Default flow: dev ⇄ test → merge queue. Declare only real interface/data dependencies; prepare documentation independently or before commit acceptance.
 
+Lead is the exception: each project has one resident lead session. Lead assignments queue for that session; never start a task-specific lead agent.
+
 Dev and test normally reuse the task worktree. Commit all changes and hand off with --commit SHA --summary TEXT; stop writing while test owns the checkout. Test must configure isolated services with HERDR_TEAM_TEST_DATABASE, HERDR_TEAM_REDIS_PREFIX and HERDR_TEAM_PORT/PORT, then use --accept SHA --summary TEXT or --reject --summary TEXT. Rejection returns directly to the original developer. Final acceptance queues integration, not completion. New commits require new acceptance.
 
 Lead integrates accepted work through herdr-team merge next or merge <id> [--migrate COMMAND]. Only integration and local migration share a serial lock. Inspect failed/interrupted effects before merge retry <id>. Do not merge or run shared local migrations from dev/test sessions.`,
