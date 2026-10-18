@@ -4,19 +4,14 @@ We maintain Herdr Team (boyd4y/herdr-team), a public Herdr plugin, Bun/TypeScrip
 
 ## Conventions
 
-- Follow AGENTS.md: English CLI and generated instructions; Chinese or English documentation; preserve user-provided Unicode.
-- Keep the implementation simple, with no runtime npm dependencies or separate system daemon. Team Console owns automatic queue scheduling.
-- Treat .herdr task cards as the workflow source of truth. Use the CLI for task metadata and unique delivery claims/handoffs.
-- Respect project ownership, user workspaces, existing configuration, uncommitted changes, and native sessions.
+Follow AGENTS.md for language, responsibilities, implementation boundaries, and validation requirements. It is the maintained source of project rules.
 
-## Validation
+## Preferences
 
-- From cli/: bun test and bun run typecheck.
-- From the repository root: node --test tests/*.test.cjs.
-- Automated tests use temporary projects and offline Herdr executables; never mutate real user agents or global state.
+Keep collaboration lightweight and task scopes small. Prefer existing runtime APIs and established libraries. Keep delivery summaries concise, with relevant verification and any unresolved issues.
 
-## Delivery
+## Project references
 
-- Synchronize documentation and the bundled skill with public command behavior.
-- Save results, artifact paths or commits, validation, and remaining risks with handoff --summary or --summary-file.
-- Lead coordinates Git lifecycle and publishing within the user's authorization.
+- README.md and README.zh-CN.md: public usage and installation.
+- CONTRIBUTING.md and CONTRIBUTING.zh-CN.md: contribution and validation guidance.
+- cli/ARCHITECTURE.md: implementation modules and asset locations.

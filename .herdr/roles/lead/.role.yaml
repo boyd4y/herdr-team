@@ -1,4 +1,0 @@
-kind: claude
-model: ds-flash
-env:
-  ANTHROPIC_MODEL: deepseek-flash

@@ -1,3 +1,0 @@
-kind: grok
-model: grok-4.7
-args: ["--trust", "-m", grok-4.7]
