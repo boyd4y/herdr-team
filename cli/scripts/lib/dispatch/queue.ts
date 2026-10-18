@@ -62,6 +62,7 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
     if (problems.length) throw new TaskError(formatProblems(problems));
     for (const task of fresh.tasks) flushTaskHistory(fresh, task);
     fresh = loadProject(project.root);
+    let agents: ReturnType<Herdr["agentList"]> | undefined;
     for (const task of fresh.tasks) {
       const d = deliveryFor(task);
       if (!d || isTerminal(task.status)) continue;
@@ -69,7 +70,8 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
         save(fresh, task, { ...d, state: "uncertain", reason: "Delivery needs reconciliation; no automatic resend" });
       }
       if (d.state === "claimed" && d.pane_id) {
-        const agent = herdr.agentList().find((a) => a.pane_id === d.pane_id);
+        agents ??= herdr.agentList();
+        const agent = agents.find((a) => a.pane_id === d.pane_id);
         if (!agent || d.session_id && agent.agent_session?.value !== d.session_id) {
           save(fresh, task, { ...d, state: "uncertain", reason: "Claimed agent disappeared or changed session; verify before retrying" });
         }

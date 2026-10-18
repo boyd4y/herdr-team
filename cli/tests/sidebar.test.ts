@@ -93,9 +93,17 @@ describe("agent sidebar 的两行信息", () => {
       refreshSidebar(loadProject(root), herdr);
       expect(herdr.state.agents[0]!.tokens).toMatchObject({ team_harness: "codex", team_model: "default", team_task: "#0001, #0002" });
       expect(herdr.state.agents.find((agent) => agent.name === "outsider")!.tokens?.team_harness).toBeUndefined();
+      const reports = herdr.calls.filter(call => call.startsWith("report-metadata")).length;
+      let reads = 0;
+      const agentList = herdr.agentList;
+      herdr.agentList = () => { reads++; return agentList(); };
+      refreshSidebar(loadProject(root), herdr);
+      expect(reads).toBe(1);
+      expect(herdr.calls.filter(call => call.startsWith("report-metadata"))).toHaveLength(reports);
       writeRole(root, "dev", roleMeta({ model: "new-model" }));
       refreshSidebar(loadProject(root), herdr);
       expect(herdr.state.agents[0]!.tokens?.team_model).toBe("new-model");
+      expect(herdr.calls.filter(call => call.startsWith("report-metadata"))).toHaveLength(reports + 1);
     } finally { cleanup(); }
   });
 });

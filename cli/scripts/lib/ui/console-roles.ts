@@ -37,7 +37,7 @@ export function createRolesView(renderer: CliRenderer) {
       }
       row.cells[0]!.width = nameWidth; row.cells[0]!.fg = item.color;
       item.values.forEach((value, i) => { row!.cells[i]!.content = sanitize(value); });
-      view.add(row.view, index);
+      if (view.getChildren()[index] !== row.view) view.add(row.view, index);
     });
   };
   return { view, update };

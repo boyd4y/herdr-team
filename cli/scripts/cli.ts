@@ -498,7 +498,7 @@ async function cmdConsole(args: string[]): Promise<number> {
     herdr,
     intervalMs: seconds * 1000,
     showAll,
-    tick: observe ? undefined : () => { pumpQueue(loadValidated(root), herdr, new Date(), () => lease!.stopped()); },
+    tick: observe ? undefined : () => { pumpQueue(project, herdr, new Date(), () => lease!.stopped()); },
     shouldQuit: () => lease?.stopped() ?? false,
   }); } finally { lease?.close(); }
 }

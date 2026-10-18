@@ -101,6 +101,23 @@ test("a claimed agent that disappears requires reconciliation; retry uses a new 
   expect(() => retryDelivery(f.load(), "0001")).toThrow(/Only uncertain/);
 }));
 
+test("claimed deliveries reconcile against one agent snapshot per queue pass", () => fixture((f) => {
+  f.herdr.state.agents = [];
+  for (const id of ["0001", "0002"]) {
+    f.herdr.live(`dev-${id}`);
+    const pane = f.herdr.state.agents.at(-1)!.pane_id!;
+    const project = f.load(), task = project.tasks.find(task => task.id === id)!;
+    writeTaskMeta(project, task, { status: "doing", execution: "task",
+      delivery: { ...newDelivery("dev", "dispatch", new Date()), state: "claimed", pane_id: pane } });
+  }
+  let reads = 0;
+  const agentList = f.herdr.agentList;
+  f.herdr.agentList = () => { reads++; return agentList(); };
+  expect(pumpQueue(f.load(), f.herdr)).toEqual([]);
+  expect(reads).toBe(2); // One reconciliation snapshot, one fresh sidebar snapshot.
+  expect(f.load().tasks.every(task => deliveryFor(task)?.state === "claimed")).toBe(true);
+}));
+
 test.each(["cancelled", "reassign"])("%s invalidates an unsent assignment", (action) => fixture((f) => {
   enqueueTasks(f.load(), "0001");
   const old = deliveryFor(f.task())!.id;

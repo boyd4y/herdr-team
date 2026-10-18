@@ -34,6 +34,9 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
   let model: ConsoleModel;
   let updating = false;
   let stopped = false;
+  let focused = true;
+  let taskOptionsSignature = "";
+  let detailBody = "";
   const root = new BoxRenderable(renderer, { id: "team-console", width: "100%", height: "100%", flexDirection: "column",
     backgroundColor: c.background, paddingX: 1 });
   const heading = new TextRenderable(renderer, { id: "heading", height: 1, truncate: true });
@@ -58,11 +61,12 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     borderColor: c.border, focusedBorderColor: c.blue, titleColor: c.blue,
     flexGrow: 1, flexBasis: 0, minWidth: 0, scrollY: true, minHeight: 4 });
   const detailText = new TextRenderable(renderer, { id: "detail-text", width: "100%", wrapMode: "word", fg: c.text });
+  const bodyText = new TextRenderable(renderer, { id: "detail-body", width: "100%", wrapMode: "word", fg: c.text });
   const footer = new TextRenderable(renderer, { id: "footer", height: 1, truncate: true, fg: c.muted });
   const sizeHint = new TextRenderable(renderer, { id: "size-hint", flexGrow: 1, width: "100%", wrapMode: "word", fg: c.muted,
     content: "Resize the terminal to at least 40 columns and 20 rows. Ctrl-C exits.", visible: false });
   taskPanel.add(tasks); taskPanel.add(empty); left.add(taskPanel); left.add(roles);
-  details.add(detailText);
+  details.add(detailText); details.add(bodyText);
   workspace.add(selectedTitle); workspace.add(flow.view); workspace.add(details);
   main.add(left); main.add(workspace); root.add(heading); root.add(pending); root.add(health); root.add(search); root.add(main); root.add(sizeHint); root.add(footer);
   renderer.root.add(root);
@@ -81,6 +85,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     state.selectedIndex = task ? tasks.getSelectedIndex() : -1;
     model.selectedIndex = state.selectedIndex;
     if (changed) details.scrollTo(0);
+    bodyText.visible = !!task?.body;
     if (!task) {
       selectedTitle.content = "No matching tasks.";
       detailText.content = project.tasks.length ? "No matching tasks." : "Your team is ready. Create a task with the herdr-team skill, or press s for a sample.";
@@ -110,8 +115,8 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
       ...(taskScoped(task, role) ? [`Branch: ${worktreeBranch(task)}`] : []),
       ...(commit ? [`Commit: ${commit.slice(0, 12)}`] : []),
       `Next: ${task.handoff.join(" → ") || "none"}`, `Dependencies: ${task.dependsOn.join(", ") || "none"}`,
-      "", task.body,
     ].join("\n"), true);
+    if (detailBody !== task.body) { detailBody = task.body; bodyText.content = `\n${sanitize(task.body, true)}`; }
     flow.update(task.id, taskFlow(task, project, model), renderer.width < 90);
   };
 
@@ -120,7 +125,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     const tooSmall = renderer.width < 40 || renderer.height < 20;
     main.visible = !tooSmall;
     sizeHint.visible = tooSmall;
-    flow.setActive(!tooSmall);
+    flow.setActive(focused && !tooSmall);
     const available = renderer.height - 3 - Number(health.visible) - Number(search.visible);
     const roleHeight = project.roles.length + 3;
     main.flexDirection = narrow ? "column" : "row";
@@ -162,9 +167,11 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     empty.content = project.tasks.length ? "No matching tasks.\n\nClear the search or press a to include completed tasks." : "No tasks yet.\n\nPress s to explore the sample team.\n\nUse the herdr-team skill to create your first task.";
     updating = true;
     try {
-      tasks.options = model.tasks.map((task) => ({ name: sanitize(`#${task.id} ${task.title}`),
+      const taskOptions = model.tasks.map((task) => ({ name: sanitize(`#${task.id} ${task.title}`),
         description: sanitize(`${task.priority} · ${task.status} · ${task.role}`), value: task.id }));
-      tasks.setSelectedIndex(model.selectedIndex);
+      const signature = JSON.stringify(taskOptions);
+      if (signature !== taskOptionsSignature) { tasks.options = taskOptions; taskOptionsSignature = signature; }
+      if (tasks.getSelectedIndex() !== model.selectedIndex) tasks.setSelectedIndex(model.selectedIndex);
     } finally { updating = false; }
     roleTable.update(model.roles);
     layout();
@@ -175,6 +182,8 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     if (model) showDetail();
   };
   const select = () => { if (!updating) showDetail(); };
+  const focus = () => { focused = true; layout(); };
+  const blur = () => { focused = false; flow.setActive(false); };
   const input = () => { state.query = search.value; refresh(false); };
   const keypress = (key: KeyEvent) => {
     const consume = () => { key.preventDefault(); key.stopPropagation(); };
@@ -220,6 +229,8 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
   search.on(InputRenderableEvents.INPUT, input);
   renderer.keyInput.on("keypress", keypress);
   renderer.on(CliRenderEvents.RESIZE, resize);
+  renderer.on(CliRenderEvents.FOCUS, focus);
+  renderer.on(CliRenderEvents.BLUR, blur);
   let timer: ReturnType<typeof setInterval> | undefined;
   const dispose = () => {
     if (stopped) return;
@@ -230,6 +241,8 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     search.off(InputRenderableEvents.INPUT, input);
     renderer.keyInput.off("keypress", keypress);
     renderer.off(CliRenderEvents.RESIZE, resize);
+    renderer.off(CliRenderEvents.FOCUS, focus);
+    renderer.off(CliRenderEvents.BLUR, blur);
     renderer.off(CliRenderEvents.DESTROY, dispose);
   };
   renderer.on(CliRenderEvents.DESTROY, dispose);

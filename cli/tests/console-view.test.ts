@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
-import { CliRenderEvents, getTimelineEngine, type TextRenderable } from "@opentui/core";
+import { CliRenderEvents, getTimelineEngine, type SelectRenderable, type TextRenderable } from "@opentui/core";
 import { deliveryState, newDelivery } from "../scripts/lib/dispatch/delivery.ts";
 import { projectKey } from "../scripts/lib/dispatch/team-scope.ts";
 import type { Project, RoleCard, TaskCard } from "../scripts/lib/shared/types.ts";
@@ -633,6 +633,12 @@ describe("OpenTUI Console", () => {
     try {
       await screen.renderOnce();
       expect(screen.renderer.getSchedulerState().isRunning).toBe(true);
+      screen.renderer.emit(CliRenderEvents.BLUR); await screen.flush();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
+      screen.resize(130, 38); app.refresh(); await screen.flush();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
+      screen.renderer.emit(CliRenderEvents.FOCUS); await screen.renderOnce();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(true);
       screen.resize(34, 12); await screen.flush();
       expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
       screen.resize(120, 36); await screen.renderOnce();
@@ -644,6 +650,43 @@ describe("OpenTUI Console", () => {
       expect(app.model).toBe(before);
       expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
     } finally { await screen.dispose(); }
+  });
+
+  test("unchanged polls reuse task options and body; steady running and delivery animations finish", async () => {
+    const screen = await createTestRenderer({ width: 120, height: 36 });
+    const frame = sampleConsole(freshState({ showAll: true }));
+    const h = fakeHerdr();
+    h.state.agents = [{ name: "dev-0083", agent_status: "working", tokens: { team_project: projectKey(frame.project) } }];
+    const app = mountConsole(screen.renderer, { initial: frame.project, load: () => frame.project, herdr: h,
+      intervalMs: 0, showAll: true });
+    try {
+      await screen.renderOnce();
+      const tasks = screen.renderer.root.findDescendantById("tasks") as SelectRenderable;
+      const body = screen.renderer.root.findDescendantById("detail-body") as TextRenderable;
+      const options = tasks.options, content = body.content;
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(true);
+      getTimelineEngine(screen.renderer).update(3000); await screen.flush();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
+      app.refresh(); await screen.flush();
+      expect(tasks.options).toBe(options);
+      expect(body.content).toBe(content);
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
+      const selected = frame.project.tasks[0]!;
+      selected.body = "Updated task body";
+      app.refresh(); await screen.renderOnce();
+      expect(body.plainText).toContain("Updated task body");
+      const delivery = selected.meta.delivery as Record<string, unknown>;
+      delivery.state = "submitted";
+      selected.meta.review = { commit: "a".repeat(40), developer: "test", reviewer: "dev" };
+      app.refresh(); await screen.renderOnce();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(true);
+      getTimelineEngine(screen.renderer).update(3000); await screen.flush();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
+      selected.title = "Changed title";
+      app.refresh(); await screen.renderOnce();
+      expect(tasks.options).not.toBe(options);
+      expect(tasks.options[0]?.name).toContain("Changed title");
+    } finally { app.dispose(); await screen.dispose(); }
   });
 
   test("empty projects can preview samples without scheduling, then recover the real project even on a failed reload", async () => {

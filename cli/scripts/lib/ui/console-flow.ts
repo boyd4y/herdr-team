@@ -43,6 +43,7 @@ export function createFlowView(renderer: CliRenderer) {
   view.viewport.on("resize", scheduleReveal);
   let signature = "";
   const timelines: Timeline[] = [];
+  // Finite state-entry effects release OpenTUI's live loop once the transition settles.
   const animate = (target: object, properties: AnimationOptions, options: TimelineOptions = {}) => {
     const timeline = createTimeline({ duration: properties.duration, ...options, autoplay: false }, renderer);
     timeline.add(target, properties);
@@ -92,7 +93,7 @@ export function createFlowView(renderer: CliRenderer) {
               const glyph = vertical || cell === (backwards ? 0 : length - 1) ? head : intensity > 0.75 ? "●" : intensity > 0.3 ? "•" : "─";
               return fg(mix(base, light, intensity))(glyph);
             }));
-          } }, { loop: inFlight, onComplete: () => {
+          } }, { onComplete: () => {
             arrow.content = vertical ? "↓" : "──────▶";
             arrow.fg = index <= flow.current ? consoleColors.green : consoleColors.border;
           } });
@@ -122,7 +123,7 @@ export function createFlowView(renderer: CliRenderer) {
       if (index === flow.current && pulseNode) {
         const pulse = { amount: 0 };
         animate(pulse, { amount: 0.3, duration: 1400, ease: "inOutSine", alternate: true, loop: 1,
-          onUpdate: () => glow(pulse.amount) }, { duration: 2800, loop: true });
+          onUpdate: () => glow(pulse.amount) }, { duration: 2800 });
       } else if (node.state === "done" && priorNode && priorNode.state !== "done") {
         const pulse = { amount: 0.5 };
         glow(pulse.amount);
