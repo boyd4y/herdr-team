@@ -4,7 +4,6 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createHash, randomUUID } = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
 const { spawnSync } = require('node:child_process');
 
@@ -33,39 +32,6 @@ function stateDirectory(env = process.env, home = os.homedir()) {
     env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'herdr', 'plugins', 'herdr-team'));
 }
 
-function hash(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
-
-function atomicWrite(file, text) {
-  if (stat(file)?.isFile() && fs.readFileSync(file, 'utf8') === text) return;
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temporary, text, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(temporary, file);
-  } finally { fs.rmSync(temporary, { force: true }); }
-}
-
-function readState(file) {
-  if (!stat(file)) return [];
-  const records = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (!Array.isArray(records) || records.some((r) => !r || typeof r.dir !== 'string' ||
-    !path.isAbsolute(r.dir) || path.basename(r.dir) !== NAME ||
-    !(r.hash === null || /^[a-f0-9]{64}$/.test(r.hash)) ||
-    !Number.isInteger(r.dev) || !Number.isInteger(r.ino)) ||
-    new Set(records.map((r) => r.dir)).size !== records.length) {
-    throw new Error(`${file}: invalid skill ownership records; refusing changes`);
-  }
-  return records;
-}
-
-function owned(record) {
-  const directory = stat(record.dir);
-  if (!directory?.isDirectory() || directory.dev !== record.dev || directory.ino !== record.ino) return false;
-  const file = path.join(record.dir, 'SKILL.md');
-  const info = stat(file);
-  // Symlinks and edited files have a new owner; never write through/remove them.
-  return !info || (info.isFile() && hash(fs.readFileSync(file)) === record.hash);
-}
-
 async function installSkill(uninstall = false, env = process.env) {
   const stateDir = stateDirectory(env);
   fs.mkdirSync(stateDir, { recursive: true });
@@ -82,9 +48,6 @@ async function installSkill(uninstall = false, env = process.env) {
   }
   try {
     fs.writeFileSync(fd, `${process.pid}\n`);
-    const file = path.join(stateDir, 'skill-paths.json');
-    let records = readState(file);
-    const save = () => atomicWrite(file, JSON.stringify(records, null, 2) + '\n');
     const source = path.resolve(__dirname, '..', 'skill');
     const agents = uninstall ? [] : installedAgents(env);
     if (!uninstall && !agents.length) throw new Error('No supported agent found on PATH (claude, codex, pi, grok)');
@@ -101,7 +64,6 @@ async function installSkill(uninstall = false, env = process.env) {
     if (result.error || result.status !== 0) throw new Error(
       `Skill ${uninstall ? 'removal' : 'installation'} failed: ${result.error?.message || `npx exited ${result.status}`}`,
     );
-    let installedPath;
     if (!uninstall) {
       let installed;
       try { installed = JSON.parse(result.stdout); } catch { throw new Error('skills returned invalid installation JSON'); }
@@ -109,28 +71,9 @@ async function installSkill(uninstall = false, env = process.env) {
       if (!skill || !Array.isArray(skill.agents) || !skill.agents.length || typeof skill.path !== 'string' ||
           !path.isAbsolute(skill.path) || !stat(path.join(skill.path, 'SKILL.md'))?.isFile() ||
           fs.readFileSync(path.join(skill.path, 'SKILL.md'), 'utf8') !== fs.readFileSync(path.join(source, 'SKILL.md'), 'utf8')) {
-        throw new Error('skills did not confirm a readable herdr-team installation; old skills retained');
+        throw new Error('skills did not confirm a readable herdr-team installation');
       }
-      installedPath = path.resolve(skill.path);
       console.log(`Skill installed: ${skill.path} (${skill.agents.join(', ')})`);
-    }
-    // One-time migration: only remove untouched copies left by the old installer,
-    // after the standard CLI has succeeded. It now owns any replaced agent links.
-    for (const record of [...records]) {
-      if (path.resolve(record.dir) === installedPath) {
-        records = records.filter((r) => r !== record); save(); continue;
-      }
-      const directory = stat(record.dir);
-      if (!directory || !directory.isDirectory() || directory.dev !== record.dev || directory.ino !== record.ino) {
-        records = records.filter((r) => r !== record); save(); continue;
-      }
-      if (!owned(record) || fs.readdirSync(record.dir).some((name) => name !== 'SKILL.md')) {
-        console.log(`Kept modified legacy skill: ${record.dir}`); continue;
-      }
-      fs.rmSync(path.join(record.dir, 'SKILL.md'), { force: true });
-      fs.rmdirSync(record.dir);
-      records = records.filter((r) => r !== record); save();
-      console.log(`Removed legacy skill copy: ${record.dir}`);
     }
   } finally { fs.closeSync(fd); fs.unlinkSync(lock); }
 }

@@ -8,7 +8,6 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { read, edit } = require('../bin/managed');
 const { locations } = require('../bin/paths');
-const { cleanupIcons, BASENAME } = require('../bin/cleanup-icons');
 const { existingPopup, POPUP, SIDEBAR } = require('../bin/configure');
 const { installNpxStub } = require('./skills-fixture.cjs');
 
@@ -59,7 +58,7 @@ if (args.join(' ') === 'config check') {
     assert.equal(result.status, 0, result.stdout + result.stderr);
     return result;
   }
-  return { dir, config, herdrConfig, env, put, run, ok, paths: locations(env, process.platform, dir) };
+  return { dir, config, herdrConfig, env, put, run, ok };
 }
 
 test('managed fences round-trip exact bytes and preserve outside edits', () => {
@@ -88,16 +87,10 @@ test('malformed or duplicated fences fail closed', () => {
   }
 });
 
-test('paths follow Herdr override, XDG and both macOS Ghostty locations', () => {
-  const linux = locations({ XDG_CONFIG_HOME: '/c', XDG_DATA_HOME: '/d', HERDR_CONFIG_PATH: '/custom.toml' }, 'linux', '/h');
-  assert.equal(linux.herdr, '/custom.toml');
-  assert.equal(linux.fonts, '/d/fonts');
-  assert.deepEqual(linux.terminals.map((t) => t.file), ['/c/ghostty/config', '/c/ghostty/config.ghostty', '/c/kitty/kitty.conf']);
-  const mac = locations({}, 'darwin', '/h');
-  assert.equal(mac.fonts, '/h/Library/Fonts');
-  assert.equal(mac.herdr, '/h/.config/herdr/config.toml');
-  assert.equal(mac.terminals.length, 5);
-  assert(mac.terminals.some((t) => t.file === '/h/Library/Application Support/com.mitchellh.ghostty/config.ghostty'));
+test('config paths follow Herdr override, XDG and the home directory', () => {
+  assert.deepEqual(locations({ XDG_CONFIG_HOME: '/c', HERDR_CONFIG_PATH: '/custom.toml' }, 'linux', '/h'), { herdr: '/custom.toml' });
+  assert.deepEqual(locations({ XDG_CONFIG_HOME: '/c' }, 'linux', '/h'), { herdr: '/c/herdr/config.toml' });
+  assert.deepEqual(locations({}, 'darwin', '/h'), { herdr: '/h/.config/herdr/config.toml' });
   assert.throws(() => locations({}, 'win32', '/h'), /Supported platforms/);
 });
 
@@ -165,59 +158,34 @@ test('configuration validation failure preserves the original and never reloads'
   assert(!fs.readFileSync(f.env.TEST_LOG, 'utf8').includes('reload-config'));
 });
 
-test('upgrade replaces the old sidebar and removes only managed terminal mappings', (t) => {
+test('upgrade replaces the old sidebar and preserves user configuration', (t) => {
   const f = fixture(t);
   const original = '# my config\n[ui]\nsidebar_width=30\n';
   f.put(f.herdrConfig, edit({ text: original, exists: true }, 'config',
     `${POPUP}\n\n[ui.sidebar.agents]\nrows=[["state_icon", "$harness_logo", "agent"]]\n\n[ui.sidebar.spaces]\nrows=[["workspace"], ["branch", "$team_git_files", "git_status"]]`).text);
-  const originals = new Map();
-  for (const { file } of f.paths.terminals) {
-    const text = '# user font settings\r\nfont-size = 14\r\n\r\n';
-    originals.set(file, text);
-    f.put(file, edit({ text, exists: true }, 'font', 'old plugin mapping').text);
-  }
-  // A user-modified font and other installations must survive the migration.
-  const modified = f.put(path.join(f.paths.fonts, BASENAME), 'modified font');
-  const unrelated = f.put(path.join(f.paths.fonts, 'HerdrAgentIconsMax-Regular.ttf'), 'other font');
   f.ok('configure.js');
   const config = fs.readFileSync(f.herdrConfig, 'utf8');
   assert(config.startsWith(original));
   assert(!config.includes('$harness_logo'));
   assert(config.includes('{ token = "$team_workspace_c1", fg = "#cba6f7", bold = true, dim = false }'));
   assert(config.includes(SIDEBAR));
-  for (const [file, text] of originals) assert.equal(fs.readFileSync(file, 'utf8'), text);
-  assert.equal(fs.readFileSync(modified, 'utf8'), 'modified font');
-  assert.equal(fs.readFileSync(unrelated, 'utf8'), 'other font');
   f.ok('configure.js');
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), config);
   f.ok('configure.js', ['--uninstall']);
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
 });
 
-test('legacy cleanup preserves terminal symlinks and preflights all fences', (t) => {
+test('configure and removal leave terminal settings and fonts untouched', (t) => {
   const f = fixture(t);
-  const terminal = f.paths.terminals[0].file;
-  const original = '# user settings';
-  const mapped = edit({ text: original, exists: true }, 'font', 'old mapping').text;
-  const target = f.put(path.join(f.dir, 'dotfiles', 'terminal'), mapped);
-  fs.mkdirSync(path.dirname(terminal), { recursive: true });
-  fs.symlinkSync(target, terminal);
-  const bad = f.put(f.paths.terminals.at(-1).file, '# >>> herdr-team:font\n');
-  assert.throws(() => cleanupIcons(f.paths), /fence/);
-  assert.equal(fs.readFileSync(target, 'utf8'), mapped);
-  fs.unlinkSync(bad);
-  // Never follow a font symlink to delete a user-owned file.
-  const fontTarget = f.put(path.join(f.dir, 'user-font'), 'user font');
-  const font = path.join(f.paths.fonts, BASENAME);
-  fs.mkdirSync(path.dirname(font), { recursive: true });
-  fs.symlinkSync(fontTarget, font);
-  cleanupIcons(f.paths);
-  cleanupIcons(f.paths);
-  assert(fs.lstatSync(terminal).isSymbolicLink());
-  assert.equal(fs.readFileSync(target, 'utf8'), original);
-  assert(fs.lstatSync(font).isSymbolicLink());
-  assert.equal(fs.readFileSync(fontTarget, 'utf8'), 'user font');
-  for (const { file } of f.paths.terminals.slice(1)) assert(!fs.existsSync(file));
+  const files = [
+    f.put(path.join(f.config, 'ghostty', 'config'), '# >>> herdr-team:font\n'),
+    f.put(path.join(f.config, 'kitty', 'kitty.conf'), Buffer.from([0xff])),
+    f.put(path.join(f.env.XDG_DATA_HOME, 'fonts', 'HerdrTeamAgentIconsMax-Regular.ttf'), 'user font'),
+  ];
+  const contents = files.map((file) => fs.readFileSync(file));
+  f.ok('configure.js');
+  f.ok('configure.js', ['--uninstall']);
+  files.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), contents[index]));
 });
 
 test('writes preserve dotfile symlinks and reject non-UTF8 config', (t) => {
@@ -244,7 +212,7 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   const f = fixture(t);
   const original = '# before setup\n[ui]\n';
   f.put(f.herdrConfig, original);
-  const terminal = f.paths.terminals[0].file;
+  const terminal = path.join(f.config, 'ghostty', 'config');
   f.put(terminal, '# ghostty');
   const standalone = path.join(f.dir, 'standalone');
   fs.cpSync(root, standalone, { recursive: true, filter: (file) => !['tests', 'node_modules'].includes(path.basename(file)) });
@@ -256,7 +224,6 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   };
   setup();
   assert(!fs.readFileSync(f.herdrConfig, 'utf8').includes('$harness_logo'));
-  assert(!fs.existsSync(path.join(f.paths.fonts, BASENAME)));
   assert.equal(fs.readFileSync(terminal, 'utf8'), '# ghostty');
   const skillFile = path.join(f.dir, '.agents/skills/herdr-team/SKILL.md');
   assert(fs.readFileSync(skillFile, 'utf8').includes('name: herdr-team'));
@@ -271,7 +238,6 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
-  assert(!fs.existsSync(path.join(f.paths.fonts, BASENAME)));
   assert(!fs.existsSync(skillFile));
   assert(!fs.existsSync(path.join(f.env.XDG_BIN_HOME, 'herdr-team')));
   assert(manifest.includes('[[startup]]'));

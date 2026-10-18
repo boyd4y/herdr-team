@@ -7,7 +7,6 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const managed = require('./managed');
 const { locations } = require('./paths');
-const { cleanupIcons } = require('./cleanup-icons');
 
 // Eight stable color slots; each token holds the compact badge + name label.
 const BADGE_COLORS = ['#89b4fa', '#cba6f7', '#94e2d5', '#fab387', '#f5c2e7', '#a6e3a1', '#74c7ec', '#f9e2af'];
@@ -73,7 +72,6 @@ function applyPlan(plan, reload = false) {
   if (current.text !== plan.before.text || current.exists !== plan.before.exists) {
     throw new Error('config.toml changed during validation; run the action again');
   }
-  cleanupIcons();
   managed.write(plan.file, plan.before, plan.after);
   console.log(`config: ${plan.file}${plan.reuse ? ' (reusing existing prefix+t popup)' : ''}`);
   if (reload) {

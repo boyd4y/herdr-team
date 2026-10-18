@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createHash } = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
 const { SKILLS_PACKAGE, installedAgents, stateDirectory } = require('../bin/install-skill');
 const { installNpxStub } = require('./skills-fixture.cjs');
@@ -15,16 +14,9 @@ function fixture(t) {
   const bin = path.join(dir,'bin');fs.mkdirSync(bin);installNpxStub(bin);
   const env={...process.env,HOME:dir,HERDR_PLUGIN_STATE_DIR:path.join(dir,'state'),PATH:bin,TEST_NPX_LOG:path.join(dir,'npx.jsonl')};
   const destination=path.join(dir,'.agents/skills/herdr-team');
-  const ledger=path.join(env.HERDR_PLUGIN_STATE_DIR,'skill-paths.json');
   function run(args=[],overrides={},plugin=root){return spawnSync(process.execPath,[path.join(plugin,'bin/install-skill.js'),...args],{env:{...env,...overrides},encoding:'utf8',timeout:20000});}
   function ok(args=[],overrides={},plugin=root){const r=run(args,overrides,plugin);assert.equal(r.status,0,r.stdout+r.stderr);return r;}
-  function legacy(){
-    const old=path.join(dir,'old-agent/skills/herdr-team');fs.mkdirSync(old,{recursive:true});
-    fs.writeFileSync(path.join(old,'SKILL.md'),'legacy');const info=fs.statSync(old);
-    fs.mkdirSync(env.HERDR_PLUGIN_STATE_DIR,{recursive:true});
-    fs.writeFileSync(ledger,JSON.stringify([{dir:old,hash:createHash('sha256').update('legacy').digest('hex'),dev:info.dev,ino:info.ino}]));return old;
-  }
-  return {dir,bin,env,destination,ledger,run,ok,legacy,calls:()=>fs.readFileSync(env.TEST_NPX_LOG,'utf8').trim().split('\n').map(JSON.parse)};
+  return {dir,bin,env,destination,run,ok,calls:()=>fs.readFileSync(env.TEST_NPX_LOG,'utf8').trim().split('\n').map(JSON.parse)};
 }
 test('npx installs the bundled local skill globally and reports its real destination',(t)=>{
  const f=fixture(t),r=f.ok();
@@ -40,29 +32,25 @@ test('only PATH-visible supported agents are selected, never the upstream projec
  fs.chmodSync(path.join(f.bin,'pi'),0o644);assert.deepEqual(installedAgents(f.env),['claude-code','codex','grok']);
  assert.notEqual(f.run([],{PATH:''}).status,0);
 });
-test('migration never deletes the newly installed canonical skill',(t)=>{
- const f=fixture(t);f.ok();const info=fs.statSync(f.destination),text=fs.readFileSync(path.join(f.destination,'SKILL.md'));
- fs.writeFileSync(f.ledger,JSON.stringify([{dir:f.destination,hash:createHash('sha256').update(text).digest('hex'),dev:info.dev,ino:info.ino}]));
- f.ok();assert(fs.existsSync(path.join(f.destination,'SKILL.md')));
-});
 test('uninstall delegates exactly herdr-team to the standard CLI',(t)=>{
  const f=fixture(t);f.ok();f.ok(['--uninstall']);
  assert.deepEqual(f.calls()[1],['--yes',SKILLS_PACKAGE,'remove','herdr-team','--global','--yes']);assert(!fs.existsSync(f.destination));
 });
-test('migration removes old copies only after npx succeeds',(t)=>{
- const f=fixture(t),old=f.legacy();assert.notEqual(f.run([],{TEST_NPX_FAIL:'1'}).status,0);assert(fs.existsSync(old));
- f.ok();assert(!fs.existsSync(old));assert.deepEqual(JSON.parse(fs.readFileSync(f.ledger,'utf8')),[]);assert(fs.existsSync(path.join(f.destination,'SKILL.md')));
+test('failed, invalid or unreadable installation results fail and release the lock',(t)=>{
+ const f=fixture(t);
+ for(const override of [{TEST_NPX_FAIL:'1'},{TEST_NPX_INVALID:'1'},{TEST_NPX_STATUS:'failed'},{TEST_NPX_UNREADABLE:'1'}]){
+   fs.rmSync(f.destination,{recursive:true,force:true});
+   assert.notEqual(f.run([],override).status,0);
+   assert(!fs.existsSync(path.join(f.env.HERDR_PLUGIN_STATE_DIR,'skill.lock')));
+ }
 });
-test('migration preserves user edits, additions and replacement symlinks',(t)=>{
- const f=fixture(t),old=f.legacy(),skill=path.join(old,'SKILL.md');fs.writeFileSync(skill,'user edit');
- f.ok();assert.equal(fs.readFileSync(skill,'utf8'),'user edit');fs.writeFileSync(skill,'legacy');fs.writeFileSync(path.join(old,'notes.md'),'user notes');
- f.ok();assert(fs.existsSync(path.join(old,'notes.md')));fs.rmSync(old,{recursive:true});fs.symlinkSync(f.destination,old);f.ok();assert(fs.lstatSync(old).isSymbolicLink());assert(fs.existsSync(path.join(f.destination,'SKILL.md')));
-});
-test('invalid, failed or unreadable success results retain legacy copies',(t)=>{
- const f=fixture(t),old=f.legacy();
- for(const override of [{TEST_NPX_INVALID:'1'},{TEST_NPX_STATUS:'failed'}]){assert.notEqual(f.run([],override).status,0);assert(fs.existsSync(old));}
- fs.rmSync(f.destination,{recursive:true});assert.notEqual(f.run([],{TEST_NPX_UNREADABLE:'1'}).status,0);assert(fs.existsSync(old));
- fs.writeFileSync(f.ledger,'invalid');assert.notEqual(f.run().status,0);assert(fs.existsSync(old));assert(!fs.existsSync(path.join(f.env.HERDR_PLUGIN_STATE_DIR,'skill.lock')));
+test('installation and removal ignore old ownership ledgers and unmanaged skill copies',(t)=>{
+ const f=fixture(t),ledger=path.join(f.env.HERDR_PLUGIN_STATE_DIR,'skill-paths.json');
+ const old=path.join(f.dir,'old-agent/skills/herdr-team/SKILL.md');
+ fs.mkdirSync(path.dirname(old),{recursive:true});fs.writeFileSync(old,'old skill');
+ fs.mkdirSync(f.env.HERDR_PLUGIN_STATE_DIR,{recursive:true});fs.writeFileSync(ledger,'invalid old ledger');
+ f.ok();f.ok(['--uninstall']);
+ assert.equal(fs.readFileSync(ledger,'utf8'),'invalid old ledger');assert.equal(fs.readFileSync(old,'utf8'),'old skill');
 });
 test('installed skill and relative references survive checkout move and removal',(t)=>{
  const f=fixture(t),checkout=path.join(f.dir,'checkout');fs.cpSync(root,checkout,{recursive:true,filter:file=>!['tests','node_modules','.git','.herdr'].includes(path.basename(file))});
