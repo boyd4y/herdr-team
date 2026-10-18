@@ -1,4 +1,5 @@
 import type { RoleSpec } from "./init.ts";
+import type { Workflow } from "./workflow.ts";
 
 export type PlanName = "cheap" | "balanced" | "strong";
 
@@ -140,6 +141,14 @@ const RESEARCHER_BODY = [
   "First claim the delivery ID from your assignment prompt. When done, use that same ID with `herdr-team handoff <id> --delivery ID --summary \"results; artifact paths; validation; risks and next steps\"`; use --summary-file F for long summaries. The summary is optional and appended by the CLI. Do not edit task cards yourself.",
 ].join("\n");
 
+const REVIEWER_BODY = [
+  "You are the PR reviewer, independent of development and testing.",
+  "Review the tested PR diff, acceptance criteria, test evidence, correctness, and maintainability. Do not change implementation or main.",
+  "Claim the assigned delivery, then use handoff --accept SHA --summary TEXT to approve the exact tested PR head, or --reject --summary TEXT to return defects to the original developer. Rejected work must pass testing again before PR review.",
+  "The CLI publishes the decision on the PR and applies the selected workflow's manual or automatic merge policy. Never bypass checks or force a merge. With a shared GitHub account, Team records its decision as a PR comment rather than claiming independent GitHub approval.",
+  "Your herdr-team commands are limited to claim, handoff, and read-only queries. Lead owns task/role configuration, dispatch, and cleanup. Do not create, merge, or delete branches yourself.",
+].join("\n\n");
+
 /**
  * 三个方案。**只有写代码和搞架构才上 `sol`**，其余用便宜档。
  *
@@ -171,8 +180,16 @@ export function isPlanName(value: string): value is PlanName {
 }
 
 /** 把方案展开成 `init` 要的角色定义。 */
-export function planRoles(plan: PlanName): RoleSpec[] {
-  return PLANS[plan].map((bp) => {
+export function planRoles(plan: PlanName, workflow?: Workflow): RoleSpec[] {
+  let blueprints = PLANS[plan];
+  if (workflow) {
+    const existing = PLANS[plan];
+    blueprints = [existing.find((role) => role.name === "lead")!, ...workflow.steps.map((step): Blueprint => {
+      const source = existing.find((role) => role.name === (step.kind === "test" ? "test" : "dev"))!;
+      return { ...source, name: step.role, ...(step.kind === "review" ? { model: plan === "cheap" ? "ds-flash" : "sol-6.1", body: REVIEWER_BODY } : {}) };
+    }), ...existing.filter((role) => role.name === "search" && !workflow.steps.some((step) => step.role === role.name))];
+  }
+  return blueprints.map((bp) => {
     const model = MODELS[bp.model];
     const args: string[] = "args" in model ? [...model.args] : [];
 
@@ -191,13 +208,15 @@ export function planRoles(plan: PlanName): RoleSpec[] {
 
 ## Task execution protocol
 
-Roles define responsibilities, not exclusive execution slots. Different tasks run concurrently; resident conversations do not occupy task sessions. Default flow: dev ⇄ test → merge queue. Declare only real interface/data dependencies; prepare documentation independently or before commit acceptance.
+${workflow ? `Selected workflow: ${workflow.name}. Steps: ${workflow.steps.map((step) => `${step.kind}=${step.role}`).join(" → ")}. Delivery: ${workflow.delivery}; merge policy: ${workflow.merge}. The task's workflow snapshot is authoritative; project defaults can change independently.` : "No project workflow is selected. Follow the task's explicit handoff chain; workflows are optional recommendations."}
+
+Roles define responsibilities, not exclusive execution slots. Different tasks run concurrently; resident conversations do not occupy task sessions. Declare only real interface/data dependencies; prepare documentation independently.
 
 Lead is the exception: each project has one resident lead session. Lead assignments queue for that session; never start a task-specific lead agent.
 
-Dev and test normally reuse the task worktree. Commit all changes and hand off with --commit SHA --summary TEXT; stop writing while test owns the checkout. Test must configure isolated services with HERDR_TEAM_TEST_DATABASE, HERDR_TEAM_REDIS_PREFIX and HERDR_TEAM_PORT/PORT, then use --accept SHA --summary TEXT or --reject --summary TEXT. Rejection returns directly to the original developer. Final acceptance queues integration, not completion. New commits require new acceptance.
+Dev and test reuse the task worktree. Submit with --commit SHA --summary TEXT and stop writes during testing. Test configures isolated services with HERDR_TEAM_TEST_DATABASE, HERDR_TEAM_REDIS_PREFIX and HERDR_TEAM_PORT/PORT, then uses --accept SHA --summary TEXT or --reject --summary TEXT. In a PR workflow, test acceptance publishes the PR and queues its independent reviewer; it never authorizes merge. PR review accepts the same tested SHA or rejects it back to dev and test. New commits invalidate previous test/review results.
 
-Lead integrates accepted work through herdr-team merge next or merge <id> [--migrate COMMAND]. Only integration and local migration share a serial lock. Inspect failed/interrupted effects before merge retry <id>. Do not merge or run shared local migrations from dev/test sessions.`,
+PR review approval follows the selected manual/auto merge policy under the integration lock. Legacy local integration remains available through lead's merge command. Inspect blocked/interrupted effects before merge retry <id>; no blind retries or shared local migrations from task sessions.`,
     };
     if (args.length > 0) spec.args = args;
     if ("env" in model) spec.env = { ...model.env };

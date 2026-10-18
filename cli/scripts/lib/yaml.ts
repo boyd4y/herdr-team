@@ -30,6 +30,7 @@ function literal(value: unknown): string {
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "object") return JSON.stringify(value);
   return scalar(String(value));
 }
 

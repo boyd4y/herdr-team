@@ -2,7 +2,22 @@
 
 `init` 分两半：**提议角色**需要判断，归你；**写文件**是机械的，归 CLI。
 
-## 第一步：逐个确认职责（你和用户）
+## 第一步：先选择工作流（你和用户）
+
+工作流在角色之前确定，模型在职责之后确定。先读项目约定，向用户提供选择：
+
+| 候选 | 步骤与合并策略 |
+| --- | --- |
+| `dev-test-review`（推荐） | dev/test 在同一任务 worktree 串行执行；test 通过后创建 PR，独立 review 批准后自动合并；拒绝回 dev 并重新测试 |
+| `dev-test` | 本地开发与验收；通过后由 lead 手动串行合入 |
+| `direct` | 一步交付 |
+| 自定义 | JSON 指定有序步骤的 kind/role、local/pull-request、manual/auto；角色名可以调整 |
+
+推荐不等于默认强制，不先建角色再反推流程。确认选项与手动/自动合并策略后，用
+`workflow set NAME` 或 `workflow set --file F` 保存，或在最终 `onboard` 命令同时传入。
+lead 始终只有一个常驻编排会话；独立 review 的职责由审查阶段决定，不是多开一个 lead。
+
+## 第二步：逐个确认职责与模型（你和用户）
 
 读 `README` / `AGENTS.md` / 目录结构，判断项目是什么、大概需要哪些工种。
 
@@ -29,13 +44,13 @@ test 独立验证并把缺陷反馈给 dev。明确各自不负责的工作，�
 也不要用「主力开发」这类描述 —— 那些是属性，不是身份。详见
 [herdr-format.md](herdr-format.md#名字即身份)。
 
-## 第二步：落盘（CLI）
+## 第三步：落盘（CLI）
 
 把确认过的分工逐个写进角色定义的 `body`，包含职责、边界、交付要求和交棒说明。
 保留所选预设的运行配置，用 `--roles-file F`（或 `--roles '<json>'`）交给 CLI：
 
 ```bash
-herdr-team init --roles-file roles.json
+herdr-team onboard --workflow dev-test-review --roles-file roles.json
 ```
 
 `roles.json` 是确认后的定义输入（形状见下），使用临时文件或用户指定的位置，不往项目中额外创建业务文件。
@@ -74,6 +89,9 @@ JSON 形状 —— 一个数组，每项一张角色卡：
 所有新投递任务都会按任务隔离，角色只定义职责、harness 和模型，任务 agent 名是 `<role>-<id>`。
 `worktree: true` 现用于跳过该角色的常驻对话 tab；它不再控制 dev/test 是否可以并发。
 同一任务 dev/test 共用 checkout，按开发、验收顺序串行推进，不同任务并发。
+PR 方案中 test 通过后才发布 PR；review 的通过/拒绝决定是否允许合并。默认自动合并，也可
+自定义 workflow.json 选择 manual。新任务保存完整流程，默认配置变化不移动正在执行的任务。
+可随时 `workflow set` 更改默认；未开始任务用 `workflow apply ID` 显式切换，再重新 dispatch。
 见 [herdr-format.md](herdr-format.md#隔离与常驻)。
 
 **你自己不拼元数据。** CLI 负责写 —— 保证字段顺序稳定、缩进正确、该加引号的加引号。

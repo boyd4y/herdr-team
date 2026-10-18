@@ -5,6 +5,11 @@
 
 **不要钉死一个方案。** 下面是候选，默认用「均衡」。
 
+先按 [team-setup.md](team-setup.md) 选择可调整的工作流，再确定所需角色，最后参考下面的模型方案。
+这些旧表的 dev/test/search 不是固定角色名单。选择 `dev-test-review` 时，CLI 会增加独立 review，
+省钱档用 ds-flash，均衡/全强档的代码审查候选用 sol-6.1；模型和职责仍需用户确认。
+自定义流程可以把职责映射到 builder/qa/auditor 等角色名；lead 始终是唯一常驻编排者。
+
 ## 三个方案
 
 | | `lead` | `dev` | `test` | `search` | 适合 |

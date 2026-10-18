@@ -8,6 +8,9 @@ import { mergeRows, mergeTask, retryMerge } from "./lib/integration.ts";
 import { handoff } from "./lib/handoff.ts";
 import { init, InitError, parseRoleSpecs, readRolesFile } from "./lib/init.ts";
 import { describePlan, isPlanName, PLAN_NAMES, planRoles } from "./lib/plans.ts";
+import { parseWorkflow, readWorkflow, taskWorkflow, workflowPreset, writeWorkflow, WORKFLOW_NAMES } from "./lib/workflow.ts";
+import { withTeamLock } from "./lib/runtime.ts";
+import { deliveryFor } from "./lib/delivery.ts";
 import { addRole, describeRole, removeRole, RoleError } from "./lib/role.ts";
 import { realHerdr, type Herdr } from "./lib/herdr.ts";
 import { refreshSessionSidebar, refreshSidebar } from "./lib/sidebar.ts";
@@ -17,7 +20,7 @@ import { acquireConsole } from "./lib/console.ts";
 import { claimTask, pumpQueue, queueRows, retryDelivery } from "./lib/queue.ts";
 import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/launch.ts";
 import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/status.ts";
-import { createTask, editTask, findTask, TaskError } from "./lib/task.ts";
+import { createTask, editTask, findTask, writeTaskMeta, TaskError } from "./lib/task.ts";
 import { formatProblems, validateProject } from "./lib/validate.ts";
 import {
   realTerminal,
@@ -49,7 +52,9 @@ Usage:
   herdr-team <command> [arguments] [options]
 
 Commands:
+  onboard              Choose a workflow before assigning roles and models
   init [--plan P]       Create team files (cheap / balanced / strong)
+  workflow             Show, select, or adjust the recommended workflow
   validate              Validate roles, tasks, and references
   add <title>           Create a task
   edit <id>             Edit a task
@@ -230,9 +235,9 @@ function cmdValidate(args: string[]): number {
 }
 
 function cmdAdd(args: string[]): number {
-  const parsed = parseArgs(args, ["root", "role", "handoff", "depends-on", "priority", "slug", "body", "body-file"]);
+  const parsed = parseArgs(args, ["root", "role", "handoff", "depends-on", "priority", "slug", "body", "body-file", "workflow"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team add <title> --role R [--handoff a,b] [--depends-on id,id] [--priority Pn]\n");
+    process.stdout.write("Usage: herdr-team add <title> --role R [--handoff a,b] [--workflow NAME|none] [--depends-on id,id] [--priority Pn]\nA matching project workflow supplies the default handoff chain and is saved with the task.\n");
     return 0;
   }
 
@@ -259,12 +264,13 @@ function cmdAdd(args: string[]): number {
     priority: parsed.values.get("priority") ?? "P2",
     body: readBody(parsed),
     slug: parsed.values.get("slug"),
+    ...(parsed.values.has("workflow") ? { workflow: parsed.values.get("workflow") === "none" ? null : workflowPreset(parsed.values.get("workflow")!) } : {}),
   });
 
   return out(
     parsed,
     created,
-    `✓ Created ${created.dir}\n  id=${created.id}  role=${role}  handoff=[${csv(parsed.values.get("handoff")).join(", ")}]\n\nAsk lead to run \`herdr-team dispatch ${created.id}\`.`,
+    `✓ Created ${created.dir}\n  id=${created.id}  role=${role}  handoff=[${findTask(loadProject(root), created.id).handoff.join(", ")}]\n\nAsk lead to run \`herdr-team dispatch ${created.id}\`.`,
   );
 }
 
@@ -318,12 +324,12 @@ function resolveInitRoot(explicit?: string): string {
 }
 
 function cmdInit(args: string[]): number {
-  const parsed = parseArgs(args, ["root", "roles", "roles-file", "plan"]);
+  const parsed = parseArgs(args, ["root", "roles", "roles-file", "plan", "workflow", "workflow-file"]);
   if (parsed.flags.has("help")) {
     process.stdout.write(
       `Usage: herdr-team init [--plan ${PLAN_NAMES.join("|")} | --roles-file F | --roles JSON] [--force] [--root DIR]\n\n` +
         PLAN_NAMES.map((p) => `  --plan ${p.padEnd(10)}${describePlan(p)}`).join("\n") +
-        "\n--force rewrites role metadata and preserves existing prompt.md; use role add <name> --force --body T to update responsibilities.\n",
+        "\nChoose --workflow dev-test-review|dev-test|direct or --workflow-file F before choosing roles/models.\nWorkflows are optional recommendations and can be changed later with workflow set.\n--force rewrites role metadata and preserves existing prompt.md; use role add <name> --force --body T to update responsibilities.\n",
     );
     return 0;
   }
@@ -331,6 +337,11 @@ function cmdInit(args: string[]): number {
   const inline = parsed.values.get("roles");
   const file = parsed.values.get("roles-file");
   const plan = parsed.values.get("plan");
+  if (parsed.values.has("workflow") && parsed.values.has("workflow-file")) throw new UsageError("Use --workflow or --workflow-file");
+  const root = resolveInitRoot(parsed.values.get("root"));
+  const project = loadProject(root);
+  const workflow = parsed.values.has("workflow") ? workflowPreset(parsed.values.get("workflow")!)
+    : parsed.values.has("workflow-file") ? parseWorkflow(JSON.parse(readFileSync(parsed.values.get("workflow-file")!, "utf8"))) : readWorkflow(project);
   const given = [inline, file, plan].filter((v) => v !== undefined);
   if (given.length > 1) {
     throw new UsageError("Use only one of --plan, --roles, and --roles-file");
@@ -341,15 +352,20 @@ function cmdInit(args: string[]): number {
     if (!isPlanName(plan)) {
       throw new UsageError(`Unknown plan "${plan}". Available: ${PLAN_NAMES.join(" / ")}`);
     }
-    specs = planRoles(plan);
+    specs = planRoles(plan, workflow);
   } else if (inline !== undefined) specs = parseRoleSpecs(inline);
   else if (file !== undefined) specs = parseRoleSpecs(readRolesFile(file));
 
-  const root = resolveInitRoot(parsed.values.get("root"));
-  const project = loadProject(root);
+  if (workflow && specs.length) {
+    const configured = new Set([...project.roles.map((role) => role.name), ...specs.map((role) => role.name)]);
+    for (const step of workflow.steps) if (!configured.has(step.role)) throw new UsageError(`Selected workflow requires role ${step.role}; confirm all workflow responsibilities before onboarding`);
+  }
+
   const result = init(project, specs, parsed.flags.has("force"));
+  if (workflow && (parsed.values.has("workflow") || parsed.values.has("workflow-file"))) writeWorkflow(project, workflow);
 
   const lines: string[] = [];
+  if (workflow) lines.push(`Workflow: ${workflow.name} (${workflow.steps.map((step) => step.role).join(" → ")}; ${workflow.delivery}; merge ${workflow.merge})`);
   if (result.created.length > 0) lines.push(`created: ${result.created.join(", ")}`);
   if (result.roleMetadataWritten.length > 0) lines.push(`Role metadata written: ${result.roleMetadataWritten.join(", ")}`);
   if (result.roleBodiesWritten.length > 0) lines.push(`Role bodies written: ${result.roleBodiesWritten.join(", ")}`);
@@ -369,6 +385,43 @@ function cmdInit(args: string[]): number {
   }
 
   return out(parsed, { root, ...result }, lines.join("\n"));
+}
+
+function cmdWorkflow(args: string[]): number {
+  const parsed = parseArgs(args, ["root", "file", "preset"]);
+  const sub = parsed.pos[0] ?? "show";
+  if (parsed.flags.has("help")) {
+    process.stdout.write("Usage: herdr-team workflow [list | show | set NAME | set --file F | apply ID] [--preset NAME | --file F] [--root DIR] [--json]\nChoose the workflow before roles and models. set changes defaults for future tasks; apply explicitly updates an unstarted todo task. Existing task snapshots and running deliveries stay unchanged. Custom JSON supports configurable role names and manual/auto PR merge.\n");
+    return 0;
+  }
+  if (sub === "list") return out(parsed, WORKFLOW_NAMES.map(workflowPreset), WORKFLOW_NAMES.map((name) => {
+    const item = workflowPreset(name);
+    return `${name}${name === "dev-test-review" ? " (recommended)" : ""}  ${item.steps.map((step) => step.role).join(" → ")}  ${item.delivery}  merge=${item.merge}`;
+  }).join("\n"));
+  const project = loadProject(sub === "set" ? resolveInitRoot(parsed.values.get("root")) : resolveRoot(parsed.values.get("root")));
+  if (sub === "show") {
+    const value = readWorkflow(project);
+    return out(parsed, value ?? null, value ? `${value.name}: ${value.steps.map((step) => step.role).join(" → ")} (${value.delivery}; merge=${value.merge})` : "No project workflow selected. Run workflow list, then workflow set NAME before configuring roles.");
+  }
+  if (!["set", "apply"].includes(sub)) throw new UsageError("Use workflow list, show, set NAME, or apply ID");
+  if (parsed.values.has("file") && (parsed.values.has("preset") || sub === "set" && parsed.pos[1])) throw new UsageError("Use a preset or --file, not both");
+  const selected = parsed.values.has("file") ? parseWorkflow(JSON.parse(readFileSync(parsed.values.get("file")!, "utf8")))
+    : (sub === "set" ? parsed.pos[1] : parsed.values.get("preset")) ? workflowPreset((sub === "set" ? parsed.pos[1] : parsed.values.get("preset"))!) : readWorkflow(project);
+  if (!selected) throw new UsageError("Select a workflow preset or --file first");
+  if (sub === "set") {
+    withTeamLock(project, "queue", () => writeWorkflow(project, selected));
+    return out(parsed, selected, `Selected ${selected.name}. Confirm its roles/models next. Existing tasks are unchanged.`);
+  }
+  const id = parsed.pos[1];
+  if (!id) throw new UsageError("A task ID is required: workflow apply ID");
+  withTeamLock(project, "queue", () => {
+    const fresh = loadProject(project.root), task = findTask(fresh, id), delivery = deliveryFor(task);
+    if (task.status !== "todo" || delivery && delivery.state !== "queued") throw new TaskError("Only unstarted todo tasks can change workflow; reconcile active work before reassigning it");
+    for (const step of selected.steps) if (!fresh.roles.some((role) => role.name === step.role)) throw new TaskError(`Configure role ${step.role} before applying this workflow`);
+    writeTaskMeta(fresh, task, { workflow: selected, role: selected.steps[0]!.role, handoff: selected.steps.slice(1).map((step) => step.role),
+      delivery: null, review: null, test_result: null, acceptance: null, pr_decision: null, integration: null });
+  });
+  return out(parsed, { id, workflow: selected }, `Applied ${selected.name} to #${id}; dispatch explicitly when ready.`);
 }
 
 function cmdSidebar(args: string[]): number {
@@ -551,7 +604,7 @@ async function cmdConsole(args: string[]): Promise<number> {
 function cmdHandoff(args: string[]): number {
   const parsed = parseArgs(args, ["root", "summary", "summary-file", "delivery", "commit", "accept"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team handoff <id> [--delivery ID] [--summary TEXT | --summary-file FILE] [--commit SHA | --accept SHA | --reject] [--root DIR] [--json]\n--commit submits a pinned review in the task worktree; --accept records that exact version; --reject returns defects to its original developer. Final acceptance enters the merge queue.\nSave the handoff and queue the next owner. Queue-managed tasks require their claimed delivery ID; repeated IDs do not advance twice.\n");
+    process.stdout.write("Usage: herdr-team handoff <id> [--delivery ID] [--summary TEXT | --summary-file FILE] [--commit SHA | --accept SHA | --reject] [--root DIR] [--json]\n--commit submits a pinned version for local testing. In a PR workflow, test --accept publishes its PR and queues independent review; review --accept follows the saved manual/auto merge policy. --reject returns defects to the original developer and repeats required testing/review. Legacy local acceptance enters the merge queue.\nQueue-managed tasks require their claimed delivery ID; repeated IDs do not advance twice.\n");
     return 0;
   }
   const id = parsed.pos[0];
@@ -576,7 +629,7 @@ function cmdHandoff(args: string[]): number {
 function cmdMerge(args: string[]): number {
   const parsed = parseArgs(args, ["root", "migrate"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team merge [list | next | <id> | retry <id>] [--migrate COMMAND] [--root DIR] [--json]\nMerge accepted commits and run optional local migrations under one integration lock. Console never merges automatically. Inspect blocked/interrupted operations before retrying.\n");
+    process.stdout.write("Usage: herdr-team merge [list | next | <id> | retry <id>] [--migrate COMMAND] [--root DIR] [--json]\nMerge approved PRs or accepted local commits under one integration lock. PR workflows require both test results and PR review at the exact head SHA; review approval can trigger automatic merge when selected. Console never bypasses approval. Inspect blocked/interrupted operations before retrying.\n");
     return 0;
   }
   const project = loadValidated(resolveRoot(parsed.values.get("root")));
@@ -875,8 +928,16 @@ async function main(argv: string[]): Promise<number> {
   }
 
   switch (command) {
+    case "onboard":
+      if (!rest.length) {
+        process.stdout.write("Choose a workflow first, then roles and models.\nRecommended: herdr-team onboard --workflow dev-test-review --plan balanced\nAlternatives: herdr-team workflow list\nCustom roles: onboard --workflow-file F --roles-file R\n");
+        return 0;
+      }
+      return cmdInit(rest);
     case "init":
       return cmdInit(rest);
+    case "workflow":
+      return cmdWorkflow(rest);
     case "validate":
       return cmdValidate(rest);
     case "add":

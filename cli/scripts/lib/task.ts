@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { readWorkflow, parseWorkflow, type Workflow } from "./workflow.ts";
 import {
   ID_RE,
   PRIORITIES,
@@ -112,6 +113,7 @@ export interface CreateOptions {
   priority: string;
   body: string;
   slug?: string;
+  workflow?: Workflow | null;
 }
 
 export interface CreatedTask {
@@ -126,8 +128,13 @@ export function createTask(project: Project, opts: CreateOptions): CreatedTask {
   if (title === "") throw new TaskError("title cannot be empty");
   if (title.length > 80) throw new TaskError(`title length ${title.length} exceeds 80`);
 
+  const selected = opts.workflow === null ? undefined : opts.workflow === undefined ? readWorkflow(project) : parseWorkflow(opts.workflow);
+  const chain = selected?.steps.map((step) => step.role);
+  const workflow = chain?.[0] === opts.role && (!opts.handoff.length || opts.handoff.join(",") === chain.slice(1).join(",")) ? selected : undefined;
+  if (opts.workflow && !workflow) throw new TaskError("Task owner/handoff does not match the selected workflow");
+  const handoff = workflow ? workflow.steps.slice(1).map((step) => step.role) : opts.handoff;
   assertRole(project, opts.role, "role");
-  for (const h of opts.handoff) assertRole(project, h, "handoff entry");
+  for (const h of handoff) assertRole(project, h, "handoff entry");
 
   if (!(PRIORITIES as readonly string[]).includes(opts.priority)) {
     throw new TaskError(`priority "${opts.priority}" must be one of ${PRIORITIES.join(" / ")}`);
@@ -160,7 +167,8 @@ export function createTask(project: Project, opts: CreateOptions): CreatedTask {
         status: "todo",
         execution: "task",
         role: opts.role,
-        handoff: opts.handoff,
+        handoff,
+        ...(workflow ? { workflow } : {}),
         depends_on: dependsOn,
       },
       TASK_FIELD_ORDER,
@@ -235,6 +243,8 @@ function editTaskLocked(project: Project, id: string, patch: EditOptions, force:
     meta["review"] = null;
     meta["acceptance"] = null;
     meta["integration"] = null;
+    meta["test_result"] = null;
+    meta["pr_decision"] = null;
   }
   if (Object.keys(meta).length > 0) writeTaskMeta(project, card, meta);
 

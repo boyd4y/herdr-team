@@ -37,7 +37,7 @@ session ID，没有记录时新建；恢复失败先读错误，不盲目重派�
 
 ## 命令归属
 
-默认只有 `lead` 有权运行编排命令：`init`、`add`、`edit`、`up`、`dispatch`、`clean`、`down`、`role add`、`role rm`；也可运行 `claim`、`handoff` 和只读查询；队列重试 `queue retry`、手动投递 `queue drain` 同样归 lead。Git 生命周期（建 `feat/*` 分支、合并、删分支）同样只归 `lead`。这些是提示词约定，CLI 不做角色权限拦截。
+默认只有 `lead` 有权运行编排命令：`onboard`、`workflow set/apply`、`init`、`add`、`edit`、`up`、`dispatch`、`clean`、`down`、`role add`、`role rm`；也可运行 `claim`、`handoff` 和只读查询；队列重试 `queue retry`、手动投递 `queue drain` 同样归 lead。Git 生命周期由 lead/CLI 管理；选定 PR 自动合并时，review 通过 handoff 批准，由 CLI 执行合并，不由角色直接运行 Git merge。这些是提示词约定，CLI 不做角色权限拦截。
 
 非 lead 角色：在 herdr-team 命令中，你只能跑 `claim <id> --delivery ID`、`handoff <id> --delivery ID` 和只读查询（`tasks`、`status`、`validate`、`role list`）。建卡、改卡、派活、起 worktree、起停 agent、增删角色、清理都交给 `lead`。
 
@@ -60,12 +60,16 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 
 字段缺什么就问什么，**不要编**。尤其 `role`：猜错了整张卡就派错人。
 
-**② 和用户逐个确认谁负责什么** —— 见 [team-setup.md](references/team-setup.md)。
-先读项目约定，以 `cheap` / `balanced` / `strong` 为起点（**拿不准用 balanced**），
+**② 先选工作流，再确认角色，最后选模型** —— 见 [team-setup.md](references/team-setup.md)。
+先读项目约定，向用户提供 `dev-test-review`（推荐：本地开发/测试 → PR 审查 → 批准后自动合并）、
+`dev-test`（本地验收、手动合入）、`direct` 或自定义流程。推荐不能代替选择；不要强制所有项目采用它。
+明确 PR 手动/自动合并策略后，再按所需职责确认角色名、边界和交付。最后以 `cheap` / `balanced` / `strong` 为模型起点（**拿不准用 balanced**），
 逐个列出角色在本项目里的职责、职责边界、交付与交棒方式，再列模型和是否隔离。
 需要确认的边界要问清，例如 lead 的编排范围、dev 是否同步文档、test 只验证还是也改代码。
-等用户确认整份分工后，把确认的职责写进每个角色的 `body`，用 `init --roles-file F` 落盘；
-只有用户连预设职责正文也原样接受时才直接 `init --plan <方案>`。
+等用户确认流程与整份分工后，把职责写进每个角色的 `body`，用 `onboard --workflow NAME --roles-file F` 落盘；
+自定义流程用 `--workflow-file W`。只有用户连预设职责正文也原样接受时才用 `onboard --workflow NAME --plan P`。
+随时可用 `workflow set NAME` 或 `--file F` 调整默认流程；旧任务保留创建时的流程副本。
+只有未开始的 todo 卡可 `workflow apply ID`，之后重新 dispatch。已投递任务先核对与收回，不自动迁移。
 
 **只有写代码和搞架构才上 `sol`**，其余用便宜档。预设不能替代项目职责的确认。
 
@@ -77,6 +81,8 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 
 | 命令 | 作用 |
 | --- | --- |
+| `onboard --workflow W --plan P` | 先选流程，再按流程确定角色和模型；也支持 `--workflow-file` / `--roles-file` |
+| `workflow list/show/set/apply` | 查询、调整可选工作流；set 影响新任务，apply 只改未开始任务 |
 | `init --plan P` | 建 `.herdr/` 骨架并写角色卡。方案：`cheap` / `balanced` / `strong` |
 | `validate` | 校验 `.herdr/`：角色卡、任务卡、引用完整性、依赖环 |
 | `add <title>` | 建一张任务卡（算 id、译 slug、校验引用、写卡） |
@@ -163,13 +169,15 @@ Herdr idle/done 只是终端可接收输入；claimed 任务必须明确 handoff
 
 ## 任务并发与验收
 
-最短流程 `dev ⇄ test → merge queue`。只为实际需要的接口/数据结构声明 `--depends-on`，不因计划顺序串联，
+以任务保存的 workflow 为准；角色卡旧示例和新的项目默认值都不能覆盖它。推荐流程 `dev → test → PR review` 可选择，也可换成本地验收或直接交付。只为实际需要的接口/数据结构声明 `--depends-on`，不因计划顺序串联，
 依赖只有 `done` 才满足。文档可以独立并行准备，功能验收后核实；不要占住唯一 docs/test 槽。
 开发者提交所有变更后使用 `handoff <id> --delivery ID --commit SHA --summary TEXT`，测试针对该 SHA。
 验收者使用 `--accept SHA --summary TEXT` 记录 commit 与验证结果，或 `--reject --summary TEXT` 直接退回原 dev。
-通过后进入 merge queue，不等于已合入。新增提交必须重新验收；不要在验收后追加提交再沿用旧结论。
+PR 流程中，test 通过只创建/更新 PR 并交给独立 review，不产生合并许可；review 批准后按任务的 manual/auto 策略合并。
+review 拒绝后回原开发者，再经过 test，再审同一 PR。新增提交必须重新测试与审查，不能沿用旧结论。
+同一 GitHub 账号的 review 结论通过 PR 评论记录为 Team 内部门禁，不冒充 GitHub 独立审批；不同账号使用正式 PR review。
 测试必须使用会话中的 HERDR_TEAM_TEST_DATABASE、HERDR_TEAM_REDIS_PREFIX、HERDR_TEAM_PORT/PORT 配置独立资源；
 CLI 只提供变量与端口检查，不代建服务或改 DATABASE_URL。隔离未配置好应报告该任务阻塞，其他任务继续。
-只有 lead 执行 `merge next` / `merge <id> [--migrate COMMAND]`，合入与迁移共用串行锁，和对话会话无关。
-Console 不自动合并。失败/中断需要检查产物和迁移效果，显式 `merge retry <id>`；不能盲目重试。
+手动合入由 lead 执行 `merge next` / `merge <id> [--migrate COMMAND]`；PR 自动方案由 review 的批准命令触发。
+合入与本地迁移共用串行锁，Console 不会绕过 review 或盲目重试。失败/中断先检查远端 PR、本地同步与迁移效果，显式 `merge retry <id>` 后再合并。
 旧的已发出 delivery 仍完成原会话；尚未发送的队列会在投递前自动切换为任务会话。

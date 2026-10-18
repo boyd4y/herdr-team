@@ -13,6 +13,9 @@ import { withTeamLock } from "./runtime.ts";
 import { refreshSidebar } from "./sidebar.ts";
 import { findTask, TaskError } from "./task.ts";
 import { TASK_BODY, isTerminal, isolatedAgentName, worktreeBranch, type Project, type TaskCard } from "./types.ts";
+import { assertPullRequest, prDecisionFor, pullRequestFor, publishTestedPullRequest, realGitHub, testResultFor, usesPullRequest, type GitHub } from "./pull-request.ts";
+import { stepRole, taskWorkflow } from "./workflow.ts";
+import { mergeTask } from "./integration.ts";
 
 export interface HandoffOptions {
   summary?: string;
@@ -20,6 +23,7 @@ export interface HandoffOptions {
   commit?: string;
   accept?: string;
   reject?: boolean;
+  github?: GitHub;
 }
 
 export interface HandoffResult {
@@ -41,6 +45,7 @@ export interface HandoffResult {
   cleanup?: CleanupResult;
   /** 给人看的一句话说明。 */
   note: string;
+  automaticMerge?: { state: "done" | "blocked"; reason?: string };
 }
 
 /**
@@ -65,7 +70,24 @@ export function handoff(
   options: HandoffOptions = {},
 ): HandoffResult {
   if (!herdr.envOk()) throw new TaskError("Run handoff inside a Herdr pane (HERDR_ENV=1).");
-  const result = withTeamLock(project, "queue", () => handoffLocked(loadProject(project.root), herdr, id, now, options));
+  // Remote PR operations serialize this task, without holding every other task's queue lock.
+  const result = withTeamLock(project, `handoff-${id}`, () => handoffLocked(loadProject(project.root), herdr, id, now, options));
+  const acceptedTask = findTask(loadProject(project.root), id);
+  if (!result.duplicate && result.queueState === "merge-queued" && usesPullRequest(acceptedTask) && taskWorkflow(acceptedTask)?.merge === "auto") {
+    try {
+      mergeTask(project, id, undefined, options.github);
+      result.status = "done"; result.queueState = "merged"; result.automaticMerge = { state: "done" };
+      result.note += " PR merged automatically at the approved commit.";
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      withTeamLock(project, "queue", () => {
+        const fresh = loadProject(project.root), task = findTask(fresh, id), item = integrationFor(task);
+        if (item?.state === "queued") commitTaskTransition(fresh, task, { integration: { ...item, state: "blocked", reason } }, `- Automatic PR merge blocked: ${reason}`);
+      });
+      result.queueState = "merge-blocked"; result.automaticMerge = { state: "blocked", reason };
+      result.note += ` Automatic merge blocked: ${reason}. Inspect before merge retry ${id}.`;
+    }
+  }
   if (!result.duplicate) pumpQueue(project, herdr, now);
   if (result.delivery && !result.duplicate) {
     const current = findTask(loadProject(project.root), id), d = deliveryFor(current);
@@ -82,9 +104,13 @@ function handoffLocked(
   project: Project, herdr: Herdr, id: string, now: Date,
   options: HandoffOptions,
 ): HandoffResult {
-  flushTaskHistory(project, findTask(project, id));
-  project = loadProject(project.root);
+  project = withTeamLock(project, "queue", () => {
+    const fresh = loadProject(project.root);
+    flushTaskHistory(fresh, findTask(fresh, id));
+    return loadProject(project.root);
+  });
   const card = findTask(project, id);
+  const originalMeta = JSON.stringify(card.meta);
 
   const currentDelivery = deliveryFor(card);
   const receipts = completedDeliveries(card);
@@ -113,8 +139,12 @@ function handoffLocked(
   const completed = currentDelivery ? [...receipts, currentDelivery.id] : receipts;
   const persist = (patch: Record<string, unknown>, line: string, to: string) => {
     const text = summary === undefined ? line : `${line}\n\n### Delivery ${stamp(now)} · ${card.role} → ${to}\n\n${summary}\n`;
-    commitTaskTransition(project, card, { ...patch, completed_deliveries: completed },
-      `${text}\n<!-- team-operation:handoff-${operation} -->`);
+    withTeamLock(project, "queue", () => {
+      const fresh = loadProject(project.root), current = findTask(fresh, id);
+      if (JSON.stringify(current.meta) !== originalMeta) throw new TaskError("Task changed during handoff; inspect its delivery and PR before retrying");
+      commitTaskTransition(fresh, current, { ...patch, completed_deliveries: completed },
+        `${text}\n<!-- team-operation:handoff-${operation} -->`);
+    });
   };
 
   const from = card.role;
@@ -123,12 +153,23 @@ function handoffLocked(
     throw new TaskError("Use only one of --commit, --accept, or --reject");
   }
   const review = reviewFor(card);
+  const prFlow = usesPullRequest(card), reviewingPR = prFlow && card.role === stepRole(card, "review");
+  const github = options.github ?? realGitHub();
+  const verifyPR = () => {
+    const pr = pullRequestFor(card), tested = testResultFor(card);
+    if (!pr || !tested || tested.role !== stepRole(card, "test") || !review || tested.commit !== review.commit || pr.commit !== review.commit) throw new TaskError("PR review requires a matching tested commit and pull request");
+    if (git(taskRepo(project, card), "rev-parse", `refs/heads/${worktreeBranch(card)}`) !== pr.commit) throw new TaskError("Branch advanced after testing; retest and review its current commit");
+    assertPullRequest(pr, github.get(pr), true);
+    return pr;
+  };
   let accepted = acceptanceFor(card);
   if (options.reject) {
     if (!review || card.role !== review.reviewer || !summary) throw new TaskError("Only the assigned reviewer can reject; include a defect summary");
     const queued = newDelivery(review.developer, "handoff", now);
-    persist({ role: review.developer, handoff: [review.reviewer, ...card.handoff], status: "doing",
-      delivery: queued, review: null, acceptance: null, integration: null },
+    const decision = reviewingPR ? { commit: review.commit, role: card.role, state: "changes_requested",
+      mode: github.decide(verifyPR(), "changes_requested", summary, operation) } : null;
+    persist({ role: review.developer, handoff: [...(reviewingPR ? [stepRole(card, "test")!] : []), review.reviewer, ...card.handoff], status: "doing",
+      delivery: queued, review: null, acceptance: null, integration: null, test_result: null, pr_decision: decision },
       `- Rejected ${review.commit}; returned to ${review.developer}`, review.developer);
     return { id, from, to: review.developer, status: "doing", previousStatus, prompted: false,
       ...summaryReceipt, delivery: queued.id, queueState: "queued", note: `${id} returned to ${review.developer} for fixes.${deliveryNote}` };
@@ -143,24 +184,43 @@ function handoffLocked(
       if (trees.length !== 1) throw new TaskError("Cannot identify the task review checkout");
       verifyCheckout(trees[0]!.path, commit);
     }
-    accepted = { commit, role: card.role };
+    if (prFlow && card.role === stepRole(card, "test")) {
+      const next = stepRole(card, "review");
+      if (!next || card.handoff[0] !== next) throw new TaskError("Testing must hand off to the selected PR reviewer");
+      const pr = publishTestedPullRequest(project, card, commit, summary, github);
+      const queued = newDelivery(next, "handoff", now);
+      persist({ role: next, handoff: card.handoff.slice(1), status: "review", delivery: queued,
+        test_result: { commit, role: card.role, summary }, pull_request: pr, acceptance: null, pr_decision: null, integration: null,
+        review: { ...review, reviewer: next } }, `- Tests passed at ${commit}; PR ready: ${pr.url}`, next);
+      return { id, from, to: next, status: "review", previousStatus, prompted: false, ...summaryReceipt,
+        delivery: queued.id, queueState: "queued", note: `${id} tested at ${commit}; PR ${pr.url} queued for ${next}.${deliveryNote}` };
+    }
+    if (prFlow && !reviewingPR) throw new TaskError("Only the selected test and PR review stages can accept a version");
+    if (reviewingPR) {
+      const pr = verifyPR();
+      const mode = github.decide(pr, "approved", summary, operation);
+      accepted = { commit, role: card.role };
+      // Keep the remote decision with the local merge gate; test success alone cannot enter it.
+      card.meta.pr_decision = { commit, role: card.role, state: "approved", mode };
+    } else accepted = { commit, role: card.role };
   } else if (review && card.role === review.reviewer && !accepted) {
     throw new TaskError("Review the assigned commit, then hand off with --accept SHA or --reject");
   }
-  let reviewPatch: Record<string, unknown> = options.accept ? { acceptance: accepted } : {};
+  let reviewPatch: Record<string, unknown> = options.accept ? { acceptance: accepted, ...(reviewingPR ? { pr_decision: prDecisionFor(card) } : {}) } : {};
   if (options.commit) {
     const next = card.handoff[0];
     if (!next || next === card.role) throw new TaskError("A commit handoff requires a different next reviewer");
     const commit = commitId(project, card, options.commit);
     const repo = taskRepo(project, card);
     if (git(repo, "rev-parse", `refs/heads/${worktreeBranch(card)}`) !== commit) throw new TaskError("Submit the current task branch tip for review");
-    reviewPatch = { execution: "task", review: { commit, developer: card.role, reviewer: next }, acceptance: null, integration: null };
-  } else if (card.meta.execution === "task" && card.handoff[0] === "test" && !accepted) {
+    reviewPatch = { execution: "task", review: { commit, developer: card.role, reviewer: next }, acceptance: null, integration: null, test_result: null, pr_decision: null };
+  } else if (card.meta.execution === "task" && card.handoff[0] === (stepRole(card, "test") ?? "test") && !accepted) {
     throw new TaskError("Submit a committed version to test with --commit SHA");
   }
 
   if (card.handoff.length === 0 && accepted) {
-    persist({ status: "review", delivery: null, acceptance: accepted,
+    if (prFlow && !reviewingPR) throw new TaskError("PR review approval is required before merging");
+    persist({ ...reviewPatch, status: "review", delivery: null, acceptance: accepted,
       integration: { state: "queued", commit: accepted.commit, queued_at: now.toISOString() } },
       `- Accepted ${accepted.commit}; queued for serial integration`, "merge queue");
     return { id, from, to: null, status: "review", previousStatus, prompted: false,
@@ -168,6 +228,7 @@ function handoffLocked(
   }
 
   if (card.handoff.length === 0) {
+    if (prFlow) throw new TaskError("Complete testing and PR review before finishing this workflow");
     // 最后一个负责人干完了 —— 没有下一步，整个任务收尾。
     const status = "done";
     persist({ ...reviewPatch, status, delivery: null }, `- ${stamp(now)}  done  (${previousStatus} → ${status})`, "done");

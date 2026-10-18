@@ -5,6 +5,8 @@ import { withTeamLock } from "./runtime.ts";
 import { commitTaskTransition } from "./queue.ts";
 import { findTask, TaskError } from "./task.ts";
 import { worktreeBranch, type Project } from "./types.ts";
+import { assertPullRequest, prDecisionFor, pullRequestFor, realGitHub, testResultFor, usesPullRequest, type GitHub } from "./pull-request.ts";
+import { stepRole } from "./workflow.ts";
 
 export function mergeRows(project: Project) {
   return project.tasks.flatMap((task) => {
@@ -14,7 +16,7 @@ export function mergeRows(project: Project) {
 }
 
 /** Only integration and its optional local migration share this long-lived lock. */
-export function mergeTask(project: Project, id?: string, migrate?: string): { id: string; commit: string; state: string } {
+export function mergeTask(project: Project, id?: string, migrate?: string, github: GitHub = realGitHub()): { id: string; commit: string; state: string } {
   return withTeamLock(project, "integration", () => {
     let fresh = loadProject(project.root);
     if (fresh.tasks.some((t) => integrationFor(t)?.state === "running")) {
@@ -25,8 +27,15 @@ export function mergeTask(project: Project, id?: string, migrate?: string): { id
     const item = integrationFor(task), accepted = acceptanceFor(task);
     if (item?.state !== "queued" || !accepted || accepted.commit !== item.commit) throw new TaskError("Task is not queued with an accepted commit");
     const repo = taskRepo(fresh, task);
+    const prFlow = usesPullRequest(task), pr = pullRequestFor(task);
+    if (prFlow) {
+      const tested = testResultFor(task), decision = prDecisionFor(task);
+      if (!pr || !tested || tested.role !== stepRole(task, "test") || tested.commit !== item.commit || !decision || decision.state !== "approved" || decision.commit !== item.commit ||
+          accepted.role !== stepRole(task, "review") || decision.role !== accepted.role) throw new TaskError("PR merge requires matching test results and PR review approval");
+      assertPullRequest(pr, github.get(pr));
+    }
     const branch = git(repo, "branch", "--show-current");
-    if (!["main", "master"].includes(branch)) throw new TaskError("Run integration from the main or master checkout");
+    if (prFlow ? branch !== pr!.base : !["main", "master"].includes(branch)) throw new TaskError("Run integration from the PR base branch or main/master checkout");
     if (git(repo, "status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude).herdr")) {
       throw new TaskError("Main checkout has changes outside .herdr; commit or stash them before integrating");
     }
@@ -46,7 +55,14 @@ export function mergeTask(project: Project, id?: string, migrate?: string): { id
     }
     transition("running");
     try {
-      git(repo, "merge", "--no-ff", "--no-edit", item.commit);
+      if (prFlow) {
+        const merged = github.merge(pr!);
+        assertPullRequest(pr!, merged);
+        if (merged.state !== "MERGED" || !merged.mergeCommit) throw new TaskError("PR merge is not confirmed by GitHub");
+        git(repo, "fetch", "origin", `refs/heads/${pr!.base}:refs/remotes/origin/${pr!.base}`);
+        git(repo, "merge-base", "--is-ancestor", merged.mergeCommit, `refs/remotes/origin/${pr!.base}`);
+        git(repo, "merge", "--ff-only", `refs/remotes/origin/${pr!.base}`);
+      } else git(repo, "merge", "--no-ff", "--no-edit", item.commit);
       if (migrate !== undefined) {
         if (!migrate.trim()) throw new TaskError("Migration command cannot be empty");
         const run = spawnSync(process.env.SHELL || "/bin/sh", ["-c", migrate], {

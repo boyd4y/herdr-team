@@ -16,6 +16,8 @@ import {
 
 import { acceptanceFor, integrationFor, reviewFor } from "./execution.ts";
 import { deliveryFor } from "./delivery.ts";
+import { pullRequestFor, testResultFor, prDecisionFor } from "./pull-request.ts";
+import { readWorkflow, taskWorkflow } from "./workflow.ts";
 
 const TITLE_MAX = 80;
 
@@ -83,6 +85,7 @@ function validateTask(t: TaskCard, roles: Set<string>, ids: Set<string>, out: Pr
   try {
     const delivery = deliveryFor(t);
     reviewFor(t); acceptanceFor(t); integrationFor(t);
+    taskWorkflow(t); pullRequestFor(t); testResultFor(t); prDecisionFor(t);
     if (t.meta.execution !== undefined && t.meta.execution !== "task") at("1", "execution must be task when present");
     if (delivery && delivery.role !== t.role) at("1", "delivery role does not match task owner");
   } catch (error) { at("1", error instanceof Error ? error.message : String(error)); }
@@ -171,6 +174,8 @@ function findCycles(tasks: readonly DependencyTask[]): string[] {
 
 export function validateProject(project: Project): Problem[] {
   const out: Problem[] = [...project.problems];
+  try { readWorkflow(project); }
+  catch (error) { out.push({ file: "workflow.json", rule: "1", message: error instanceof Error ? error.message : String(error) }); }
 
   if (!project.hasIdentity) {
     out.push({ file: ".herdr", rule: "9", message: "identity.md is missing" });
