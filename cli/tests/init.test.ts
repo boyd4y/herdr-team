@@ -8,7 +8,6 @@ import { validateProject } from "../scripts/lib/validate.ts";
 import { makeBareProject } from "./helpers.ts";
 import { git } from "../scripts/lib/execution.ts";
 import { createTask } from "../scripts/lib/task.ts";
-import { readWorkflow, workflowPreset, writeWorkflow } from "../scripts/lib/workflow.ts";
 
 /** 一个只有 .herdr/identity.md 的空项目。 */
 function bareProject(): { root: string; cleanup: () => void } {
@@ -42,7 +41,7 @@ test("team configuration survives a Git clone while local tasks and runtime reco
   const { root, cleanup } = bareProject();
   try {
     init(loadProject(root), [{ name: "dev", kind: "codex", body: "Build the assigned change." }]);
-    writeWorkflow(loadProject(root), workflowPreset("direct"));
+    writeFileSync(join(root, ".herdr/workflow.md"), "Develop, then validate. Lead merges accepted work.\n");
     createTask(loadProject(root), { title: "Local task", role: "dev", handoff: [], priority: "P2", body: "Local execution record" });
     for (const dir of ["reports", "projects", "worktrees"]) {
       mkdirSync(join(root, ".herdr", dir), { recursive: true });
@@ -52,14 +51,14 @@ test("team configuration survives a Git clone while local tasks and runtime reco
     git(root, "init", "-b", "main");
     git(root, "add", ".herdr");
     expect(git(root, "ls-files", ".herdr").split("\n")).toEqual([
-      ".herdr/.gitignore", ".herdr/identity.md", ".herdr/roles/.gitkeep", ".herdr/roles/dev/.role.yaml", ".herdr/roles/dev/prompt.md", ".herdr/workflow.json",
+      ".herdr/.gitignore", ".herdr/identity.md", ".herdr/roles/.gitkeep", ".herdr/roles/dev/.role.yaml", ".herdr/roles/dev/prompt.md", ".herdr/workflow.md",
     ]);
     git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "Share team configuration");
     const clone = join(root, "..", "other-machine");
     git(root, "clone", "--no-hardlinks", root, clone);
     const shared = loadProject(clone);
     expect(shared.roles.map((role) => [role.name, role.kind, role.body])).toEqual(loadProject(root).roles.map((role) => [role.name, role.kind, role.body]));
-    expect(readWorkflow(shared)).toEqual(workflowPreset("direct"));
+    expect(readFileSync(join(clone, ".herdr/workflow.md"), "utf8")).toBe(readFileSync(join(root, ".herdr/workflow.md"), "utf8"));
     expect(shared.hasIdentity).toBe(true);
     expect(shared.tasks).toEqual([]);
     expect(shared.retiredIds).toEqual([]);

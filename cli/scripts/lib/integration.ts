@@ -6,7 +6,7 @@ import { commitTaskTransition } from "./queue.ts";
 import { findTask, TaskError } from "./task.ts";
 import { worktreeBranch, type Project } from "./types.ts";
 import { assertPullRequest, prDecisionFor, pullRequestFor, realGitHub, testResultFor, usesPullRequest, type GitHub } from "./pull-request.ts";
-import { stepRole, taskWorkflow } from "./workflow.ts";
+import { stepRole, taskWorkflow } from "./legacy-workflow.ts";
 
 export function mergeRows(project: Project) {
   return project.tasks.flatMap((task) => {
@@ -28,14 +28,18 @@ export function mergeTask(project: Project, id?: string, migrate?: string, githu
     if (item?.state !== "queued" || !accepted || accepted.commit !== item.commit) throw new TaskError("Task is not queued with an accepted commit");
     const repo = taskRepo(fresh, task);
     const prFlow = usesPullRequest(task), pr = pullRequestFor(task);
-    const finalReview = taskWorkflow(task)?.steps.filter((step) => ["test", "review"].includes(step.kind)).at(-1);
+    const workflow = taskWorkflow(task);
+    if (!workflow && (task.handoff.length || reviewFor(task)?.reviewer !== accepted.role || reviewFor(task)?.commit !== item.commit)) {
+      throw new TaskError("Merge requires final approval at the assigned commit with no remaining owners");
+    }
+    const finalReview = workflow?.steps.filter((step) => ["test", "review"].includes(step.kind)).at(-1);
     if (!prFlow && finalReview && (accepted.role !== finalReview.role || reviewFor(task)?.reviewer !== accepted.role || reviewFor(task)?.commit !== item.commit)) {
       throw new TaskError("Local merge requires approval from the final test/review stage");
     }
     if (prFlow) {
       const tested = testResultFor(task), decision = prDecisionFor(task);
-      if (!pr || !tested || tested.role !== stepRole(task, "test") || tested.commit !== item.commit || !decision || decision.state !== "approved" || decision.commit !== item.commit ||
-          accepted.role !== stepRole(task, "review") || decision.role !== accepted.role) throw new TaskError("PR merge requires matching test results and PR review approval");
+      if (!pr || !tested || (workflow ? tested.role !== stepRole(task, "test") : tested.role === accepted.role) || tested.commit !== item.commit || !decision || decision.state !== "approved" || decision.commit !== item.commit ||
+          accepted.role !== (stepRole(task, "review") ?? reviewFor(task)?.reviewer) || decision.role !== accepted.role) throw new TaskError("PR merge requires matching test results and PR review approval");
       assertPullRequest(pr, github.get(pr));
     }
     const branch = git(repo, "branch", "--show-current");

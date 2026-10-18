@@ -9,13 +9,13 @@ import { dispatch } from "../scripts/lib/launch.ts";
 import { testResultFor } from "../scripts/lib/pull-request.ts";
 import { createTask, writeTaskMeta } from "../scripts/lib/task.ts";
 import { taskAgent } from "../scripts/lib/task-agent.ts";
-import { parseWorkflow, writeWorkflow } from "../scripts/lib/workflow.ts";
+import { parseWorkflow } from "../scripts/lib/legacy-workflow.ts";
 import { claimCurrent, fakeHerdr, makeProject, roleMeta, writeRole } from "./helpers.ts";
 
 function setup() {
   const p = makeProject(), root = p.root;
-  writeWorkflow({ herdrDir: join(root, ".herdr") }, parseWorkflow({ name: "local-review", delivery: "local", merge: "manual",
-    steps: [{ kind: "develop", role: "builder" }, { kind: "test", role: "qa" }, { kind: "review", role: "auditor" }] }));
+  const workflow = parseWorkflow({ name: "local-review", delivery: "local", merge: "manual",
+    steps: [{ kind: "develop", role: "builder" }, { kind: "test", role: "qa" }, { kind: "review", role: "auditor" }] });
   for (const role of ["builder", "qa", "auditor"]) writeRole(root, role, roleMeta());
   git(root, "init", "-b", "main"); git(root, "config", "user.email", "test@example.invalid"); git(root, "config", "user.name", "Test");
   writeFileSync(join(root, ".gitignore"), ".herdr/\n"); writeFileSync(join(root, "file.txt"), "base\n");
@@ -30,7 +30,8 @@ function setup() {
   };
   h.worktreeList = (repo) => list(repo).map((entry) => ({ ...entry, path: tree }));
   const load = () => loadProject(root), task = () => load().tasks[0]!;
-  createTask(load(), { title: "Local reviewed change", role: "builder", handoff: [], priority: "P2", body: "Acceptance criteria" });
+  createTask(load(), { title: "Local reviewed change", role: "builder", handoff: ["qa", "auditor"], priority: "P2", body: "Acceptance criteria" });
+  writeTaskMeta(load(), task(), { workflow });
   let version = 0;
   const commit = () => {
     writeFileSync(join(tree, "file.txt"), `version ${++version}\n`); git(tree, "add", "."); git(tree, "commit", "-m", `Version ${version}`);
@@ -131,7 +132,7 @@ test("recovering a legacy local review still verifies the clean checkout and ses
 
 test("legacy recovery follows the saved task workflow even after project defaults change", () => fixture((f) => {
   const { sha, delivery } = f.legacy();
-  writeWorkflow(f.load(), parseWorkflow({ name: "changed-default", delivery: "local", merge: "manual", steps: [{ kind: "work", role: "builder" }] }));
+  writeFileSync(join(f.root, ".herdr/workflow.md"), "Use builder alone for future tasks.\n");
   expect(assignedReviewFor(f.task())?.reviewer).toBe("auditor");
   handoff(f.load(), f.h, "0001", new Date(), { delivery, accept: sha, summary: "Reviewed task snapshot" });
   expect(integrationFor(f.task())?.state).toBe("queued");

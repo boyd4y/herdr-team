@@ -1,5 +1,4 @@
 import type { RoleSpec } from "./init.ts";
-import type { Workflow } from "./workflow.ts";
 
 export type PlanName = "cheap" | "balanced" | "strong";
 
@@ -9,7 +8,7 @@ export const PLAN_NAMES: readonly PlanName[] = ["cheap", "balanced", "strong"];
  * 模型短名 → 怎么启动它。
  *
  * 这是**唯一**一处把显示短名和真实启动参数绑在一起的地方 —— 分散在各处就会漂移。
- * 参数都经实跑验证过；改之前先按 references/role-presets.md 的方法验一遍。
+ * 参数都经实跑验证过；改之前先按 references/models.md 的方法验一遍。
  */
 const MODELS = {
   "sol-6.1": { kind: "codex", args: ["-m", "gpt-6.1-sol"] },
@@ -40,7 +39,7 @@ const DISPATCHER_BODY = [
   "| --- | --- |",
   "| Talk with the user; coordinate the team through `herdr-team` | Write application code; modify application files; edit task cards directly (the CLI owns task state) |",
   "",
-  "Only `lead` runs orchestration commands: `workflow set/apply`, `init`, `add`, `edit`, `up`, `dispatch`, `clean`, `down`, `role add`, and `role rm`. It may also run `handoff` and read-only queries. Git lifecycle belongs to lead and the CLI; a selected PR workflow lets the reviewer's handoff approval trigger CLI-managed merge. These are prompt conventions; the CLI does not enforce role permissions.",
+  "Only `lead` runs orchestration commands: `init`, `add`, `edit`, `up`, `dispatch`, `clean`, `down`, `role add`, and `role rm`. It may also run `handoff` and read-only queries. Git lifecycle belongs to lead and the CLI; the skill requests PR creation and invokes merge after approval under the agreed policy. These are prompt conventions; the CLI does not enforce role permissions.",
   "",
   "## Overall control",
   "",
@@ -65,9 +64,9 @@ const DISPATCHER_BODY = [
   "",
   "## Team",
   "",
-  "Use the herdr-team skill for onboarding: it confirms the project context, workflow, responsibilities, and models. Save the confirmed definitions with init --workflow NAME --roles-file F, or --plan P when the full preset is accepted. There is no onboard CLI command.",
+  "Use the herdr-team skill for onboarding: it confirms the project context, workflow, responsibilities, and models. Save the confirmed definitions with init --roles-file F, or --plan P when the full preset is accepted. There is no onboard CLI command.",
   "",
-  "Existing roles are preserved by default. Read role list --json and workflow show, review identity.md, and validate the saved configuration and selected tools/auth before starting the team. Use --help to list all available commands. Creating configuration does not start agents or dispatch tasks.",
+  "Existing roles are preserved by default. Read role list --json, .herdr/workflow.md, and identity.md, and validate the saved configuration and selected tools/auth before starting the team. Use --help to list all available commands. Creating configuration does not start agents or dispatch tasks.",
   "",
   "- List roles: `herdr-team role list`",
   "- Add a helper, including temporary roles:",
@@ -145,18 +144,10 @@ const RESEARCHER_BODY = [
   "First claim the delivery ID from your assignment prompt. When done, use that same ID with `herdr-team handoff <id> --delivery ID --summary \"results; artifact paths; validation; risks and next steps\"`; use --summary-file F for long summaries. The summary is optional and appended by the CLI. Do not edit task cards yourself.",
 ].join("\n");
 
-const REVIEWER_BODY = [
-  "You are the PR reviewer, independent of development and testing.",
-  "Review the tested PR diff, acceptance criteria, test evidence, correctness, and maintainability. Do not change implementation or main.",
-  "Claim the assigned delivery, then use handoff --accept SHA --summary TEXT to approve the exact tested PR head, or --reject --summary TEXT to return defects to the original developer. Rejected work must pass testing again before PR review.",
-  "The CLI publishes the decision on the PR and applies the selected workflow's manual or automatic merge policy. Never bypass checks or force a merge. With a shared GitHub account, Team records its decision as a PR comment rather than claiming independent GitHub approval.",
-  "Your herdr-team commands are limited to claim, handoff, and read-only queries. Lead owns task/role configuration, dispatch, and cleanup. Do not create, merge, or delete branches yourself.",
-].join("\n\n");
-
 /**
  * 三个方案。**只有写代码和搞架构才上 `sol`**，其余用便宜档。
  *
- * 和 references/role-presets.md 是同一套东西 —— 那边是给人读的说明，这里是给 CLI 用的数据。
+ * 和 references/models.md 是同一套东西 —— 那边是给人读的说明，这里是给 CLI 用的数据。
  */
 const PLANS: Record<PlanName, Blueprint[]> = {
   cheap: [
@@ -184,15 +175,8 @@ export function isPlanName(value: string): value is PlanName {
 }
 
 /** 把方案展开成 `init` 要的角色定义。 */
-export function planRoles(plan: PlanName, workflow?: Workflow): RoleSpec[] {
-  let blueprints = PLANS[plan];
-  if (workflow) {
-    const existing = PLANS[plan];
-    blueprints = [existing.find((role) => role.name === "lead")!, ...workflow.steps.map((step): Blueprint => {
-      const source = existing.find((role) => role.name === (step.kind === "test" ? "test" : "dev"))!;
-      return { ...source, name: step.role, ...(step.kind === "review" ? { model: plan === "cheap" ? "ds-flash" : "sol-6.1", body: REVIEWER_BODY } : {}) };
-    })];
-  }
+export function planRoles(plan: PlanName): RoleSpec[] {
+  const blueprints = PLANS[plan];
   return blueprints.map((bp) => {
     const model = MODELS[bp.model];
     const args: string[] = "args" in model ? [...model.args] : [];
@@ -212,15 +196,8 @@ export function planRoles(plan: PlanName, workflow?: Workflow): RoleSpec[] {
 
 ## Task execution protocol
 
-${workflow ? `Selected workflow: ${workflow.name}. Steps: ${workflow.steps.map((step) => `${step.kind}=${step.role}`).join(" → ")}. Delivery: ${workflow.delivery}; merge policy: ${workflow.merge}. The task's workflow snapshot is authoritative; project defaults can change independently.` : "No project workflow is selected. Follow the task's explicit handoff chain; workflows are optional recommendations."}
-
-Roles define responsibilities, not exclusive execution slots. Different tasks run concurrently; resident conversations do not occupy task sessions. Declare only real interface/data dependencies; prepare documentation independently.
-
-Lead is the exception: each project has one resident lead session. Lead assignments queue for that session; never start a task-specific lead agent.
-
-Dev and test reuse the task worktree. Submit with --commit SHA --summary TEXT and stop writes during testing. Test configures isolated services with HERDR_TEAM_TEST_DATABASE, HERDR_TEAM_REDIS_PREFIX and HERDR_TEAM_PORT/PORT, then uses --accept SHA --summary TEXT or --reject --summary TEXT. In a PR workflow, test acceptance publishes the PR and queues its independent reviewer; it never authorizes merge. PR review accepts the same tested SHA or rejects it back to dev and test. New commits invalidate previous test/review results.
-
-PR review approval follows the selected manual/auto merge policy under the integration lock. Legacy local integration remains available through lead's merge command. Inspect blocked/interrupted effects before merge retry <id>; no blind retries or shared local migrations from task sessions.`,
+Read the herdr-team skill and its references/handoff.md before working. For PR delivery also read references/workflow.md; the skill owns publishing and merge decisions.
+Follow the task's recorded owner and handoff chain. Do not edit task metadata directly.`,
     };
     if (args.length > 0) spec.args = args;
     if ("env" in model) spec.env = { ...model.env };

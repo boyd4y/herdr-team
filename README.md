@@ -24,27 +24,27 @@ herdr-team --help
 
 ## Start a project team
 
-Choose a workflow first, then configure each role’s responsibilities, harness, model, and launch mode together in one table. `dev-test-review` is a recommendation: develop and test in the same local task worktree, publish a PR after testing, and let an independent reviewer approve automatic merge or reject it back to development and testing. `dev-test`, `direct`, and custom workflows are also supported. Confirm responsibilities before accepting a model preset, or supply them with `--roles-file`; see the [CLI guide (Chinese)](cli/README.md) and [team setup reference (Chinese)](skill/references/team-setup.md).
+Choose a workflow first, then configure each role’s responsibilities, harness, model, and launch mode together in one table. `dev-test-review` is a recommendation: develop and test in the same local task worktree, publish a PR after testing, and let an independent reviewer approve automatic merge or reject it back to development and testing. `dev-test`, `direct`, and custom workflows are also supported. Confirm responsibilities and supply the definitions in `roles.json` with `--roles-file`; see the [CLI guide (Chinese)](cli/README.md) and [team setup reference (Chinese)](skill/references/setup.md).
 
 ```sh
-herdr-team init --workflow dev-test-review --plan balanced
+herdr-team init --roles-file roles.json
 herdr-team validate
 ```
 
-Use `workflow list`, `workflow show`, or `workflow set NAME` to inspect or change the optional project defaults in `.herdr/workflow.json`. Custom JSON via `--workflow-file` / `workflow set --file` maps step kinds to your own role names and selects manual or automatic PR merge. Each new task saves its workflow; changing defaults leaves existing tasks intact. `workflow apply ID` explicitly updates an unstarted todo task, which must then be dispatched again. `init` can also save roles without selecting a workflow; explicit handoff chains remain supported.
+The skill saves the agreed flow in `.herdr/workflow.md`, including responsibilities, handoff order, PR delivery, and merge policy. It supplies each task's `--role` and `--handoff` explicitly. The CLI has no workflow command, preset, or implicit default chain. Changing the agreement leaves existing assignments intact; legacy task snapshots retain their original behavior.
 
-Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onboard` command; `init` saves confirmed configuration. The skill checks the effective roles with `role list --json`, reads the workflow, and runs validation before starting or dispatching. Existing roles are preserved by default; research and docs are optional. `herdr-team --help` lists every available command, including task operations. Sidebar refresh runs through internal plugin hooks.
+Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onboard` command; `init` saves confirmed configuration. The skill checks the effective roles with `role list --json`, reads the workflow agreement, and runs validation before starting or dispatching. Existing roles are preserved by default; research and docs are optional. `herdr-team --help` lists every available command, including task operations. Sidebar refresh runs through internal plugin hooks.
 
 Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project.
 
-Commit `.herdr/.gitignore`, `identity.md`, `roles/`, and the optional `workflow.json` to share team configuration across machines. Initialization creates an internal `.gitignore` for tasks, reports, retired task IDs, and Herdr's local project/worktree records; existing ignore files are preserved. Keep `.herdr/` itself visible to Git. Use `git rm --cached` for local records already tracked, keeping the files on disk. Tasks and native sessions remain local; install and authenticate the selected tools on each machine.
+Commit `.herdr/.gitignore`, `identity.md`, `roles/`, and the optional `workflow.md` to share team configuration across machines. Initialization creates an internal `.gitignore` for tasks, reports, retired task IDs, and Herdr's local project/worktree records; existing ignore files are preserved. Keep `.herdr/` itself visible to Git. Use `git rm --cached` for local records already tracked, keeping the files on disk. Tasks and native sessions remain local; install and authenticate the selected tools on each machine.
 
 To inspect roles, run `herdr-team role list`. Add a role with `herdr-team role add <name> --kind <kind>`; update an existing role's responsibilities with `herdr-team role add <name> --force --body <text>` or `--body-file <file>`; remove a role with `herdr-team role rm <name>`. Run `herdr-team up` after adding roles so they are started and reported.
 
 Add a task with its owner and optional ordered handoff roles:
 
 ```sh
-herdr-team add "Implement login" --role dev
+herdr-team add "Implement login" --role dev --handoff test,review
 herdr-team tasks
 ```
 
@@ -72,9 +72,9 @@ Resident roles can resume a saved native session when Herdr's official integrati
 
 Task sessions resume separately by project, task, role, and worktree directory when the queue starts them. Team reads Herdr's `agent_session`; it requires no additional session hook. Resuming does not replay assignments or resolve uncertain deliveries.
 
-Each task owns a worktree and its role sessions: `dev-0046` and `dev-0047`, or `test-0050` and `test-0052`, can run concurrently. Dev and test reuse the task checkout, with writes paused during testing/review. Submit a commit with `handoff <id> --delivery ID --commit SHA`. In the PR workflow, test's `--accept SHA --summary TEXT` pushes the tested commit, creates or updates its PR, and queues the independent review role. It does not authorize merge. Review uses `--accept SHA --summary TEXT` or `--reject --summary TEXT`; rejection returns to the original developer and repeats testing before PR review. Approval follows the task's manual/auto merge policy. Lead remains the project's single resident coordinator.
+Each task owns a worktree and its role sessions: `dev-0046` and `dev-0047`, or `test-0050` and `test-0052`, can run concurrently. Dev and test reuse the task checkout, with writes paused during testing/review. Submit a commit with `handoff <id> --delivery ID --commit SHA`. For agreed PR delivery, the skill pushes the tested SHA and creates or reuses its PR, then test records it with `--accept SHA --pr URL --summary TEXT`. Review uses `--accept SHA --summary TEXT` or `--reject --summary TEXT`; rejection repeats the recorded validation path. Approval queues integration. Under an agreed automatic merge policy, the reviewer's skill immediately invokes `merge <id>`; otherwise lead merges explicitly. Lead remains the project's single resident coordinator.
 
-PR workflows require an authenticated GitHub CLI (`gh`) and a matching GitHub.com `origin`. PR head, testing, and review must name the same SHA. Automatic merge is triggered by review approval under the integration lock, never by test success or Console alone; branch protection is respected. With one shared GitHub account, Team publishes its decision as a clearly labeled PR comment because authors cannot approve their own PRs; this does not replace an independent GitHub approval required by repository rules. Separate reviewer accounts submit formal commit-specific reviews. Failed/interrupted merges require inspection before `merge retry <id>` and `merge <id>`; merged PRs are reconciled before local synchronization is retried. The optional local workflow retains `merge next` / `merge <id> --migrate 'command'`. Other tasks keep running; isolated service variables are described in the [CLI guide](cli/README.md#按任务开发验收与合并).
+PR workflows require an authenticated GitHub CLI (`gh`) and a matching GitHub.com `origin`. PR head, testing, and review must name the same SHA. The skill requests merge after review approval; the CLI verifies that request under the integration lock, and branch protection is respected. With one shared GitHub account, Team publishes its decision as a clearly labeled PR comment because authors cannot approve their own PRs; this does not replace an independent GitHub approval required by repository rules. Separate reviewer accounts submit formal commit-specific reviews. Failed/interrupted merges require inspection before `merge retry <id>` and `merge <id>`; merged PRs are reconciled before local synchronization is retried. The optional local workflow retains `merge next` / `merge <id> --migrate 'command'`. Other tasks keep running; isolated service variables are described in the [CLI guide](cli/README.md#按任务开发验收与合并).
 
 ## Upgrade, remove, and troubleshoot
 

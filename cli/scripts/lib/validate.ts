@@ -17,7 +17,7 @@ import {
 import { acceptanceFor, integrationFor, reviewFor } from "./execution.ts";
 import { deliveryFor } from "./delivery.ts";
 import { pullRequestFor, testResultFor, prDecisionFor } from "./pull-request.ts";
-import { readWorkflow, taskWorkflow } from "./workflow.ts";
+import { taskWorkflow } from "./legacy-workflow.ts";
 
 const TITLE_MAX = 80;
 
@@ -174,8 +174,6 @@ function findCycles(tasks: readonly DependencyTask[]): string[] {
 
 export function validateProject(project: Project): Problem[] {
   const out: Problem[] = [...project.problems];
-  try { readWorkflow(project); }
-  catch (error) { out.push({ file: "workflow.json", rule: "1", message: error instanceof Error ? error.message : String(error) }); }
 
   if (!project.hasIdentity) {
     out.push({ file: ".herdr", rule: "9", message: "identity.md is missing" });

@@ -1,8 +1,9 @@
+import { reviewFor } from "./execution.ts";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { KINDS, NAME_RE, ROLE_BODY, ROLE_META, isTerminal, type Project, type RoleCard } from "./types.ts";
 import { emitYaml, parseYaml } from "./yaml.ts";
-import { taskWorkflow } from "./workflow.ts";
+import { taskWorkflow } from "./legacy-workflow.ts";
 
 /** 角色元数据里键的顺序。**不含 `name`** —— 角色名就是目录名。 */
 export const ROLE_FIELD_ORDER = ["kind", "model", "worktree", "cwd", "args", "env"];
@@ -94,7 +95,7 @@ export function addRole(project: Project, opts: AddRoleOptions): AddRoleResult {
 export function tasksUsingRole(project: Project, name: string): string[] {
   return project.tasks
     .filter((t) => !isTerminal(t.status))
-    .filter((t) => t.role === name || t.handoff.includes(name) || taskWorkflow(t)?.steps.some((step) => step.role === name))
+    .filter((t) => t.role === name || t.handoff.includes(name) || reviewFor(t)?.developer === name || reviewFor(t)?.reviewers?.includes(name) || taskWorkflow(t)?.steps.some((step) => step.role === name))
     .map((t) => t.id);
 }
 

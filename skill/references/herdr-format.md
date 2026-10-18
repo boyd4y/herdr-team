@@ -36,7 +36,7 @@
 
 `.retired-ids` 首次 `rm` 时才创建。扫描跳过以 `.` 开头的条目。
 
-团队定义（`.gitignore`、`identity.md`、`roles/`、可选 `workflow.json`）默认纳入 Git，供跨机器复用。
+团队定义（`.gitignore`、`identity.md`、`roles/`、可选 `workflow.md`）默认纳入 Git，供跨机器复用。
 内部 `.gitignore` 忽略 `tasks/`、`reports/`、`.retired-ids`、`projects/` 和 `worktrees/`。
 任务与机器会话独立保留在本地，不整体忽略 `.herdr/`。
 
@@ -65,7 +65,7 @@
 **没有 `name`。** 角色名就是目录名。
 
 `env` 用来固定 agent 的后端。例：Claude Code 靠 `ANTHROPIC_MODEL` 决定连哪个模型，
-**不显式钉住就可能连回默认端点**（费用与预期不符）。见 [role-presets.md](role-presets.md)。
+**不显式钉住就可能连回默认端点**（费用与预期不符）。见 [models.md](models.md)。
 
 `model` **不参与启动**，只用来拼侧边栏显示名（`dev (sol-6.1)`）。两者写得不一致不会报错，
 但会误导人，所以**改启动方式时记得同步改 `model`**。
@@ -250,7 +250,7 @@ Herdr 更新后这个列表可能变化。**运行时以 `herdr agent start --ki
 `done` / `idle` / `unknown`）是两回事，不要混用。
 
 **终态是 `done` 和 `cancelled`。** 终态的任务不再被派活，且 `depends_on` 引用终态任务
-视为**已满足**。
+仅在 done 时视为**已满足**。
 
 ## 校验规则
 
@@ -278,30 +278,7 @@ Herdr 更新后这个列表可能变化。**运行时以 `herdr agent start --ki
 把 `status` 改成 `cancelled`，**目录留在 `tasks/`**，追加一条流转记录。
 
 - 是终态，不再被派活。
-- 依赖它的任务**视为满足**，可以继续。
+- 依赖它的任务不视为满足；由 lead 核对后明确调整依赖。
 - 记录和散文都保留 —— 任务本身就是"谁做过、为什么放弃"的历史。
 
-### 真删（`rm`）
-
-删掉整个任务目录。**必须同时满足三条，否则拒绝并说明原因：**
-
-| # | 条件 | 不满足时 |
-| --- | --- | --- |
-| 1 | `status` 已是终态（`done` / `cancelled`） | 拒绝：任务还在进行 |
-| 2 | **没有任何任务在 `depends_on` 里引用它** | 拒绝，并**列出全部依赖者的 `id`** |
-| 3 | 它对应的角色没有存活 agent 仍在处理它 | 拒绝：先处理 agent |
-
-第 2 条是硬约束：校验要求 `depends_on` 每一项都能解析到存在的任务，真删会让它悬空。
-
-**三条都过后，做两步：**
-
-1. 删掉 `tasks/<id>-<slug>/`
-2. 把 `id` **追加**一行到 `.herdr/.retired-ids`
-
-第 2 步不能省 —— 少了它，下次算 `max + 1` 就会把这个 id 重新发出去。
-
-### 不做的事
-
-- **不建 `archive/` 目录。** 软删留在原地，真删就删掉。
-- **不自动终止 agent。** 取消 `doing` 的任务时，若该角色有存活 agent，只提示用户，
-  不擅自关 pane —— 关掉会丢掉未提交的改动。
+任务目录和 retired ID 由 CLI 管理，不手动删除。清理 worktree 使用 clean；不等于删除任务历史。

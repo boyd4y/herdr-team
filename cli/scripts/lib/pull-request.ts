@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git, taskRepo } from "./execution.ts";
 import { worktreeBranch, type Project, type TaskCard } from "./types.ts";
-import { stepRole, taskWorkflow } from "./workflow.ts";
+import { stepRole, taskWorkflow } from "./legacy-workflow.ts";
 
 export interface PullRequest {
   repository: string; number: number; url: string; base: string; head: string; commit: string;
@@ -16,7 +16,7 @@ export interface PullRequestState extends PullRequest {
 export interface TestResult { commit: string; role: string; summary: string }
 export interface PullRequestDecision { commit: string; role: string; state: "approved" | "changes_requested"; mode: "comment" | "review" }
 
-export function usesPullRequest(task: TaskCard): boolean { return taskWorkflow(task)?.delivery === "pull-request"; }
+export function usesPullRequest(task: TaskCard): boolean { return taskWorkflow(task)?.delivery === "pull-request" || task.meta.pull_request != null; }
 const SHA = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/;
 export function pullRequestFor(task: Pick<TaskCard, "meta">): PullRequest | undefined {
   const value = task.meta.pull_request;
@@ -42,7 +42,7 @@ export function prDecisionFor(task: TaskCard): PullRequestDecision | undefined {
   const value = task.meta.pr_decision;
   if (value == null) return;
   const result = value as PullRequestDecision;
-  if (!result || !SHA.test(result.commit) || typeof result.role !== "string" || !result.role || result.role !== stepRole(task, "review") ||
+  if (!result || !SHA.test(result.commit) || typeof result.role !== "string" || !result.role || (taskWorkflow(task) && result.role !== stepRole(task, "review")) ||
       !["approved", "changes_requested"].includes(result.state) || !["comment", "review"].includes(result.mode)) {
     throw new Error("Invalid PR review decision");
   }
@@ -151,6 +151,7 @@ export function assertPullRequest(expected: PullRequest, current: PullRequestSta
   if (open && (current.state !== "OPEN" || current.draft)) throw new Error("PR must be open and ready for review");
 }
 
+/** Compatibility only: old task snapshots requested implicit PR publication. */
 export function publishTestedPullRequest(project: Project, task: TaskCard, commit: string, summary: string, github: GitHub): PullRequest {
   const repo = taskRepo(project, task), branch = worktreeBranch(task);
   const target = github.repository(repo), previous = pullRequestFor(task);
@@ -164,4 +165,20 @@ export function publishTestedPullRequest(project: Project, task: TaskCard, commi
   const record: PullRequest = { repository: target.name, number: remote.number, url: remote.url, base: target.base, head: branch, commit };
   assertPullRequest(record, remote, true);
   return record;
+}
+
+/** Record an existing PR explicitly supplied by the skill; never push or create here. */
+export function attachTestedPullRequest(project: Project, task: TaskCard, commit: string, url: string, github: GitHub): PullRequest {
+  const match = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/([1-9]\d*)$/.exec(url);
+  if (!match || !Number.isSafeInteger(Number(match[2]))) throw new Error("Supply a GitHub pull request URL");
+  const repo = taskRepo(project, task), target = github.repository(repo);
+  if (match[1] !== target.name) throw new Error("PR repository does not match this task repository");
+  const pr: PullRequest = { repository: target.name, number: Number(match[2]), url,
+    base: target.base, head: worktreeBranch(task), commit };
+  const previous = pullRequestFor(task);
+  if (previous && (previous.repository !== pr.repository || previous.number !== pr.number || previous.base !== pr.base || previous.head !== pr.head)) {
+    throw new Error("Task already references another PR; reconcile it before attaching a replacement");
+  }
+  assertPullRequest(pr, github.get(pr), true);
+  return pr;
 }

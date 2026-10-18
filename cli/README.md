@@ -28,28 +28,28 @@ herdr-team --help
 onboard 时先选择工作流，再用一张表一起配置各角色的职责、边界、交付与交棒方式、harness、模型和是否隔离。
 预设是分工的起点；需要定制职责时，把确认过的正文放入每个角色定义的 `body`，
 使用 `init --roles-file F`。只有连职责正文也原样接受预设时才直接 `init --plan`。
-完整引导见插件内置的 `herdr-team` skill 中的 `references/team-setup.md`。
+完整引导见插件内置的 `herdr-team` skill 中的 `references/setup.md`。
 `herdr-team --help` 列出全部可用命令，具体参数用 `<command> --help` 查询。
 侧栏刷新由插件事件 hook 内部执行，不提供 CLI 命令。
 
 完整顺序：读取项目与已有团队 → 选择流程 → 配置角色（职责与模型一起定） → 保存确认后的配置 → 校验 → 启动 → 明确派活。
 Skill 负责对话引导，CLI 负责确定性落盘；不会自行替用户完成选择。
 onboard 是 Skill 的对话流程，不是 CLI 命令。Skill 提供工作流候选、确认角色和模型，再用 `init` 保存配置。
-用 `workflow show`、`role list --json` 核对实际角色、harness、模型及启动配置，补齐缺失职责并运行 `validate`。
+读 `.herdr/workflow.md` 并用 `role list --json` 核对实际角色、harness、模型及启动配置，补齐缺失职责并运行 `validate`。
 初始化成功只表示文件已保存；Skill 还需核对 identity、工具和登录，再决定是否启动与派活。
 已有角色默认保留，因此重新选择模型方案后要检查实际输出，不把保留的角色误报为已换模型或重写职责。
 启动用 `up`，业务任务用 `add` / `dispatch`，分别明确执行。
 
-在项目根目录创建团队配置，再填写 `.herdr/identity.md`（以下以原样接受 balanced 为例）：
+在项目根目录创建团队配置，再填写 `.herdr/identity.md`（以下 roles.json 为已确认的角色定义，格式见团队设置参考）：
 
 ```sh
-herdr-team init --workflow dev-test-review --plan balanced
+herdr-team init --roles-file roles.json
 herdr-team validate
-herdr-team add "Implement login" --role dev
+herdr-team add "Implement login" --role dev --handoff test,review
 herdr-team tasks
 ```
 
-默认共享 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选 `workflow.json`，不整体忽略 `.herdr/`。
+默认共享 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选 `workflow.md`，不整体忽略 `.herdr/`。
 `init` 创建内部 `.gitignore`，忽略 tasks、reports、.retired-ids、projects、worktrees；
 已有忽略文件原样保留，包括 `--force`。CLI 不改项目根 `.gitignore`，旧整目录忽略规则由 Skill 按项目约定调整。
 已跟踪的本机文件用 `git rm --cached` 取消跟踪，保留磁盘内容；任务和会话不随配置跨机器恢复。
@@ -64,63 +64,33 @@ herdr-team tasks
 | `dev-test` | dev → test | 本地验收，通过后由 lead 手动串行合入 |
 | `direct` | dev | 直接交付，适合无需测试和 PR 的任务 |
 
+流程由 Skill 维护在 `.herdr/workflow.md`，用 Markdown 写明职责顺序、PR/本地交付和手动/自动合并即可。
+CLI 不提供 workflow 命令、流程预设或默认链。创建任务始终显式提供角色和后续交接：
+
 ```sh
-herdr-team workflow list
-herdr-team workflow set dev-test-review
-# 确认职责后选择模型；也可传 --roles-file F 提供确认后的角色卡。
-herdr-team init --plan balanced
-herdr-team workflow show
+herdr-team add "Implement login" --role dev --handoff test,review
 ```
 
-`.herdr/workflow.json` 保存项目默认配置。`cheap / balanced / strong` 只决定模型方案；
-先选的工作流决定需要哪些职责。自定义步骤和角色名、手动或自动 PR 合并可以通过 JSON 配置：
-
-```json
-{
-  "name": "shipping",
-  "steps": [
-    { "kind": "develop", "role": "builder" },
-    { "kind": "test", "role": "qa" },
-    { "kind": "review", "role": "auditor" }
-  ],
-  "delivery": "pull-request",
-  "merge": "manual"
-}
-```
-
-使用 `workflow set --file F`，或 `init --workflow-file F --roles-file R`。
-PR 模板目前支持依次开发、测试、审查三个步骤；角色名可调整。本地流程支持自定义的有序职责链，
-可使用 `work` 步骤。lead 始终是流程外的唯一常驻编排角色。
-
-本地 `develop → test → review` 同样逐棒验收：test 的 `--accept SHA` 只保存测试结果，
-把同一 SHA 指派给 review，不产生合并许可；review 明确批准后才进入手动合入队列。
-review 拒绝会退回原开发者，重新经过 test 和 review。旧版本已发出、却仍保留 test 验收者记录的
-本地 review delivery，在任务流程、前一棒批准和当前投递一致时会兼容识别，沿用原 delivery ID，
-无需重建任务或手改元数据；仍须 claim 并明确 `--accept SHA` 或 `--reject`，不会自动批准。
-
-匹配流程第一步的 `add --role R` 会默认带上后续步骤，并把整份工作流保存进任务元数据。
-显式指定其他 handoff 链、`--workflow none` 或其他工作流预设可以建立例外任务。
-修改项目默认配置只影响新任务。尚未开始的 todo 卡可用 `workflow apply ID` 切换到当前默认，
-或 `workflow apply ID --preset NAME`；它会清掉未发送的入队记录，需要重新 dispatch。
-已投递任务必须先核对并收回当前执行，再显式重新分配，不会因修改默认配置而自动换步骤。
+约定变化只影响后续编排。未开始任务可以用 `edit --handoff` 明确调整；已投递任务先核对执行。
+新任务只有 role/handoff 执行链，不再复制一份 workflow.steps。已有 task workflow 快照继续兼容读取，
+旧 `.herdr/workflow.json` 不再影响新任务，也不会因过期内容阻塞 CLI。
+已有快照任务不能用普通 edit 改动职责链；完成或取消后按新约定建卡，不手改元数据。
 
 ### 推荐的 PR 流程
 
-1. dev 在任务 worktree 开发，提交干净版本：`handoff ID --delivery D --commit SHA --summary TEXT`。
-2. test 在同一个 worktree 验证该 SHA，通过用 `--accept SHA --summary TEXT`；失败用 `--reject --summary TEXT` 返回原 dev。
-3. test 通过后，CLI 推送该 SHA，创建或更新同一条 PR，再投递给独立 review。测试通过不产生合并许可。
-4. review 审查 PR、验收标准和测试证据，用 `--accept SHA --summary TEXT` 批准，或 `--reject --summary TEXT` 退回原 dev。
-5. 自动合并方案在 review 批准后通过 GitHub 合并 PR，并同步本地 base；手动方案进入 merge queue。拒绝后必须重跑 dev → test → review。
+这是 Skill 推荐方案，可在 onboard 选择并随时调整；CLI 不强制三个阶段或固定角色名。
 
-需要安装并登录 `gh`，且 Git `origin` 必须匹配 GitHub.com 仓库。base 使用仓库默认分支。
-PR 与测试、审查结论都绑定 SHA；新增提交使旧结论失效。GitHub 合并 API 显式指定被批准的 head SHA，
-不绕过分支保护或失败检查。冲突、保护规则、网络异常或本地同步失败会阻塞并保留现场，
-不能盲目重试；lead 核对后使用 `merge retry ID`，再运行 `merge ID`。合并后可运行 `clean` 回收 worktree。
+1. dev 自测并提交，用 `handoff <id> --delivery ID --commit SHA --summary TEXT` 交给下一位。
+2. test 在同一任务 worktree 验证该 SHA。通过后由 Skill 推送任务分支，用 `gh pr list/create` 复用或创建 PR，
+   再用 `handoff <id> --delivery ID --accept SHA --pr URL --summary TEXT` 保存测试与 PR 记录并交接。
+   `--pr` 不会创建或推送 PR；错误仓库、分支、SHA、draft 或关闭状态都会被拒绝。
+3. review 复用测试证据审查同一 SHA，用 `--accept SHA` 批准或 `--reject` 退回原 dev。
+   拒绝后重走已经过的验收链；新提交必须重新测试并附上更新后的同一 PR。
+4. 最后一位批准后进入合并队列。自动方案由 review 的 Skill 立即调用 `merge <id> --root <team-root>`；
+   手动方案由 lead 执行。CLI 不自动根据新任务的流程约定合并。
 
-各 agent 共用同一 GitHub 账号时，GitHub 禁止作者批准自己的 PR，因此 review 会把明确的 Team
-结论、SHA 和摘要写到 PR 评论里，内部合并门禁仍要求独立角色的批准。这不是 GitHub 的独立审批，
-不能满足仓库要求的他人 Approve；使用其他账号时提交正式、绑定 commit 的 PR review。
-创建或评论后的响应丢失会先查询已有 PR/操作标记，避免重复发布。测试只使用离线 GitHub 替身。
+CLI 保留 SHA 一致性、delivery 去重、PR 身份和合并锁校验。
+已有 legacy workflow 快照的任务继续原来的自动发布和合并行为，不额外重复新方案操作。
 
 列表与详情分开：`tasks --json`、`status --json`、`role list --json` 的卡片对象不包含
 正文 `body`，其余元数据保留，避免批量输出被整篇任务描述或角色职责撑大。
@@ -244,7 +214,7 @@ herdr-team queue drain
 
 本地 `dev-test` 方案和未选择 PR 工作流的旧任务使用 `dev ⇄ test → merge queue`。
 推荐的 PR 方案见上方“推荐的 PR 流程”；其测试通过只进入 PR 审查，不能直接合并。
-例如本地方案用 `add "Fix login" --role dev --handoff test --workflow none`。
+例如本地方案用 `add "Fix login" --role dev --handoff test`。
 开发者提交后交棒，验收者必须核对并记录同一个 commit：
 
 ```sh

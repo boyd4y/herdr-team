@@ -13,8 +13,8 @@ import { withTeamLock } from "./runtime.ts";
 import { refreshSidebar } from "./sidebar.ts";
 import { findTask, TaskError } from "./task.ts";
 import { TASK_BODY, isTerminal, isolatedAgentName, worktreeBranch, type Project, type TaskCard } from "./types.ts";
-import { assertPullRequest, prDecisionFor, pullRequestFor, publishTestedPullRequest, realGitHub, testResultFor, usesPullRequest, type GitHub } from "./pull-request.ts";
-import { stepRole, taskWorkflow } from "./workflow.ts";
+import { assertPullRequest, attachTestedPullRequest, prDecisionFor, pullRequestFor, publishTestedPullRequest, realGitHub, testResultFor, usesPullRequest, type GitHub } from "./pull-request.ts";
+import { stepRole, taskWorkflow } from "./legacy-workflow.ts";
 import { mergeTask } from "./integration.ts";
 
 export interface HandoffOptions {
@@ -23,6 +23,7 @@ export interface HandoffOptions {
   commit?: string;
   accept?: string;
   reject?: boolean;
+  pr?: string;
   github?: GitHub;
 }
 
@@ -153,7 +154,9 @@ function handoffLocked(
     throw new TaskError("Use only one of --commit, --accept, or --reject");
   }
   const review = assignedReviewFor(card), workflow = taskWorkflow(card);
-  const prFlow = usesPullRequest(card), reviewingPR = prFlow && card.role === stepRole(card, "review");
+  const prFlow = usesPullRequest(card), testing = testResultFor(card);
+  const reviewingPR = prFlow && (workflow ? card.role === stepRole(card, "review") : testing !== undefined && testing.role !== card.role);
+  if (options.pr !== undefined && (!options.accept || workflow)) throw new TaskError("--pr requires --accept on a task without a legacy workflow");
   const currentStep = workflow?.steps.find((step) => step.role === card.role);
   if (review && review.reviewer !== card.role && currentStep && ["test", "review"].includes(currentStep.kind)) {
     throw new TaskError(`Task review assignment is inconsistent: owner ${card.role}, assigned reviewer ${review.reviewer}; ask lead to reconcile it`);
@@ -161,7 +164,7 @@ function handoffLocked(
   const github = options.github ?? realGitHub();
   const verifyPR = () => {
     const pr = pullRequestFor(card), tested = testResultFor(card);
-    if (!pr || !tested || tested.role !== stepRole(card, "test") || !review || tested.commit !== review.commit || pr.commit !== review.commit) throw new TaskError("PR review requires a matching tested commit and pull request");
+    if (!pr || !tested || (workflow && tested.role !== stepRole(card, "test")) || !review || tested.commit !== review.commit || pr.commit !== review.commit) throw new TaskError("PR review requires a matching tested commit and pull request");
     if (git(taskRepo(project, card), "rev-parse", `refs/heads/${worktreeBranch(card)}`) !== pr.commit) throw new TaskError("Branch advanced after testing; retest and review its current commit");
     assertPullRequest(pr, github.get(pr), true);
     return pr;
@@ -178,7 +181,7 @@ function handoffLocked(
     const reviewerIndex = workflow?.steps.findIndex((step) => step.role === card.role) ?? -1;
     const repeat = workflow && developerIndex >= 0 && reviewerIndex > developerIndex
       ? workflow.steps.slice(developerIndex + 1, reviewerIndex + 1).map((step) => step.role)
-      : [review.reviewer];
+      : review.reviewers ?? [review.reviewer];
     persist({ role: review.developer, handoff: [...repeat, ...card.handoff], status: "doing",
       delivery: queued, review: null, acceptance: null, integration: null, test_result: null, pr_decision: decision },
       `- Rejected ${review.commit}; returned to ${review.developer}`, review.developer);
@@ -195,6 +198,18 @@ function handoffLocked(
       if (trees.length !== 1) throw new TaskError("Cannot identify the task review checkout");
       verifyCheckout(trees[0]!.path, commit);
     }
+    if (options.pr !== undefined) {
+      const next = card.handoff[0];
+      if (!next || next === card.role) throw new TaskError("Attaching a tested PR requires a different next owner");
+      const pr = attachTestedPullRequest(project, card, commit, options.pr, github);
+      const queued = newDelivery(next, "handoff", now);
+      persist({ role: next, handoff: card.handoff.slice(1), status: "review", delivery: queued,
+        test_result: { commit, role: card.role, summary }, pull_request: pr, acceptance: null, pr_decision: null, integration: null,
+        review: { ...review, reviewer: next, reviewers: [...(review.reviewers ?? [card.role]), next] } },
+        `- Validated ${commit}; attached PR: ${pr.url}`, next);
+      return { id, from, to: next, status: "review", previousStatus, prompted: false, ...summaryReceipt,
+        delivery: queued.id, queueState: "queued", note: `${id} recorded PR ${pr.url} for ${next}.${deliveryNote}` };
+    }
     if (prFlow && card.role === stepRole(card, "test")) {
       const next = stepRole(card, "review");
       if (!next || card.handoff[0] !== next) throw new TaskError("Testing must hand off to the selected PR reviewer");
@@ -206,7 +221,7 @@ function handoffLocked(
       return { id, from, to: next, status: "review", previousStatus, prompted: false, ...summaryReceipt,
         delivery: queued.id, queueState: "queued", note: `${id} tested at ${commit}; PR ${pr.url} queued for ${next}.${deliveryNote}` };
     }
-    if (prFlow && !reviewingPR) throw new TaskError("Only the selected test and PR review stages can accept a version");
+    if (prFlow && !reviewingPR) throw new TaskError(workflow ? "Only the selected test and PR review stages can accept a version" : "Attach the newly validated PR with --pr before advancing this task");
     if (reviewingPR) {
       const pr = verifyPR();
       const mode = github.decide(pr, "approved", summary, operation);
@@ -218,7 +233,7 @@ function handoffLocked(
     throw new TaskError("Review the assigned commit, then hand off with --accept SHA or --reject");
   }
   let reviewPatch: Record<string, unknown> = options.accept ? { review, acceptance: accepted,
-    ...(currentStep?.kind === "test" ? { test_result: { commit: accepted!.commit, role: card.role, summary } } : {}),
+    ...(currentStep?.kind === "test" || !workflow && card.handoff.length > 0 && !reviewingPR ? { test_result: { commit: accepted!.commit, role: card.role, summary } } : {}),
     ...(reviewingPR ? { pr_decision: prDecisionFor(card) } : {}) } : {};
   if (options.commit) {
     const next = card.handoff[0];
@@ -226,8 +241,8 @@ function handoffLocked(
     const commit = commitId(project, card, options.commit);
     const repo = taskRepo(project, card);
     if (git(repo, "rev-parse", `refs/heads/${worktreeBranch(card)}`) !== commit) throw new TaskError("Submit the current task branch tip for review");
-    reviewPatch = { execution: "task", review: { commit, developer: card.role, reviewer: next }, acceptance: null, integration: null, test_result: null, pr_decision: null };
-  } else if (card.meta.execution === "task" && card.handoff[0] === (stepRole(card, "test") ?? "test") && !accepted) {
+    reviewPatch = { execution: "task", review: { commit, developer: card.role, reviewer: next, ...(!workflow ? { reviewers: [next] } : {}) }, acceptance: null, integration: null, test_result: null, pr_decision: null };
+  } else if (workflow && card.meta.execution === "task" && card.handoff[0] === (stepRole(card, "test") ?? "test") && !accepted) {
     throw new TaskError("Submit a committed version to test with --commit SHA");
   }
 
@@ -274,8 +289,8 @@ function handoffLocked(
   const status = "review";
   const queued = newDelivery(next, "handoff", now);
   const nextStep = workflow?.steps.find((step) => step.role === next);
-  if (!prFlow && review && accepted && (!workflow || nextStep && ["test", "review"].includes(nextStep.kind))) {
-    reviewPatch = { ...reviewPatch, review: { ...review, reviewer: next }, acceptance: null };
+  if (review && accepted && (!workflow || !prFlow && nextStep && ["test", "review"].includes(nextStep.kind))) {
+    reviewPatch = { ...reviewPatch, review: { ...review, reviewer: next, ...(!workflow ? { reviewers: [...(review.reviewers ?? [card.role]), next] } : {}) }, acceptance: null, ...(!workflow && prFlow ? { pr_decision: null } : {}) };
   }
   persist({ ...reviewPatch, role: next, handoff: rest, status, delivery: queued },
     `- ${stamp(now)}  → ${next}  (${previousStatus} → ${status})`, next);

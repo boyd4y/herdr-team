@@ -5,14 +5,14 @@ import { runtimePath } from "./runtime.ts";
 import { projectKey } from "./team-scope.ts";
 import type { Project, RoleCard, TaskCard } from "./types.ts";
 import { deliveryFor } from "./delivery.ts";
-import { taskWorkflow } from "./workflow.ts";
+import { taskWorkflow } from "./legacy-workflow.ts";
 
 export function taskScoped(task: TaskCard, role?: RoleCard): boolean {
   if ((role?.name ?? task.role) === "lead") return false;
   return task.meta.execution === "task" || role?.worktree === true;
 }
 
-export interface Review { commit: string; developer: string; reviewer: string }
+export interface Review { commit: string; developer: string; reviewer: string; reviewers?: string[] }
 export interface Acceptance { commit: string; role: string }
 export interface Integration { commit: string; state: "queued" | "running" | "blocked" | "done"; reason?: string; queued_at?: string }
 const SHA = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
@@ -21,6 +21,7 @@ export function reviewFor(task: TaskCard): Review | undefined {
   if (v == null) return;
   const r = v as Review;
   if (!SHA.test(r.commit) || typeof r.developer !== "string" || typeof r.reviewer !== "string") throw new Error("Invalid task review record");
+  if (r.reviewers !== undefined && (!Array.isArray(r.reviewers) || !r.reviewers.length || r.reviewers.some((role) => typeof role !== "string" || !role) || r.reviewers.at(-1) !== r.reviewer)) throw new Error("Invalid task review path");
   return r;
 }
 export function acceptanceFor(task: TaskCard): Acceptance | undefined {

@@ -1,0 +1,68 @@
+# Setup：初始化与调整团队
+
+onboard 是 Skill 对话，不是 CLI 向导。复用已确认的选择与授权，不反复要求用户确认。
+
+## 了解与确认
+
+读 README、AGENTS.md、目录结构、Git 状态、`.herdr/identity.md`、现有角色、任务和队列。
+已有团队先用 `role list --json` 检查实际配置，区分新建与调整，保留已有职责和模型偏好。
+
+按 [workflow.md](workflow.md) 选择流程后，用同一张表确认角色的职责、边界、交付要求、harness、模型和启动方式，
+不把职责与模型拆成两轮确认。辅助 docs、research/search 按需要提出；模型方案不能决定固定角色名单。
+模型配置按需读 [models.md](models.md)。角色名描述职责，不用 agent 类型命名。
+
+## 保存角色与项目约定
+
+Skill 把用户确认的流程写入 `.herdr/workflow.md`；格式和变更规则只见 [workflow.md](workflow.md)。
+角色通过 CLI 保存，不手拼 YAML。将确认过的职责写入每项的英文 `body`；用户自带正文保留原语言。
+例如临时 `roles.json` 的输入形状：
+
+```json
+[
+  {
+    "name": "builder",
+    "kind": "codex",
+    "model": "sol-6.1",
+    "worktree": true,
+    "args": ["--no-daemon", "-m", "gpt-6.1-sol"],
+    "body": "Implement and self-test in the assigned checkout. Read the herdr-team skill for task handoff. Lead owns configuration and branch lifecycle."
+  }
+]
+```
+
+数组应包含已确认的全部角色，而非只复制此示例。PR 方案应明确对应测试、审查职责及谁执行发布/合并。
+`name`、`kind` 必填；其余可用 `model`、`worktree`、`cwd`、`args`、`env`、`body`，见 [格式规范](herdr-format.md)。
+
+```sh
+herdr-team init --roles-file roles.json
+herdr-team role list --json
+herdr-team validate
+```
+
+只有整套预设职责和模型都已接受时才用 `init --plan cheap|balanced|strong`；它不是流程预设，
+不会据流程自动补 review 等角色。`init` 不派活、不启动 agent。
+
+已有角色默认跳过；`init --force` 只改元数据，保留已有 `prompt.md`。
+更新职责时先读旧正文，再用 `role add NAME --force --body-file F` 整篇替换，保留有效的交付边界。
+更新元数据可省略 `--kind`，未提供字段保持原值；省略正文也保持原文。
+新增角色后可运行 `up` 纳入管理。`role rm NAME` 拒绝移除仍被活动任务引用的角色。
+
+## 核对后启动
+
+填写真实的 identity，检查角色正文与启动参数；不要把保留旧配置误报为更新成功。
+CLI 输出、错误和生成的默认指令保持英文，无需多语言支持。
+
+启动前核对 Herdr、Bun、选定 agent CLI 及对应登录。PR 交付还需要匹配的 GitHub.com origin、已登录的 gh 和测试资源；
+只核对选定方案需要的条件，不替用户改权限、登录或数据库。
+
+在 Herdr pane 中按用户意图运行 `herdr-team up`，检查 Console 和每个角色的启动/恢复结果。
+只在用户已有业务任务和验收要求时建卡派发；不要编造试运行任务。
+派发、任务会话和恢复见 [handoff.md](handoff.md)。改角色文件不会给运行中 agent 自动重发配置，后续派活会携带角色正文。
+
+## 跨机器共享
+
+共享 `.herdr/.gitignore`、`identity.md`、`roles/`、可选 `workflow.md`；不要整体忽略 `.herdr/`。
+`init` 创建内部忽略规则：tasks、reports、.retired-ids、projects、worktrees；已有忽略文件保留，根 `.gitignore` 不自动修改。
+已有整目录忽略规则由 Skill 按项目约定调整。已跟踪的本机记录只用 `git rm --cached` 取消跟踪，保留磁盘文件。
+
+任务、会话和本机 worktree 不跨机器恢复。新机器安装并登录所选工具；共享角色使用相对路径，凭证不写进 Git。

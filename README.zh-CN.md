@@ -24,25 +24,22 @@ herdr-team --help
 
 ## 为项目启动团队
 
-先选择工作流，再用一张表一起配置各角色的职责、harness、模型和启动方式。推荐 `dev-test-review`：dev/test 在同一本地任务 worktree 完成开发和测试，通过后发布 PR，独立 review 决定批准自动合并或退回开发和测试。也可以选择 `dev-test`、`direct` 或自定义流程。模型预设只决定模型，不能代替职责确认；自定义职责用 `--roles-file`。详见 [CLI 指南](cli/README.md) 和[团队设置参考](skill/references/team-setup.md)。
+先选择工作流，再用一张表一起配置各角色的职责、harness、模型和启动方式。推荐 `dev-test-review`：dev/test 在同一本地任务 worktree 完成开发和测试，通过后发布 PR，独立 review 决定批准自动合并或退回开发和测试。也可以选择 `dev-test`、`direct` 或自定义流程。模型预设不能代替职责确认；确认后的角色定义写入 `roles.json`，通过 `--roles-file` 保存。详见 [CLI 指南](cli/README.md) 和[团队设置参考](skill/references/setup.md)。
 
 ```sh
-herdr-team init --workflow dev-test-review --plan balanced
+herdr-team init --roles-file roles.json
 herdr-team validate
 ```
 
-使用 `workflow list/show/set NAME` 查询或调整 `.herdr/workflow.json` 中的默认流程。
-`--workflow-file` / `workflow set --file` 支持自定义步骤职责对应的角色名，以及 PR 手动或自动合并。
-每张任务保存创建时的流程副本，更改默认值不移动已有任务。`workflow apply ID` 可显式调整未开始的 todo 卡，之后重新 dispatch。
-未选择工作流时，也可用 `init` 保存角色，并通过显式 handoff 链交接。
+Skill 将职责、交棒顺序、PR 交付和合并策略写入 `.herdr/workflow.md`。建卡时显式传入 `--role` 和 `--handoff`；CLI 不提供 workflow 命令、流程预设或自动套用的默认交接链。修改约定不改变已有任务；旧任务快照仍按原流程执行。
 
 onboard 由 herdr-team Skill 对话引导，CLI 不提供 `onboard` 命令；`init` 只保存已确认的配置。
-Skill 用 `role list --json`、`workflow show` 和 `validate` 核对实际配置，再检查所需工具与登录，明确启动和派活。
+Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，再检查所需工具与登录，明确启动和派活。
 已有角色默认保留，研究与文档角色按需选择。`herdr-team --help` 列出全部可用命令，包括任务操作。侧栏刷新由插件内部 hook 执行。
 
 检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
-将 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选的 `workflow.json` 纳入 Git，便于跨机器共享团队配置。
+将 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选的 `workflow.md` 纳入 Git，便于跨机器共享团队配置。
 初始化会创建内部 `.gitignore`，忽略任务、报告、已删除任务 ID 和 Herdr 本机 project/worktree 记录；已有忽略文件原样保留。
 不要整体忽略 `.herdr/`。已跟踪的本机记录用 `git rm --cached` 取消跟踪，保留磁盘文件。
 任务和原生会话留在本地；新机器仍需安装并登录所选工具。
@@ -52,7 +49,7 @@ Skill 用 `role list --json`、`workflow show` 和 `validate` 核对实际配置
 创建任务时指定负责人和可选的交棒角色顺序：
 
 ```sh
-herdr-team add "Implement login" --role dev
+herdr-team add "Implement login" --role dev --handoff test,review
 herdr-team tasks
 ```
 
@@ -78,9 +75,9 @@ Console 是自动调度器，在项目的 Team Console tab 中运行。关闭它
 
 任务会话在队列启动它们时，按项目、任务号、角色和 worktree 目录分别恢复。Team 读取 Herdr 的 `agent_session`，无需额外安装 session hook。恢复会话不会重发任务或解除 uncertain 投递。
 
-并发单位是任务：每个任务有自己的 worktree 和角色会话，`dev-0046` / `dev-0047`、`test-0050` / `test-0052` 可同时运行。dev/test 复用同一任务 checkout，测试和审查期间暂停写入。用 `handoff <id> --delivery ID --commit SHA` 提交测试。PR 方案中，test 的 `--accept SHA --summary TEXT` 只推送被测版本、创建或更新 PR 并交给独立 review，不产生合并许可。review 用 `--accept SHA --summary TEXT` 批准，或 `--reject --summary TEXT` 退回原 dev 并重新测试。批准后按任务保存的 manual/auto 策略合并。lead 始终是项目唯一的常驻编排会话。
+并发单位是任务：每个任务有自己的 worktree 和角色会话，`dev-0046` / `dev-0047`、`test-0050` / `test-0052` 可同时运行。dev/test 复用同一任务 checkout，测试和审查期间暂停写入。用 `handoff <id> --delivery ID --commit SHA` 提交测试。PR 方案中，Skill 推送被测版本并创建或复用 PR，test 再用 `--accept SHA --pr URL --summary TEXT` 记录结果并交给 review。review 用 `--accept SHA --summary TEXT` 批准，或 `--reject --summary TEXT` 退回原 dev 并重走已完成的验收链。批准后进入合并队列；约定自动合并时，review 的 Skill 立即调用 `merge <id>`，手动方案由 lead 调用。lead 始终是项目唯一的常驻编排会话。
 
-PR 方案需要已登录的 `gh` 和匹配的 GitHub.com `origin`，测试、审查和 PR head 必须是同一 SHA。自动合并由 review 批准命令触发，使用串行锁并遵守分支保护。agent 共用 GitHub 账号时，review 会明确把结论记为 PR 评论中的 Team 内部门禁，不冒充 GitHub 独立审批，也不能替代仓库要求的他人 Approve；不同账号使用正式、绑定 commit 的 PR review。失败或中断后核对远端 PR 和本地状态，再 `merge retry <id>` / `merge <id>`；已合并 PR 不会重复合并。本地方案保留 lead 的 `merge next` 或 `merge <id> --migrate 'command'`。其他任务继续执行，独立测试资源变量见[CLI 指南](cli/README.md#按任务开发验收与合并)。
+PR 方案需要已登录的 `gh` 和匹配的 GitHub.com `origin`，测试、审查和 PR head 必须是同一 SHA。Skill 在 review 批准后明确调用合并；CLI 使用串行锁，核对批准和 SHA，并遵守分支保护。agent 共用 GitHub 账号时，review 会明确把结论记为 PR 评论中的 Team 内部门禁，不冒充 GitHub 独立审批，也不能替代仓库要求的他人 Approve；不同账号使用正式、绑定 commit 的 PR review。失败或中断后核对远端 PR 和本地状态，再 `merge retry <id>` / `merge <id>`；已合并 PR 不会重复合并。本地方案保留 lead 的 `merge next` 或 `merge <id> --migrate 'command'`。其他任务继续执行，独立测试资源变量见[CLI 指南](cli/README.md#按任务开发验收与合并)。
 
 ## 升级、移除与故障排查
 
