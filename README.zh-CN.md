@@ -35,7 +35,7 @@ Skill 将职责、交棒顺序、PR 交付和合并策略写入 `.herdr/workflow
 
 onboard 由 herdr-team Skill 对话引导，CLI 不提供 `onboard` 命令；`init` 只保存已确认的配置。
 Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，再检查所需工具与登录，明确启动和派活。
-已有角色默认保留，研究与文档角色按需选择。`herdr-team --help` 列出全部可用命令，包括任务操作。侧栏刷新由插件内部 hook 执行。
+已有角色默认保留，研究与文档角色按需选择。角色 prompt 定义职责，Skill 引导协作；派活消息要求先读 Skill，再按指导使用消息里的 CLI 参数模板。`herdr-team --help` 列出全部可用命令，包括任务操作。侧栏刷新由插件内部 hook 执行。
 
 检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 

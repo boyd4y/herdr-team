@@ -118,7 +118,7 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
       const identity = existsSync(identityPath) ? readFileSync(identityPath, "utf8") : "";
       const claim = `herdr-team claim ${task.id} --delivery ${d.id} --root ${shellQuote(fresh.root)}`;
       const handoff = `herdr-team handoff ${task.id} --delivery ${d.id} --root ${shellQuote(fresh.root)}`;
-      const prompt = `${assignmentPrompt(identity, role.body, task, fresh.root, d.id)}\nTeam root: ${fresh.root}\nTask file: ${join(fresh.herdrDir, task.dir, TASK_BODY)}\nRead it and its referenced artifacts, including delivery summaries, before working; ask the previous owner for missing details.\nUse herdr agent read only for troubleshooting.\nBefore doing any work, run: ${claim}\nIf claim reports already claimed, do not start a second copy. If it fails, stop.\nAll handoffs for this assignment MUST include --delivery ${d.id}. When done run: ${handoff} --summary "results; artifacts; validation; risks and next steps"`;
+      const prompt = `${assignmentPrompt(identity, role.body, task, fresh.root)}\nTeam root: ${fresh.root}\nTask file: ${join(fresh.herdrDir, task.dir, TASK_BODY)}\nDelivery ID: ${d.id}\nClaim command: ${claim}\nHandoff base command: ${handoff}\nThese commands identify this delivery; use the skill to choose the result options and next action.`;
       try { herdr.agentPrompt(agent.pane_id, prompt); }
       catch (error) {
         const rejected = error instanceof HerdrError && ["agent_blocked", "agent_not_ready", "agent_not_found", "pane_not_found", "empty_agent_prompt"].includes(error.code ?? "");

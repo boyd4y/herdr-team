@@ -14,7 +14,8 @@ onboard 是 Skill 对话，不是 CLI 向导。复用已确认的选择与授权
 ## 保存角色与项目约定
 
 Skill 把用户确认的流程写入 `.herdr/workflow.md`；格式和变更规则只见 [workflow.md](workflow.md)。
-角色通过 CLI 保存，不手拼 YAML。将确认过的职责写入每项的英文 `body`；用户自带正文保留原语言。
+角色通过 CLI 保存，不手拼 YAML。`body` 只保留角色职责、边界、交付要求和先读 herdr-team Skill 的入口，
+不复制命令清单或 claim/handoff/PR 的完整操作流程。新生成的正文使用英文，用户自带正文保留原语言。
 例如临时 `roles.json` 的输入形状：
 
 ```json
@@ -25,7 +26,7 @@ Skill 把用户确认的流程写入 `.herdr/workflow.md`；格式和变更规�
     "model": "sol-6.1",
     "worktree": true,
     "args": ["--no-daemon", "-m", "gpt-6.1-sol"],
-    "body": "Implement and self-test in the assigned checkout. Read the herdr-team skill for task handoff. Lead owns configuration and branch lifecycle."
+    "body": "Read the installed herdr-team skill before starting. Implement and self-test the assigned change. Stay within the task checkout; lead owns team configuration and branch lifecycle."
   }
 ]
 ```
@@ -43,6 +44,7 @@ herdr-team validate
 不会据流程自动补 review 等角色。`init` 不派活、不启动 agent。
 
 已有角色默认跳过；`init --force` 只改元数据，保留已有 `prompt.md`。
+旧角色若复制了整套 CLI 操作流程，由 lead 在明确更新该角色时保留职责并改为 Skill 引导；不批量覆盖用户自定义正文。
 更新职责时先读旧正文，再用 `role add NAME --force --body-file F` 整篇替换，保留有效的交付边界。
 更新元数据可省略 `--kind`，未提供字段保持原值；省略正文也保持原文。
 新增角色后可运行 `up` 纳入管理。`role rm NAME` 拒绝移除仍被活动任务引用的角色。

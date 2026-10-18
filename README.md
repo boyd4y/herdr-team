@@ -33,7 +33,7 @@ herdr-team validate
 
 The skill saves the agreed flow in `.herdr/workflow.md`, including responsibilities, handoff order, PR delivery, and merge policy. It supplies each task's `--role` and `--handoff` explicitly. The CLI has no workflow command, preset, or implicit default chain. Changing the agreement leaves existing assignments intact; legacy task snapshots retain their original behavior.
 
-Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onboard` command; `init` saves confirmed configuration. The skill checks the effective roles with `role list --json`, reads the workflow agreement, and runs validation before starting or dispatching. Existing roles are preserved by default; research and docs are optional. `herdr-team --help` lists every available command, including task operations. Sidebar refresh runs through internal plugin hooks.
+Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onboard` command; `init` saves confirmed configuration. The skill checks the effective roles with `role list --json`, reads the workflow agreement, and runs validation before starting or dispatching. Existing roles are preserved by default; research and docs are optional. Role prompts define responsibilities, while the skill guides collaboration; assignments ask agents to read the skill before using the supplied CLI argument templates. `herdr-team --help` lists every available command, including task operations. Sidebar refresh runs through internal plugin hooks.
 
 Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project.
 

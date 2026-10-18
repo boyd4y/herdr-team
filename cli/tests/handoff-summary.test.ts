@@ -23,8 +23,6 @@ test("交付摘要在通知下游前落入 task.md，保留原描述，并提示
   herdr.agentPrompt = (_target, text) => {
     expect(readFileSync(file, "utf8")).toContain(summary);
     expect(text).toContain(file);
-    expect(text).toContain("Read it and its referenced");
-    expect(text).toContain("only for troubleshooting");
     prompted = true;
   };
   const result = handoff(loadProject(root), herdr, "0001", new Date(2026, 9, 16, 23, 30), { summary });
@@ -51,12 +49,10 @@ test("摘要保持可选；显式空摘要拒绝且不改变任务", () => fixtu
   expect(() => handoff(before, herdr, "0001", new Date(), { summary: " \n " })).toThrow("summary cannot be empty");
   expect(loadProject(root).tasks).toEqual(before.tasks);
   expect(herdr.calls).toEqual([]);
-  let prompt = "";
-  herdr.agentPrompt = (_target, text) => { prompt = text; };
+  herdr.agentPrompt = () => {};
   const result = handoff(before, herdr, "0001");
   expect(result.summarySaved).toBe(false);
   expect(result.note).toContain("No delivery summary supplied");
-  expect(prompt).toContain("ask the previous owner for missing details");
 }));
 
 test("摘要无法落盘时恢复原元数据，不通知下游", () => fixture((root, herdr) => {

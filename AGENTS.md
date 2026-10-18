@@ -27,6 +27,23 @@ and summaries in their original language; Unicode input remains supported.
   instructions in their respective references; link to each topic instead of
   copying its procedures or role prompts into multiple files.
 
+# Role prompts and shared context
+
+- Role `prompt.md`: define the role's responsibilities, allowed scope, boundaries,
+  and expected deliverables. Direct agents to the herdr-team skill for procedures;
+  do not copy command catalogs, workflow rules, or handoff/PR/merge recipes here.
+- `identity.md`: provide shared project background, stable conventions, and user
+  preferences. Do not assign roles, route tasks, prescribe command sequences, or
+  duplicate the skill. Reference existing `AGENTS.md` conventions instead of
+  maintaining a competing copy; identity text does not override them.
+- Delivery messages: request skill loading first, then supply assignment facts,
+  task/artifact paths, SHAs, delivery IDs, and exact CLI argument templates.
+  Templates identify an operation; the skill determines when and how to use it.
+  Do not turn the message builder into a second workflow guide.
+- Keep these layers separate when updating defaults and onboarding instructions.
+  Do not silently overwrite existing customized role prompts or identity files,
+  or alter active task records to enforce a new prompt convention.
+
 # Tests
 
 Keep tests focused on observable behavior and meaningful failure recovery.

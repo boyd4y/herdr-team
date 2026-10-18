@@ -37,6 +37,7 @@ Skill 负责对话引导，CLI 负责确定性落盘；不会自行替用户完�
 onboard 是 Skill 的对话流程，不是 CLI 命令。Skill 提供工作流候选、确认角色和模型，再用 `init` 保存配置。
 读 `.herdr/workflow.md` 并用 `role list --json` 核对实际角色、harness、模型及启动配置，补齐缺失职责并运行 `validate`。
 初始化成功只表示文件已保存；Skill 还需核对 identity、工具和登录，再决定是否启动与派活。
+角色 prompt 只保留职责与边界，协作步骤由 Skill 引导；派活消息先要求读取 Skill，CLI 命令模板只提供当前任务的准确参数。
 已有角色默认保留，因此重新选择模型方案后要检查实际输出，不把保留的角色误报为已换模型或重写职责。
 启动用 `up`，业务任务用 `add` / `dispatch`，分别明确执行。
 

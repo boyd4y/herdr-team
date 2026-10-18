@@ -14,6 +14,9 @@ lead 创建/调整任务、管理角色和会话、dispatch、处理 queue retry
 
 ## 收到任务
 
+任务消息中的 CLI 命令是带正确 root、task ID 和 delivery ID 的调用模板，不是另一套流程说明。
+先按 Skill 判断本棒工作和交付方式，再使用模板的参数；不要把命令模板当成绕过 Skill 的入口。
+
 1. 运行消息中的 `herdr-team claim <id> --delivery ID --root <team-root>`。duplicate 表示已经领取，不再启动一份工作。
 2. 用 `herdr-team tasks <id> --json --root <team-root>` 读取完整卡片，读交付摘要及其引用的实际产物。
    列表 tasks/status/role list 默认不含 body，tasks <id> 返回含正文的单个对象。
