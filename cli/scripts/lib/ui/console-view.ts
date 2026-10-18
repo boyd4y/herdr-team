@@ -59,15 +59,18 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     flexGrow: 1, flexBasis: 0, minWidth: 0, scrollY: true, minHeight: 4 });
   const detailText = new TextRenderable(renderer, { id: "detail-text", width: "100%", wrapMode: "word", fg: c.text });
   const footer = new TextRenderable(renderer, { id: "footer", height: 1, truncate: true, fg: c.muted });
+  const sizeHint = new TextRenderable(renderer, { id: "size-hint", flexGrow: 1, width: "100%", wrapMode: "word", fg: c.muted,
+    content: "Resize the terminal to at least 40 columns and 20 rows. Ctrl-C exits.", visible: false });
   taskPanel.add(tasks); taskPanel.add(empty); left.add(taskPanel); left.add(roles);
   details.add(detailText);
   workspace.add(selectedTitle); workspace.add(flow.view); workspace.add(details);
-  main.add(left); main.add(workspace); root.add(heading); root.add(pending); root.add(health); root.add(search); root.add(main); root.add(footer);
+  main.add(left); main.add(workspace); root.add(heading); root.add(pending); root.add(health); root.add(search); root.add(main); root.add(sizeHint); root.add(footer);
   renderer.root.add(root);
 
   const updateFooter = () => {
     const preview = options.sample ? "preview" : sample ? "s live" : "s sample";
-    footer.content = renderer.width < 100 ? `↑↓ tasks · Tab focus · / search · ${preview} · q quit` :
+    footer.content = renderer.width < 40 ? "q quit · Ctrl-C exit" : renderer.width < 60 ? "Tab panels · / search · q quit" :
+      renderer.width < 100 ? `↑↓ tasks · Tab focus · / search · ${preview} · q quit` :
       `↑↓ select · / search · a all · Tab focus · PgUp/Dn scroll · ${preview} · q quit`;
   };
 
@@ -78,7 +81,8 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     state.selectedIndex = task ? tasks.getSelectedIndex() : -1;
     model.selectedIndex = state.selectedIndex;
     const live = task && model.taskAgents.get(task.id);
-    const deliveryStatus = task && (integrationStatus(task)?.state ?? deliveryState(task) ?? "not queued");
+    const integration = task && integrationStatus(task);
+    const deliveryStatus = task && (integration?.state ?? deliveryState(task) ?? "not queued");
     const delivery = task && deliveryState(task) !== "invalid" ? deliveryFor(task) : undefined;
     const age = delivery && Math.max(0, Math.floor((model.observedAt - Date.parse(delivery.sent_at ?? delivery.queued_at)) / 1000));
     const role = task && project.roles.find(role => role.name === task.role);
@@ -90,6 +94,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
       `Delivery: ${deliveryStatus}${delivery ? ` · ${delivery.id.slice(0, 8)}` : ""}`,
       ...(age !== undefined ? [`Delivery age: ${Math.floor(age / 60)}m ${age % 60}s`] : []),
       ...(delivery?.reason ? [delivery.reason] : []),
+      ...(integration && "reason" in integration && integration.reason ? [`Integration: ${integration.reason}`] : []),
       `Agent: ${live?.name ?? "—"} · ${live?.agent_status ?? "—"}`,
       ...(role ? [`Model: ${role.kind} · ${role.model ?? "default"}`] : []),
       ...(live?.pane_id ? [`Pane: ${live.pane_id}`] : []),
@@ -128,6 +133,10 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
 
   const layout = () => {
     const narrow = renderer.width < 90;
+    const tooSmall = renderer.width < 40 || renderer.height < 20;
+    main.visible = !tooSmall;
+    sizeHint.visible = tooSmall;
+    flow.setActive(!tooSmall);
     const available = renderer.height - 3 - Number(health.visible) - Number(search.visible);
     const roleHeight = project.roles.length + 3;
     main.flexDirection = narrow ? "column" : "row";
@@ -234,6 +243,8 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     stopped = true;
     if (timer) clearInterval(timer);
     flow.dispose();
+    tasks.off(SelectRenderableEvents.SELECTION_CHANGED, select);
+    search.off(InputRenderableEvents.INPUT, input);
     renderer.keyInput.off("keypress", keypress);
     renderer.off(CliRenderEvents.RESIZE, resize);
     renderer.off(CliRenderEvents.DESTROY, dispose);

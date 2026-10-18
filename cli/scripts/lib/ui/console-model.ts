@@ -132,7 +132,7 @@ export function modelFromAgents(project: Project, agents: AgentInfo[], state: Co
 }
 
 export type FlowState = "done" | "running" | "waiting" | "sending" | "blocked" | "idle" | "cancelled";
-export interface FlowNode { role: string; label: string; state: FlowState; model: string }
+export interface FlowNode { kind: "role" | "integration"; role: string; label: string; state: FlowState; model: string }
 export interface TaskFlow { nodes: FlowNode[]; current: number }
 
 /** Only recorded participants and remaining assignments form a path, never a role preset. */
@@ -144,7 +144,7 @@ export function taskFlow(task: TaskCard, project: Project, model: ConsoleModel):
   } catch { /* Malformed records are surfaced by the health banner. */ }
   if (past.at(-1) !== task.role) past.push(task.role);
   let current = past.length - 1;
-  const participants = [...past, ...task.handoff];
+  const participants = [...past, ...(isTerminal(task.status) ? [] : task.handoff)];
   const integration = integrationStatus(task);
   if (integration) { participants.push("merge"); current = participants.length - 1; }
   const live = model.taskAgents.get(task.id);
@@ -157,9 +157,11 @@ export function taskFlow(task: TaskCard, project: Project, model: ConsoleModel):
     live?.agent_status === "working" ? "running" : "idle";
   const labels: Record<FlowState, string> = { done: "Done", running: "Running", waiting: "Waiting", sending: "Delivering", blocked: "Needs input", idle: delivery === "claimed" ? "Claimed" : "Ready", cancelled: "Cancelled" };
   return { current, nodes: participants.map((name, i) => {
-    const role = project.roles.find(role => role.name === name);
+    const kind = integration && i === participants.length - 1 ? "integration" : "role";
+    const role = kind === "role" && project.roles.find(role => role.name === name);
     const state = i < current || task.status === "done" ? "done" : i === current ? active : "waiting";
-    return { role: name, state, label: i > current ? "Next" : labels[state], model: role ? `${role.kind} · ${role.model ?? "default"}` : "serial integration" };
+    return { kind, role: name, state, label: i > current ? "Next" : labels[state],
+      model: kind === "integration" ? "serial integration" : role ? `${role.kind} · ${role.model ?? "default"}` : "unconfigured role" };
   }) };
 }
 
@@ -181,6 +183,7 @@ interface PendingCounts {
 function pendingCounts(tasks: TaskCard[]): PendingCounts {
   const counts = { waiting: 0, delivering: 0, claimed: 0, needsYou: 0, integration: 0 };
   for (const task of tasks) {
+    if (isTerminal(task.status)) continue;
     const integration = integrationStatus(task);
     if (integration && integration.state !== "done") {
       counts.integration++;

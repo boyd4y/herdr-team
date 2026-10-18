@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
-import { getTimelineEngine, type TextRenderable } from "@opentui/core";
+import { CliRenderEvents, getTimelineEngine, type TextRenderable } from "@opentui/core";
 import { deliveryState, newDelivery } from "../scripts/lib/dispatch/delivery.ts";
 import { projectKey } from "../scripts/lib/dispatch/team-scope.ts";
 import type { Project, RoleCard, TaskCard } from "../scripts/lib/shared/types.ts";
-import { buildModel, formatStatusLine, fuzzyScore, filterTasks, renderOnce, resolveSelection, taskFlow, type ConsoleState } from "../scripts/lib/ui/console-model.ts";
+import { buildModel, formatStatusLine, fuzzyScore, filterTasks, renderOnce, resolveSelection, taskFlow, type ConsoleState, type TaskFlow } from "../scripts/lib/ui/console-model.ts";
 import { sampleConsole } from "../scripts/lib/ui/console-sample.ts";
+import { createFlowView } from "../scripts/lib/ui/console-flow.ts";
 import { mountConsole } from "../scripts/lib/ui/console-view.ts";
 import { fakeHerdr, type FakeHerdr } from "./helpers.ts";
 
@@ -276,6 +277,9 @@ describe("formatStatusLine", () => {
     const broken = task("0006", "bad", "Bad", "P1", "todo", "dev");
     delete broken.meta["title"];
     expect(line([queued, blocked, broken])).toBe("team: 2 todo · 1 queued · 1 blocked · 1 ✗");
+    const finished = { ...queued, status: "done" };
+    const cancelled = { ...sending, status: "cancelled" };
+    expect(line([finished, cancelled])).toBe("");
   });
 
   test("全静默时什么都不输出 —— 和 needs-you --line 一个规矩", () => {
@@ -452,6 +456,28 @@ describe("OpenTUI Console", () => {
     expect(merge.nodes.at(-1)?.state).toBe("waiting");
     card.status = "done";
     expect(taskFlow(card, project, model).nodes.every(node => node.state === "done")).toBe(true);
+    // Historical role removal must not invent a merge or a pending assignment.
+    delete card.meta.integration;
+    card.handoff = ["publish"];
+    project.roles = [];
+    const archived = taskFlow(card, project, model);
+    expect(archived.nodes.map(node => node.role)).toEqual(["builder", "audit"]);
+    expect(archived.nodes.every(node => node.kind === "role" && node.model === "unconfigured role")).toBe(true);
+  });
+
+  test("integration failures expose their reason and remain distinct from a real merge role", async () => {
+    const card = task("0099", "merge", "Merge failure", "P1", "review", "merge");
+    card.meta.integration = { state: "blocked", commit: "b".repeat(40), reason: "Required CI check failed" };
+    const ui = await setup(projectOf([card], [role("merge")]));
+    try {
+      await ui.renderOnce();
+      const flow = taskFlow(card, ui.project, ui.app.model);
+      expect(flow.nodes.map(node => node.kind)).toEqual(["role", "integration"]);
+      expect(flow.nodes[0]?.model).toContain("codex");
+      expect(flow.nodes[1]?.model).toBe("serial integration");
+      expect(ui.captureCharFrame()).toContain("Required CI check failed");
+      expect(ui.captureCharFrame()).toContain("MERGE QUEUE");
+    } finally { await ui.dispose(); }
   });
 
   test("handoff particles and running pulses use OpenTUI frames without polling; static selection releases animations", async () => {
@@ -516,7 +542,85 @@ describe("OpenTUI Console", () => {
       expect(roles.focused).toBe(true);
       ui.mockInput.pressKey("\x1b[6~"); await ui.renderOnce();
       expect(ui.captureCharFrame()).toContain("test-final");
+      ui.resize(34, 12); await ui.renderOnce();
+      expect(ui.captureCharFrame()).toContain("Resize the terminal");
+      expect(ui.captureCharFrame()).toContain("q quit");
+      ui.resize(62, 26); await ui.renderOnce();
+      expect(ui.captureCharFrame()).toContain("DETAIL");
+      expect(ui.app.model.tasks[ui.app.model.selectedIndex]?.id).toBe("0099");
+      ui.resize(34, 12); ui.mockInput.pressKey("q"); await ui.renderer.closed;
     } finally { await ui.dispose(); }
+  });
+
+  test("long flow reveals its active node after native layout and remains manually scrollable", async () => {
+    const screen = await createTestRenderer({ width: 62, height: 20 });
+    const flow = createFlowView(screen.renderer);
+    screen.renderer.root.add(flow.view);
+    try {
+      flow.update("long", { current: 7, nodes: Array.from({ length: 8 }, (_, i) => ({
+        kind: "role", role: `stage-${i}`, label: i === 7 ? "Running" : "Done", state: i === 7 ? "running" : "done", model: "codex · default",
+      })) });
+      await screen.waitForFrame(frame => frame.includes("STAGE-7"));
+      expect(flow.view.scrollLeft).toBeGreaterThan(0);
+      flow.view.scrollTo({ x: 0, y: 0 }); await screen.renderOnce();
+      expect(screen.captureCharFrame()).toContain("STAGE-0");
+      flow.view.scrollTo({ x: 9999, y: 0 }); await screen.renderOnce();
+      expect(screen.captureCharFrame()).toContain("STAGE-7");
+    } finally { flow.dispose(); await screen.dispose(); }
+  });
+
+  test("repeat visits and the merge queue animate the recorded transition without mistaking a role name", async () => {
+    const screen = await createTestRenderer({ width: 140, height: 24 });
+    const flow = createFlowView(screen.renderer); screen.renderer.root.add(flow.view);
+    const path = (roles: string[], current: number): TaskFlow => ({ current, nodes: roles.map((role, index) => ({
+      kind: "role", role, label: index === current ? "Running" : index < current ? "Done" : "Next",
+      state: index === current ? "running" : index < current ? "done" : "waiting", model: "codex · default",
+    })) });
+    try {
+      flow.update("repeat", path(["dev", "test", "doc", "test"], 1)); await screen.renderOnce();
+      // A refresh may skip intermediate owners; this is the second test visit, not the first.
+      flow.update("repeat", path(["dev", "test", "doc", "test"], 3));
+      getTimelineEngine(screen.renderer).update(500);
+      await screen.renderOnce();
+      const forward = screen.renderer.root.findDescendantById("flow-signal-3") as TextRenderable;
+      expect(forward.chunks.length).toBeGreaterThan(1);
+      expect(forward.chunks.map(chunk => chunk.text).join("")).toContain("▶");
+      expect((screen.renderer.root.findDescendantById("flow-signal-1") as TextRenderable).chunks.map(chunk => chunk.text).join("")).toContain("▶");
+      flow.update("repeat", path(["dev", "test", "doc", "test"], 1));
+      await screen.renderOnce();
+      expect((screen.renderer.root.findDescendantById("flow-signal-3") as TextRenderable).chunks.map(chunk => chunk.text).join("")).toContain("◀");
+      expect((screen.renderer.root.findDescendantById("flow-signal-1") as TextRenderable).chunks.map(chunk => chunk.text).join("")).toContain("▶");
+      flow.update("merge", path(["merge"], 0)); await screen.renderOnce();
+      const integrated = path(["merge", "merge"], 1);
+      integrated.nodes[1]!.kind = "integration";
+      flow.update("merge", integrated);
+      getTimelineEngine(screen.renderer).update(500); await screen.renderOnce();
+      expect((screen.renderer.root.findDescendantById("flow-signal-1") as TextRenderable).chunks.length).toBeGreaterThan(1);
+      flow.dispose();
+      const count = screen.renderer.listenerCount(CliRenderEvents.FRAME);
+      flow.update("after-dispose", path(["dev", "test"], 1));
+      screen.resize(120, 26); await screen.renderOnce();
+      expect(screen.renderer.listenerCount(CliRenderEvents.FRAME)).toBe(count);
+    } finally { flow.dispose(); await screen.dispose(); }
+  });
+
+  test("hidden flow stops live animation, resumes on resize and cannot restart after disposal", async () => {
+    const screen = await createTestRenderer({ width: 120, height: 36 });
+    const app = mountConsole(screen.renderer, { sample: true, intervalMs: 0, showAll: true });
+    try {
+      await screen.renderOnce();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(true);
+      screen.resize(34, 12); await screen.flush();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
+      screen.resize(120, 36); await screen.renderOnce();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(true);
+      app.dispose(); await screen.flush();
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
+      const before = app.model;
+      screen.mockInput.pressArrow("down"); screen.resize(130, 38); await screen.flush();
+      expect(app.model).toBe(before);
+      expect(screen.renderer.getSchedulerState().isRunning).toBe(false);
+    } finally { await screen.dispose(); }
   });
 
   test("empty projects can preview samples without scheduling, then recover the real project even on a failed reload", async () => {
