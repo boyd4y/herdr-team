@@ -1,4 +1,4 @@
-import { acceptanceFor, commitId, git, integrationFor, reviewFor, taskRepo, taskScoped, verifyCheckout } from "./execution.ts";
+import { acceptanceFor, assignedReviewFor, commitId, git, integrationFor, taskRepo, taskScoped, verifyCheckout } from "./execution.ts";
 import { stamp } from "./records.ts";
 export { appendRecord, stamp } from "./records.ts";
 export { assignmentPrompt } from "./assignment.ts";
@@ -152,8 +152,12 @@ function handoffLocked(
   if ([options.commit !== undefined, options.accept !== undefined, options.reject === true].filter(Boolean).length > 1) {
     throw new TaskError("Use only one of --commit, --accept, or --reject");
   }
-  const review = reviewFor(card);
+  const review = assignedReviewFor(card), workflow = taskWorkflow(card);
   const prFlow = usesPullRequest(card), reviewingPR = prFlow && card.role === stepRole(card, "review");
+  const currentStep = workflow?.steps.find((step) => step.role === card.role);
+  if (review && review.reviewer !== card.role && currentStep && ["test", "review"].includes(currentStep.kind)) {
+    throw new TaskError(`Task review assignment is inconsistent: owner ${card.role}, assigned reviewer ${review.reviewer}; ask lead to reconcile it`);
+  }
   const github = options.github ?? realGitHub();
   const verifyPR = () => {
     const pr = pullRequestFor(card), tested = testResultFor(card);
@@ -163,12 +167,19 @@ function handoffLocked(
     return pr;
   };
   let accepted = acceptanceFor(card);
+  // A preceding test approval is not the current reviewer's approval.
+  if (review?.reviewer === card.role && (accepted?.role !== card.role || accepted?.commit !== review.commit)) accepted = undefined;
   if (options.reject) {
     if (!review || card.role !== review.reviewer || !summary) throw new TaskError("Only the assigned reviewer can reject; include a defect summary");
     const queued = newDelivery(review.developer, "handoff", now);
     const decision = reviewingPR ? { commit: review.commit, role: card.role, state: "changes_requested",
       mode: github.decide(verifyPR(), "changes_requested", summary, operation) } : null;
-    persist({ role: review.developer, handoff: [...(reviewingPR ? [stepRole(card, "test")!] : []), review.reviewer, ...card.handoff], status: "doing",
+    const developerIndex = workflow?.steps.findIndex((step) => step.role === review.developer) ?? -1;
+    const reviewerIndex = workflow?.steps.findIndex((step) => step.role === card.role) ?? -1;
+    const repeat = workflow && developerIndex >= 0 && reviewerIndex > developerIndex
+      ? workflow.steps.slice(developerIndex + 1, reviewerIndex + 1).map((step) => step.role)
+      : [review.reviewer];
+    persist({ role: review.developer, handoff: [...repeat, ...card.handoff], status: "doing",
       delivery: queued, review: null, acceptance: null, integration: null, test_result: null, pr_decision: decision },
       `- Rejected ${review.commit}; returned to ${review.developer}`, review.developer);
     return { id, from, to: review.developer, status: "doing", previousStatus, prompted: false,
@@ -206,7 +217,9 @@ function handoffLocked(
   } else if (review && card.role === review.reviewer && !accepted) {
     throw new TaskError("Review the assigned commit, then hand off with --accept SHA or --reject");
   }
-  let reviewPatch: Record<string, unknown> = options.accept ? { acceptance: accepted, ...(reviewingPR ? { pr_decision: prDecisionFor(card) } : {}) } : {};
+  let reviewPatch: Record<string, unknown> = options.accept ? { review, acceptance: accepted,
+    ...(currentStep?.kind === "test" ? { test_result: { commit: accepted!.commit, role: card.role, summary } } : {}),
+    ...(reviewingPR ? { pr_decision: prDecisionFor(card) } : {}) } : {};
   if (options.commit) {
     const next = card.handoff[0];
     if (!next || next === card.role) throw new TaskError("A commit handoff requires a different next reviewer");
@@ -260,6 +273,10 @@ function handoffLocked(
   const rest = card.handoff.slice(1);
   const status = "review";
   const queued = newDelivery(next, "handoff", now);
+  const nextStep = workflow?.steps.find((step) => step.role === next);
+  if (!prFlow && review && accepted && (!workflow || nextStep && ["test", "review"].includes(nextStep.kind))) {
+    reviewPatch = { ...reviewPatch, review: { ...review, reviewer: next }, acceptance: null };
+  }
   persist({ ...reviewPatch, role: next, handoff: rest, status, delivery: queued },
     `- ${stamp(now)}  → ${next}  (${previousStatus} → ${status})`, next);
   refreshSidebar(project, herdr);

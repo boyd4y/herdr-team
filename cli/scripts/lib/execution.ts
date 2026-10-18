@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 import { runtimePath } from "./runtime.ts";
 import { projectKey } from "./team-scope.ts";
 import type { Project, RoleCard, TaskCard } from "./types.ts";
+import { deliveryFor } from "./delivery.ts";
+import { taskWorkflow } from "./workflow.ts";
 
 export function taskScoped(task: TaskCard, role?: RoleCard): boolean {
   if ((role?.name ?? task.role) === "lead") return false;
@@ -27,6 +29,23 @@ export function acceptanceFor(task: TaskCard): Acceptance | undefined {
   const a = v as Acceptance;
   if (!SHA.test(a.commit) || typeof a.role !== "string") throw new Error("Invalid task acceptance record");
   return a;
+}
+/** Recover only the old local transition that kept the preceding stage's approval. No disk writes. */
+export function assignedReviewFor(task: TaskCard): Review | undefined {
+  const review = reviewFor(task);
+  if (!review || review.reviewer === task.role) return review;
+  const workflow = taskWorkflow(task), accepted = acceptanceFor(task), delivery = deliveryFor(task);
+  const index = workflow?.steps.findIndex((step) => step.role === task.role) ?? -1;
+  const current = workflow?.steps[index], previous = workflow?.steps[index - 1];
+  if (workflow?.delivery === "local" && task.meta.execution === "task" && task.status === "review" && task.meta.integration == null &&
+      current && ["test", "review"].includes(current.kind) && previous && ["test", "review"].includes(previous.kind) &&
+      workflow.steps.slice(0, index - 1).some((step) => step.role === review.developer) &&
+      previous.role === review.reviewer && accepted?.role === previous.role && accepted.commit === review.commit &&
+      delivery?.phase === "handoff" && delivery.role === task.role &&
+      JSON.stringify(task.handoff) === JSON.stringify(workflow.steps.slice(index + 1).map((step) => step.role))) {
+    return { ...review, reviewer: task.role };
+  }
+  return review;
 }
 export function integrationFor(task: TaskCard): Integration | undefined {
   const v = task.meta.integration;

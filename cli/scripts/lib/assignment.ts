@@ -1,4 +1,4 @@
-import { reviewFor } from "./execution.ts";
+import { assignedReviewFor } from "./execution.ts";
 import { join } from "node:path";
 import { TASK_BODY, type TaskCard } from "./types.ts";
 import { stepRole, taskWorkflow } from "./workflow.ts";
@@ -27,7 +27,7 @@ export function assignmentPrompt(identity: string, roleBody: string, card: TaskC
       "Before review, commit all changes and hand off with --commit SHA. By default dev and test reuse this task worktree. Stop writing while the reviewer owns it.",
       "Test with isolated services: use HERDR_TEAM_TEST_DATABASE, HERDR_TEAM_REDIS_PREFIX and HERDR_TEAM_PORT/PORT from this session. Create/configure task-specific test resources; do not run against shared application databases or unprefixed Redis. If isolation cannot be configured, report that blocker.",
       "Accept only the assigned commit using --accept SHA and a validation summary; reject using --reject with defects, which returns directly to the original developer. Follow the task's selected test/review/merge stages; never bypass them or run shared local migrations from an execution session.",
-      ...(reviewFor(card) ? [`Assigned review commit: ${reviewFor(card)!.commit}. Verify the task worktree's HEAD matches this SHA. The acceptance summary must state the SHA and results.`] : []),
+      ...(assignedReviewFor(card) ? [`Assigned review commit: ${assignedReviewFor(card)!.commit}. Verify the task worktree's HEAD matches this SHA. The acceptance summary must state the SHA and results.`] : []),
     ] : []),
     `You now own task ${card.id}: ${card.title}`,
     `Directory: ${root === undefined ? `.herdr/${card.dir}` : join(root, ".herdr", card.dir)} (.task.yaml contains metadata; ${TASK_BODY} contains the description and history)`,

@@ -87,6 +87,12 @@ herdr-team workflow show
 PR 模板目前支持依次开发、测试、审查三个步骤；角色名可调整。本地流程支持自定义的有序职责链，
 可使用 `work` 步骤。lead 始终是流程外的唯一常驻编排角色。
 
+本地 `develop → test → review` 同样逐棒验收：test 的 `--accept SHA` 只保存测试结果，
+把同一 SHA 指派给 review，不产生合并许可；review 明确批准后才进入手动合入队列。
+review 拒绝会退回原开发者，重新经过 test 和 review。旧版本已发出、却仍保留 test 验收者记录的
+本地 review delivery，在任务流程、前一棒批准和当前投递一致时会兼容识别，沿用原 delivery ID，
+无需重建任务或手改元数据；仍须 claim 并明确 `--accept SHA` 或 `--reject`，不会自动批准。
+
 匹配流程第一步的 `add --role R` 会默认带上后续步骤，并把整份工作流保存进任务元数据。
 显式指定其他 handoff 链、`--workflow none` 或其他工作流预设可以建立例外任务。
 修改项目默认配置只影响新任务。尚未开始的 todo 卡可用 `workflow apply ID` 切换到当前默认，

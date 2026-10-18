@@ -1,12 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { loadProject } from "./config.ts";
-import { acceptanceFor, commitId, git, integrationFor, taskRepo } from "./execution.ts";
+import { acceptanceFor, commitId, git, integrationFor, reviewFor, taskRepo } from "./execution.ts";
 import { withTeamLock } from "./runtime.ts";
 import { commitTaskTransition } from "./queue.ts";
 import { findTask, TaskError } from "./task.ts";
 import { worktreeBranch, type Project } from "./types.ts";
 import { assertPullRequest, prDecisionFor, pullRequestFor, realGitHub, testResultFor, usesPullRequest, type GitHub } from "./pull-request.ts";
-import { stepRole } from "./workflow.ts";
+import { stepRole, taskWorkflow } from "./workflow.ts";
 
 export function mergeRows(project: Project) {
   return project.tasks.flatMap((task) => {
@@ -28,6 +28,10 @@ export function mergeTask(project: Project, id?: string, migrate?: string, githu
     if (item?.state !== "queued" || !accepted || accepted.commit !== item.commit) throw new TaskError("Task is not queued with an accepted commit");
     const repo = taskRepo(fresh, task);
     const prFlow = usesPullRequest(task), pr = pullRequestFor(task);
+    const finalReview = taskWorkflow(task)?.steps.filter((step) => ["test", "review"].includes(step.kind)).at(-1);
+    if (!prFlow && finalReview && (accepted.role !== finalReview.role || reviewFor(task)?.reviewer !== accepted.role || reviewFor(task)?.commit !== item.commit)) {
+      throw new TaskError("Local merge requires approval from the final test/review stage");
+    }
     if (prFlow) {
       const tested = testResultFor(task), decision = prDecisionFor(task);
       if (!pr || !tested || tested.role !== stepRole(task, "test") || tested.commit !== item.commit || !decision || decision.state !== "approved" || decision.commit !== item.commit ||

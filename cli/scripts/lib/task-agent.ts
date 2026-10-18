@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { acceptanceFor, reviewFor, taskEnvironment, taskScoped, verifyCheckout } from "./execution.ts";
+import { acceptanceFor, assignedReviewFor, taskEnvironment, taskScoped, verifyCheckout } from "./execution.ts";
 import type { AgentInfo, Herdr } from "./herdr.ts";
 import { assertProjectWorkspace, availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents } from "./team-scope.ts";
 import { savedResumeArgs, rememberRoleSession } from "./sessions.ts";
@@ -13,8 +13,8 @@ export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: 
   const offset = role.cwd === undefined ? "" : relative(repoPath, resolve(project.root, role.cwd));
   if (offset === ".." || offset.startsWith("../") || isAbsolute(offset)) throw new Error("Role cwd is outside the task repository");
   const scoped = taskScoped(task, role);
-  const review = reviewFor(task);
-  const testing = review?.reviewer === role.name && !acceptanceFor(task);
+  const review = assignedReviewFor(task), accepted = acceptanceFor(task);
+  const testing = review?.reviewer === role.name && (accepted?.role !== role.name || accepted?.commit !== review?.commit);
   const live = findRoleAgent(project, projectAgents(project, herdr), role, scoped ? task.id : undefined);
   if (!scoped) return live;
   const reviewTree = testing ? herdr.worktreeList(join(project.root, task.repo)).filter((t) => t.branch === worktreeBranch(task)) : [];

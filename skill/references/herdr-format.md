@@ -102,8 +102,8 @@
 | `handoff` | | list[str] | **剩余流转队列**（有序）。每项必须解析到存在的角色 |
 | `depends_on` | | list[str] | 每项必须解析到存在的任务 `id`；**禁止环** |
 | `execution` | | str | 新任务为 `task`；未发送的旧队列投递前自动迁移 |
-| `review` | | object | commit、developer、reviewer ；由 CLI 管理 |
-| `acceptance` | | object | 验收 commit 与 role；由 CLI 管理 |
+| `review` | | object | commit、developer、当前指定 reviewer；后续验收阶段接手时更新，由 CLI 管理 |
+| `acceptance` | | object | 当前阶段验收 commit 与 role；转交后续 test/review 时清空，最终验收后才允许合入；由 CLI 管理 |
 | `integration` | | object | 验收 commit 与 queued/running/blocked/done；由 CLI 管理 |
 | `repo` | | str | 开 worktree 用的仓库，相对项目根。缺省 `.`（项目根本身） |
 
