@@ -18,7 +18,7 @@ import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/dispat
 import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
 import { createTask, editTask, findTask, TaskError } from "./lib/tasks/cards.ts";
 import { formatProblems, validateProject } from "./lib/team/validate.ts";
-import { renderOnce, renderStatusLine } from "./lib/ui/console-model.ts";
+import { formatConsoleFrame, initialState, renderOnce, renderStatusLine } from "./lib/ui/console-model.ts";
 import { isTerminal, type Project } from "./lib/shared/types.ts";
 
 /** 所有碰 herdr 的命令都从这里拿，测试时能替换。 */
@@ -382,14 +382,17 @@ function parseInterval(value: string | undefined): number {
   return seconds;
 }
 
-const CONSOLE_USAGE = `Usage: herdr-team console [--all] [--interval SECONDS] [--once] [--root DIR]
+const CONSOLE_USAGE = `Usage: herdr-team console [--sample] [--all] [--interval SECONDS] [--once] [--root DIR]
 
 Team Console displays tasks, agents, and queues. It automatically delivers queued work every 2 seconds.
+Tasks are listed by ID, newest first. Search ranks matches, then breaks ties by newest ID.
 
 Keys:
   Up/Down / k j    Select a task
-  PgUp / PgDn     Scroll task details
+  PgUp / PgDn     Scroll the focused panel (details by default)
   r               Refresh now
+  s               Toggle sample preview (scheduling pauses during preview)
+  Tab             Focus tasks, flow, activity, or details
   a               Toggle terminal tasks
   /               Search IDs, titles, and roles (Unicode supported)
   Enter           Keep the filter and leave search input
@@ -402,10 +405,11 @@ Use dispatch to enqueue tasks and handoff to release the current assignment.
 For non-interactive agent use, run herdr-team status [--json].
 
 Options:
-  --interval <seconds>  Refresh interval (default 2; 0 only with --observe)
+  --interval <seconds>  Refresh interval (default 2; 0 with --observe or --sample)
   --all                 Include terminal tasks
   --once                Render one read-only frame and exit
   --observe             Show a live read-only Console without scheduling
+  --sample              Run an animated in-memory demo; no project or Herdr needed
   --line                Print one tab-bar status line without interaction
   --follow              Follow the focused pane when --root is omitted
   --sync-git            With --line, refresh primary workspace Git details
@@ -432,6 +436,20 @@ async function cmdConsole(args: string[]): Promise<number> {
     throw new UsageError("console does not support --json; use `herdr-team status --json`");
   }
   if (parsed.flags.has("sync-git") && !parsed.flags.has("line")) throw new UsageError("--sync-git requires --line");
+
+  if (parsed.flags.has("sample")) {
+    if (parsed.flags.has("line") || parsed.flags.has("follow")) throw new UsageError("--sample cannot be combined with --line or --follow");
+    const seconds = parseInterval(parsed.values.get("interval"));
+    const showAll = parsed.flags.has("all");
+    if (parsed.flags.has("once") || !process.stdout.isTTY || !process.stdin.isTTY) {
+      const { sampleConsole } = await import("./lib/ui/console-sample.ts");
+      const { model } = sampleConsole(initialState(showAll));
+      process.stdout.write(`SAMPLE · simulated data · no project changes\n${formatConsoleFrame(model)}`);
+      return 0;
+    }
+    const { runConsole } = await import("./lib/ui/console-view.ts");
+    return runConsole({ sample: true, intervalMs: seconds * 1000, showAll });
+  }
 
   // 标签栏那一行：不交互，而且没项目时要闭嘴而不是报错（见 resolveRootQuiet）。
   if (parsed.flags.has("line")) {

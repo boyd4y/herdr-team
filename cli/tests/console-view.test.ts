@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
-import { newDelivery } from "../scripts/lib/dispatch/delivery.ts";
+import { getTimelineEngine, type TextRenderable } from "@opentui/core";
+import { deliveryState, newDelivery } from "../scripts/lib/dispatch/delivery.ts";
 import { projectKey } from "../scripts/lib/dispatch/team-scope.ts";
 import type { Project, RoleCard, TaskCard } from "../scripts/lib/shared/types.ts";
-import { buildModel, formatStatusLine, fuzzyScore, filterTasks, renderOnce, resolveSelection, type ConsoleState } from "../scripts/lib/ui/console-model.ts";
+import { buildModel, formatStatusLine, fuzzyScore, filterTasks, renderOnce, resolveSelection, taskFlow, type ConsoleState } from "../scripts/lib/ui/console-model.ts";
+import { sampleConsole } from "../scripts/lib/ui/console-sample.ts";
 import { mountConsole } from "../scripts/lib/ui/console-view.ts";
 import { fakeHerdr, type FakeHerdr } from "./helpers.ts";
 
@@ -95,15 +97,15 @@ describe("fuzzy search", () => {
     expect(fuzzyScore("𠮷", "\ud842")).toBeNull(); // 不能拿半个代理对当命中
   });
 
-  test("按分数排序，同分再按 priority、id，空查询恢复原顺序且不修改输入", () => {
+  test("matches rank by score, ties and unfiltered tasks use newest ID regardless of priority", () => {
     const cards = [
       task("0003", "a", "ab", "P2", "todo", "dev"),
       task("0004", "b", "a___b", "P0", "todo", "dev"),
       task("0002", "c", "ab", "P1", "todo", "dev"),
       task("0001", "d", "ab", "P1", "todo", "dev"),
     ];
-    expect(filterTasks(cards, "ab").map((t) => t.id)).toEqual(["0001", "0002", "0003", "0004"]);
-    expect(filterTasks(cards, "").map((t) => t.id)).toEqual(["0004", "0001", "0002", "0003"]);
+    expect(filterTasks(cards, "ab").map((t) => t.id)).toEqual(["0003", "0002", "0001", "0004"]);
+    expect(filterTasks(cards, "").map((t) => t.id)).toEqual(["0004", "0003", "0002", "0001"]);
     expect(cards.map((t) => t.id)).toEqual(["0003", "0004", "0002", "0001"]);
   });
 
@@ -141,7 +143,7 @@ describe("buildModel", () => {
     expect(filtered.roles).toHaveLength(2);
     expect(filtered.inconsistencies.map((i) => i.id)).toContain(DOING.id);
     const all = build({ query: "test", showAll: true });
-    expect(all.tasks.map((t) => t.id)).toEqual([DONE.id, TODO.id]);
+    expect(all.tasks.map((t) => t.id)).toEqual([TODO.id, DONE.id]);
     expect(all.candidateCount).toBe(3);
     expect(build({ query: "查无此卡" }).selectedIndex).toBe(-1);
   });
@@ -296,7 +298,7 @@ describe("OpenTUI Console", () => {
   }
 
   test("renders task details, native selection, responsive layout and scrolling", async () => {
-    const long = task("0001", "long", "Long task", "P0", "todo", "dev",
+    const long = task("0099", "long", "Long task", "P0", "todo", "dev",
       Array.from({ length: 100 }, (_, i) => `Body line ${i} 中文𠮷`).join("\n"));
     const ui = await setup(projectOf([long, TODO]));
     try {
@@ -359,12 +361,12 @@ describe("OpenTUI Console", () => {
       ui.mockInput.pressArrow("down");
       ui.mockInput.pressKey("a");
       expect(ui.app.model.showAll).toBe(true);
-      expect(ui.app.model.tasks[ui.app.model.selectedIndex]?.id).toBe(TODO.id);
-      TODO.priority = "P0";
+      expect(ui.app.model.tasks[ui.app.model.selectedIndex]?.id).toBe(DOING.id);
+      ui.project.tasks.push(task("0099", "new", "Newer task", "P3", "todo", "dev"));
       ui.app.refresh();
-      expect(ui.app.model.selectedIndex).toBe(0);
-      expect(ui.app.model.tasks[0]?.id).toBe(TODO.id);
-    } finally { TODO.priority = "P2"; await ui.dispose(); }
+      expect(ui.app.model.selectedIndex).toBe(2);
+      expect(ui.app.model.tasks[ui.app.model.selectedIndex]?.id).toBe(DOING.id);
+    } finally { await ui.dispose(); }
   });
 
   test("refresh failure preserves data, reports error, recovers, and stop closes the renderer", async () => {
@@ -384,7 +386,7 @@ describe("OpenTUI Console", () => {
       fail = false; app.refresh();
       expect(app.model.loadError).toBeNull();
       tickFail = true; project = projectOf([DOING, TODO]); app.refresh();
-      expect(app.model.tasks).toEqual([DOING, TODO]);
+      expect(app.model.tasks).toEqual([TODO, DOING]);
       await screen.renderOnce();
       expect(screen.captureCharFrame()).toContain("Queue paused");
       tickFail = false; app.refresh();
@@ -399,7 +401,7 @@ describe("OpenTUI Console", () => {
 
   test("malformed task records and ambiguous agents stay visible and recover without exiting", async () => {
     const screen = await createTestRenderer({ width: 110, height: 32 });
-    const broken = deliveryTask("0001", "invalid");
+    const broken = deliveryTask("0099", "invalid");
     const project = projectOf([broken, TODO], [role("dev"), TEST]);
     broken.meta.integration = "corrupt";
     const h = fakeHerdr();
@@ -429,5 +431,107 @@ describe("OpenTUI Console", () => {
     expect(all).toContain("TASKS");
     expect(all).not.toContain("\x1b");
     expect(h.calls.some((call) => call.startsWith("agent prompt"))).toBe(false);
+  });
+
+  test("flow follows recorded custom roles and serial integration", () => {
+    const card = task("0099", "custom", "Custom assignment", "P1", "review", "audit");
+    card.handoff = ["publish"];
+    card.meta.review = { commit: "a".repeat(40), developer: "builder", reviewer: "audit", reviewers: ["audit"] };
+    const project = projectOf([card], [role("builder"), role("audit"), role("publish"), role("unused")]);
+    const model = buildModel(project, fakeHerdr(), freshState(), "");
+    const flow = taskFlow(card, project, model);
+    expect(flow.nodes.map(node => node.role)).toEqual(["builder", "audit", "publish"]);
+    expect(flow.current).toBe(1);
+    expect(flow.nodes[0]?.state).toBe("done");
+    card.status = "blocked";
+    expect(taskFlow(card, project, model).nodes[1]?.state).toBe("blocked");
+    card.status = "review"; card.handoff = [];
+    card.meta.integration = { state: "queued", commit: "a".repeat(40) };
+    const merge = taskFlow(card, project, model);
+    expect(merge.nodes.at(-1)?.role).toBe("merge");
+    expect(merge.nodes.at(-1)?.state).toBe("waiting");
+    card.status = "done";
+    expect(taskFlow(card, project, model).nodes.every(node => node.state === "done")).toBe(true);
+  });
+
+  test("handoff particles and running pulses use OpenTUI frames without polling; static selection releases animations", async () => {
+    const frame = sampleConsole(freshState({ showAll: true }), 5000);
+    // Use the sample model's recorded participants with a fake live service for poll accounting.
+    const h = fakeHerdr();
+    h.state.agents = [...frame.model.taskAgents.values()];
+    for (const agent of h.state.agents) agent.tokens = { team_project: projectKey(frame.project) };
+    let polls = 0;
+    h.agentList = () => { polls++; return h.state.agents; };
+    const screen = await createTestRenderer({ width: 130, height: 36 });
+    const app = mountConsole(screen.renderer, { initial: frame.project, load: () => frame.project, herdr: h, intervalMs: 0, showAll: true });
+    try {
+      await screen.renderOnce();
+      const dot = screen.renderer.root.findDescendantById("flow-dot-1") as TextRenderable;
+      expect(dot).toBeDefined();
+      const before = dot.left;
+      const count = polls;
+      getTimelineEngine(screen.renderer).update(500);
+      await screen.renderOnce();
+      expect(dot.left).not.toBe(before);
+      expect(polls).toBe(count);
+      screen.mockInput.pressArrow("down"); // Blocked task has no continuously animated elements.
+      await screen.renderOnce();
+      expect(dot.isDestroyed).toBe(true);
+      const after = polls;
+      getTimelineEngine(screen.renderer).update(500);
+      expect(polls).toBe(after);
+      app.dispose();
+      const state = app.model;
+      app.refresh();
+      expect(app.model).toBe(state);
+    } finally { await screen.dispose(); }
+  });
+
+  test("empty projects can preview samples without scheduling, then recover the real project even on a failed reload", async () => {
+    const screen = await createTestRenderer({ width: 120, height: 36 });
+    const project = projectOf([]);
+    let ticks = 0, loads = 0, fail = false;
+    const app = mountConsole(screen.renderer, { initial: project, load: () => { loads++; if (fail) throw new Error("Reload failed"); return project; },
+      herdr: fakeHerdr(), tick: () => { ticks++; }, intervalMs: 0, showAll: false });
+    try {
+      await screen.renderOnce();
+      expect(screen.captureCharFrame()).toContain("No tasks yet");
+      const counts = [ticks, loads];
+      screen.mockInput.pressKey("s");
+      app.refresh();
+      await screen.renderOnce();
+      expect(screen.captureCharFrame()).toContain("SAMPLE");
+      expect(app.model.tasks).toHaveLength(3);
+      expect([ticks, loads]).toEqual(counts);
+      expect(project.tasks).toEqual([]);
+      screen.resize(62, 26); await screen.renderOnce();
+      expect(screen.captureCharFrame()).toContain("DEV");
+      expect(screen.captureCharFrame()).toContain("TEST");
+      expect(screen.captureCharFrame()).toContain("DOC");
+      expect(screen.captureCharFrame()).toContain("q quit");
+      fail = true;
+      screen.mockInput.pressKey("s"); await screen.renderOnce();
+      expect(screen.captureCharFrame()).not.toContain("SAMPLE");
+      expect(app.model.projectName).toBe("myproj");
+      expect(app.model.tasks).toEqual([]);
+      expect(app.model.loadError).toContain("Reload failed");
+    } finally { await screen.dispose(); }
+  });
+
+  test("standalone sample cycles through handoff, return, completion and restart entirely in memory", async () => {
+    const state = freshState({ showAll: true });
+    const frames = [0, 5000, 10000, 15000, 35000, 45000, 50000].map(ms => sampleConsole(state, ms));
+    expect(frames.map(frame => frame.model.tasks[0]?.role)).toEqual(["dev", "test", "test", "dev", "doc", "doc", "dev"]);
+    expect(deliveryState(frames[1]!.model.tasks[0]!)).toBe("submitted");
+    expect(frames[5]!.model.tasks[0]?.status).toBe("done");
+    expect(frames.every(frame => frame.model.problems.length === 0)).toBe(true);
+    const screen = await createTestRenderer({ width: 120, height: 36 });
+    try {
+      mountConsole(screen.renderer, { sample: true, intervalMs: 0, showAll: false, tick: () => { throw new Error("Sample must never schedule"); } });
+      await screen.renderOnce();
+      expect(screen.captureCharFrame()).toContain("SAMPLE");
+      screen.mockInput.pressKey("q"); await screen.renderer.closed;
+      expect(screen.renderer.isDestroyed).toBe(true);
+    } finally { await screen.dispose(); }
   });
 });

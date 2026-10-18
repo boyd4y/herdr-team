@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadProject } from "../scripts/lib/team/project.ts";
 import { acquireConsole, ensureConsole, stopConsole } from "../scripts/lib/runtime/console.ts";
 import { runtimePath } from "../scripts/lib/runtime/state.ts";
@@ -142,3 +144,27 @@ test("Console startup has a bounded wait and reports the occupied pane without i
   expect(checks).toBe(21);
   expect(h.calls.some((call) => call.startsWith("pane run"))).toBe(false);
 }));
+
+test("console --sample works outside a team and Herdr without touching project or runtime files", () => {
+  const root = mkdtempSync(join(tmpdir(), "herdr-console-sample-"));
+  try {
+    const bin = join(root, "bin"); mkdirSync(bin);
+    const marker = join(root, "herdr-was-called");
+    const herdr = join(bin, "herdr");
+    writeFileSync(herdr, `#!/usr/bin/env bun\nawait Bun.write(${JSON.stringify(marker)}, 'unexpected'); process.exit(1);\n`);
+    chmodSync(herdr, 0o755);
+    const cli = (...args: string[]) => Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "console", "--sample", ...args], {
+      cwd: root, env: { ...process.env, HERDR_ENV: "0", HERDR_PLUGIN_STATE_DIR: join(root, "state"), PATH: `${bin}:${process.env.PATH}` },
+      stdout: "pipe", stderr: "pipe",
+    });
+    const result = cli("--once");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString()).toContain("SAMPLE");
+    expect(result.stdout.toString()).toContain("0083");
+    expect(result.stdout.toString()).not.toContain("\x1b");
+    expect(result.stderr.toString()).toBe("");
+    expect(cli("--line").exitCode).toBe(2);
+    expect(existsSync(marker)).toBe(false);
+    expect(readdirSync(root)).toEqual(["bin"]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

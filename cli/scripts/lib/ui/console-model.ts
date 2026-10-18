@@ -1,8 +1,8 @@
 import { basename } from "node:path";
 import { sanitize } from "../shared/text.ts";
-import { taskScoped } from "../tasks/verification.ts";
+import { reviewFor, taskScoped } from "../tasks/verification.ts";
 import { roleAgents, projectAgents } from "../dispatch/team-scope.ts";
-import { deliveryState } from "../dispatch/delivery.ts";
+import { deliveryFor, deliveryState } from "../dispatch/delivery.ts";
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
 import { findInconsistencies, roleStatusesFrom, integrationStatus, formatReport, formatTaskDetail, type Inconsistency, type RoleStatus } from "./status.ts";
 import { isTerminal, type Project, type TaskCard } from "../shared/types.ts";
@@ -32,13 +32,13 @@ export function fuzzyScore(text: string, query: string): number | null {
 }
 
 export function filterTasks(tasks: TaskCard[], query: string): TaskCard[] {
-  if (query === "") return [...tasks].sort(byPriorityThenId);
+  if (query === "") return [...tasks].sort(byNewestId);
   return tasks.flatMap((task) => {
     const scores = [task.id, task.title, task.role]
       .map((field) => fuzzyScore(field, query))
       .filter((score): score is number => score !== null);
     return scores.length === 0 ? [] : [{ task, score: Math.max(...scores) }];
-  }).sort((a, b) => b.score - a.score || byPriorityThenId(a.task, b.task))
+  }).sort((a, b) => b.score - a.score || byNewestId(a.task, b.task))
     .map(({ task }) => task);
 }
 
@@ -67,6 +67,7 @@ export interface ConsoleModel {
   pending: PendingCounts;
   taskAgents: Map<string, AgentInfo>;
   now: string;
+  observedAt: number;
   showAll: boolean;
   query: string;
   candidateCount: number;
@@ -79,8 +80,8 @@ export interface ConsoleModel {
   selectedIndex: number;
 }
 
-function byPriorityThenId(a: TaskCard, b: TaskCard): number {
-  return a.priority === b.priority ? a.id.localeCompare(b.id) : a.priority.localeCompare(b.priority);
+function byNewestId(a: TaskCard, b: TaskCard): number {
+  return b.id.localeCompare(a.id);
 }
 
 export function buildModel(
@@ -97,6 +98,11 @@ export function buildModel(
     herdrOk = false;
   }
 
+  return modelFromAgents(project, agents, state, now, herdrOk);
+}
+
+/** Shared data projection for the live reader and the in-memory sample. */
+export function modelFromAgents(project: Project, agents: AgentInfo[], state: ConsoleState, now: string, herdrOk = true, observedAt = Date.now()): ConsoleModel {
   const taskAgents = new Map<string, AgentInfo>();
   for (const task of project.tasks) {
     const role = project.roles.find((r) => r.name === task.role);
@@ -110,6 +116,7 @@ export function buildModel(
     pending: pendingCounts(project.tasks),
     taskAgents,
     now,
+    observedAt,
     ...selectTasks(project, state),
     roles: roleStatusesFrom(project, agents).map((role) => ({
       ...role,
@@ -122,6 +129,55 @@ export function buildModel(
     herdrOk,
     loadError: state.loadError,
   };
+}
+
+export type FlowState = "done" | "running" | "waiting" | "sending" | "blocked" | "idle" | "cancelled";
+export interface FlowNode { role: string; label: string; state: FlowState; model: string }
+export interface TaskFlow { nodes: FlowNode[]; current: number }
+
+/** Only recorded participants and remaining assignments form a path, never a role preset. */
+export function taskFlow(task: TaskCard, project: Project, model: ConsoleModel): TaskFlow {
+  let past: string[] = [];
+  try {
+    const review = reviewFor(task);
+    if (review) past = [review.developer, ...(review.reviewers ?? [review.reviewer])];
+  } catch { /* Malformed records are surfaced by the health banner. */ }
+  if (past.at(-1) !== task.role) past.push(task.role);
+  let current = past.length - 1;
+  const participants = [...past, ...task.handoff];
+  const integration = integrationStatus(task);
+  if (integration) { participants.push("merge"); current = participants.length - 1; }
+  const live = model.taskAgents.get(task.id);
+  const delivery = deliveryState(task);
+  const blocked = task.status === "blocked" || live?.agent_status === "blocked" ||
+    ["uncertain", "invalid"].includes(delivery ?? "") || ["blocked", "invalid"].includes(integration?.state ?? "");
+  const active: FlowState = task.status === "cancelled" ? "cancelled" : task.status === "done" ? "done" : blocked ? "blocked" :
+    integration ? integration.state === "running" ? "running" : integration.state === "done" ? "done" : "waiting" :
+    delivery === "sending" || delivery === "submitted" ? "sending" : delivery === "queued" ? "waiting" :
+    live?.agent_status === "working" ? "running" : "idle";
+  const labels: Record<FlowState, string> = { done: "Done", running: "Running", waiting: "Waiting", sending: "Delivering", blocked: "Needs input", idle: delivery === "claimed" ? "Claimed" : "Ready", cancelled: "Cancelled" };
+  return { current, nodes: participants.map((name, i) => {
+    const role = project.roles.find(role => role.name === name);
+    const state = i < current || task.status === "done" ? "done" : i === current ? active : "waiting";
+    return { role: name, state, label: i > current ? "Next" : labels[state], model: role ? `${role.kind} · ${role.model ?? "default"}` : "serial integration" };
+  }) };
+}
+
+export function taskActivity(task: TaskCard): string {
+  const lines: string[] = [];
+  const time = (value: string) => new Date(value).toLocaleTimeString("en-GB");
+  try {
+    const delivery = deliveryFor(task);
+    if (delivery) {
+      lines.push(`${time(delivery.queued_at)}  Queued for ${delivery.role}`);
+      if (delivery.sent_at) lines.push(`${time(delivery.sent_at)}  Submitted to agent`);
+      lines.push(`${delivery.state} · ${delivery.id.slice(0, 8)}`);
+      if (delivery.reason) lines.push(delivery.reason);
+    }
+  } catch { lines.push("Invalid delivery record"); }
+  const history = task.body.split(/^##\s*(?:History|\u6d41\u8f6c\u8bb0\u5f55)\s*$/m)[1];
+  if (history) lines.push(...history.split("\n").filter(line => line.startsWith("- ")).slice(-6).map(line => line.slice(2)));
+  return lines.join("\n\n") || "No recorded handoffs yet.";
 }
 
 export function selectTasks(project: Project, state: ConsoleState) {
@@ -202,6 +258,10 @@ export function initialState(showAll = false): ConsoleState {
 /** Plain, read-only output for pipelines and --once; no terminal ownership. */
 export function renderOnce(project: Project, herdr: Herdr, opts: { showAll: boolean }): string {
   const model = buildModel(project, herdr, initialState(opts.showAll), "");
+  return formatConsoleFrame(model);
+}
+
+export function formatConsoleFrame(model: ConsoleModel): string {
   const report = formatReport({ tasks: model.tasks, roles: model.roles, inconsistencies: model.inconsistencies });
   const problems = model.problems.length ? `\nVALIDATION\n${model.problems.join("\n")}\n` : "";
   const selected = model.tasks[model.selectedIndex];
