@@ -12,6 +12,7 @@ import { mergeRows, mergeTask, retryMerge } from "../scripts/lib/integration.ts"
 import { dispatch } from "../scripts/lib/launch.ts";
 import { pumpQueue } from "../scripts/lib/queue.ts";
 import { runtimePath } from "../scripts/lib/runtime.ts";
+import { roleStatusesFrom } from "../scripts/lib/status.ts";
 import { createTask, writeTaskMeta } from "../scripts/lib/task.ts";
 import { worktreeBranch } from "../scripts/lib/types.ts";
 import { claimCurrent, fakeHerdr, makeProject, roleMeta, taskMeta, writeRole, writeTask } from "./helpers.ts";
@@ -79,10 +80,14 @@ test("lead always starts one resident session and queues its tasks without creat
   expect(started.roles.find((role) => role.role === "lead")!.action).toBe("started");
   up(f.load(), f.herdr);
   expect(f.herdr.state.agents.filter((agent) => agent.name === "lead")).toHaveLength(1);
+  expect(roleStatusesFrom(f.load(), f.herdr.state.agents).find((role) => role.role === "lead")).toMatchObject({ agent: "lead", worktree: false });
   writeTask(f.root, "0001-a", taskMeta({ role: "lead", execution: "task" }));
   writeTask(f.root, "0002-b", taskMeta({ role: "lead", execution: "task" }));
+  const prompts: string[] = [], prompt = f.herdr.agentPrompt;
+  f.herdr.agentPrompt = (target, text) => { prompts.push(text); prompt(target, text); };
   dispatch(f.load(), f.herdr);
   const first = claimCurrent(f.root);
+  expect(prompts[0]).toContain("single resident lead session");
   const lead = f.herdr.state.agents.find((agent) => agent.name === "lead")!;
   lead.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "lead-native" };
   refreshSidebar(f.load(), f.herdr);

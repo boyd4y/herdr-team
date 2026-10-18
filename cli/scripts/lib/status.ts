@@ -59,7 +59,7 @@ export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleSta
       current: owned.filter((t) => !integrationFor(t) && !waitingDelivery(t) && (deliveryState(t) || t.status !== "todo")).map((t) => t.id),
       queued: owned.filter(waitingDelivery).length,
     } : {};
-    if (role.worktree || owned.some((t) => taskScoped(t))) {
+    if (role.name !== "lead" && (role.worktree || owned.some((t) => taskScoped(t)))) {
       // 隔离角色的 agent 跟着任务走，没有常驻的那个。
       return { role: role.name, agent: null, herdrStatus: "per-task", paneId: null, worktree: true, ...queue };
     }
