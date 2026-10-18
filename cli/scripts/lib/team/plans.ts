@@ -27,14 +27,8 @@ export function isPlanName(value: string): value is PlanName {
   return PLAN_NAMES.includes(value);
 }
 
-/** Catalog selections expand to explicit launch configuration; default adds no model override. */
-export function modelSpec(kind: string, model?: string, root?: string) {
-  return resolveModel(modelCatalog(root), kind, model);
-}
-
-function resolveModel(models: ModelCatalog, kind: string, selected?: string) {
+function resolveModel(models: ModelCatalog, kind: string, model: string) {
   const harness = Object.hasOwn(models.harnesses, kind) ? models.harnesses[kind] : undefined;
-  const model = selected ?? harness?.preferred ?? "default";
   const args = harness?.models && Object.hasOwn(harness.models, model) ? harness.models[model] : undefined;
   if (!Array.isArray(args) || args.some(value => typeof value !== "string")) throw new Error(`Unknown model ${model} for harness ${kind}`);
   const common = harness!.args ?? [];

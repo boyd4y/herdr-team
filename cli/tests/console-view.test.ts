@@ -552,6 +552,29 @@ describe("OpenTUI Console", () => {
     } finally { await ui.dispose(); }
   });
 
+  test("role rows survive assignment changes and reordering, and removed roles release their widgets", async () => {
+    const ui = await setup(projectOf([task("0099", "roles", "Assignment", "P1", "todo", "dev")]));
+    try {
+      await ui.renderOnce();
+      const roles = ui.renderer.root.findDescendantById("roles")!;
+      const dev = ui.renderer.root.findDescendantById("role-dev")!;
+      const tester = ui.renderer.root.findDescendantById("role-test")!;
+      ui.project.tasks[0]!.status = "doing";
+      ui.project.tasks[0]!.meta.status = "doing";
+      ui.project.roles.reverse();
+      ui.app.refresh(); await ui.renderOnce();
+      expect(ui.renderer.root.findDescendantById("role-dev")).toBe(dev);
+      expect(ui.renderer.root.findDescendantById("role-test")).toBe(tester);
+      expect(roles.getChildren().map(row => row.id)).toEqual(["roles-heading", "role-test", "role-dev"]);
+      expect(dev.getChildren().map(cell => (cell as TextRenderable).plainText).join(" ")).toContain("#0099");
+      ui.project.roles = ui.project.roles.filter(role => role.name !== "test");
+      ui.app.refresh(); await ui.renderOnce();
+      expect(tester.isDestroyed).toBe(true);
+      expect(roles.getChildren().map(row => row.id)).toEqual(["roles-heading", "role-dev"]);
+      expect(ui.renderer.root.findDescendantById("role-dev")).toBe(dev);
+    } finally { await ui.dispose(); }
+  });
+
   test("long flow reveals its active node after native layout and remains manually scrollable", async () => {
     const screen = await createTestRenderer({ width: 62, height: 20 });
     const flow = createFlowView(screen.renderer);

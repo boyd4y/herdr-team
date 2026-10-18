@@ -11,11 +11,9 @@ import { forgetRoleSession, scopeForTaskSession, rememberRoleSession, savedResum
 import { availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents, resolveProjectWorkspace, roleAssignment } from "./team-scope.ts";
 import { findTask } from "../tasks/cards.ts";
 import {
-  isolatedAgentName,
   worktreeBranch,
   type Project,
   type RoleCard,
-  type TaskCard,
 } from "../shared/types.ts";
 
 export class LaunchError extends Error {}
@@ -54,12 +52,6 @@ export interface UpResult {
 /** 项目名 → workspace label。用户可能已经手动为这个项目开过 workspace。 */
 export function workspaceLabelFor(project: Project): string {
   return basename(project.root);
-}
-
-/** 逻辑角色标识，仅供显示；发送目标必须通过项目归属定位到 pane。 */
-export function agentNameFor(project: Project, card: TaskCard): string {
-  const role = project.roles.find((r) => r.name === card.role);
-  return taskScoped(card, role) ? isolatedAgentName(card.role, card.id) : card.role;
 }
 
 /** 常驻角色在项目 workspace 里的 pane。先按 tab label 找，找不到就建。 */

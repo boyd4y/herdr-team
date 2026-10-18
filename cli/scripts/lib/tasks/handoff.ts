@@ -1,4 +1,4 @@
-import { acceptanceFor, reviewFor, commitId, git, integrationFor, taskRepo, taskScoped, verifyCheckout } from "./verification.ts";
+import { acceptanceFor, reviewFor, commitId, git, integrationFor, taskRepo, verifyCheckout } from "./verification.ts";
 import { stamp } from "./records.ts";
 import { join } from "node:path";
 import { cleanupIfDone, type CleanupResult } from "../dispatch/cleanup.ts";
@@ -10,7 +10,7 @@ import { commitTaskTransition, flushTaskHistory, pumpQueue } from "../dispatch/q
 import { withTeamLock } from "../runtime/state.ts";
 import { refreshSidebar } from "../ui/sidebar.ts";
 import { findTask, TaskError } from "./cards.ts";
-import { TASK_BODY, isTerminal, isolatedAgentName, worktreeBranch, type Project, type TaskCard } from "../shared/types.ts";
+import { TASK_BODY, isTerminal, worktreeBranch, type Project } from "../shared/types.ts";
 import { assertPullRequest, attachTestedPullRequest, prDecisionFor, pullRequestFor, realGitHub, testResultFor, usesPullRequest, type GitHub } from "../integration/pull-request.ts";
 
 export interface HandoffOptions {
@@ -42,17 +42,6 @@ export interface HandoffResult {
   cleanup?: CleanupResult;
   /** 给人看的一句话说明。 */
   note: string;
-}
-
-/**
- * 任务负责人的逻辑名称（显示用途，不能直接作为跨项目发送目标）。
- *
- * 常驻角色 → 名字就是角色名；隔离角色 → `<role>-<id>`（每个任务一个 worktree、
- * 一个 agent）。所以同一个角色可以同时在多个任务上，互不打架。
- */
-export function agentNameForTask(project: Project, card: TaskCard): string {
-  const role = project.roles.find((r) => r.name === card.role);
-  return taskScoped(card, role) ? isolatedAgentName(card.role, card.id) : card.role;
 }
 
 /**

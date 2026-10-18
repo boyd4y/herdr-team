@@ -44,7 +44,10 @@ CLI 不依赖原始 checkout 或 agent 已安装的 Skill 路径；Skill 安装�
 
 Console 使用 [`@opentui/core`](https://github.com/anomalyco/opentui) 的 Box、Text、Select、Input 和 ScrollBox。
 布局、终端宽度与换行、按键解析、焦点、鼠标、滚动、备屏及终端恢复交给框架；项目代码只组装组件、绑定业务快捷键、刷新任务数据和调用调度。
-`console-flow.ts` 将任务记录投影成节点与连接线，动画由 OpenTUI Timeline 管理；动画帧不查询 Herdr。
+`console-model.ts` 将任务和会话事实投影为展示数据；`console-view.ts` 负责页面布局、详情和业务按键。
+`console-roles.ts` 按角色名复用原生表格行，派单和角色排序变化只更新已有组件，删除角色时销毁对应行。
+`console-flow.ts` 组装节点与连接线，集中管理 OpenTUI Timeline 的启动、暂停和清理；动画帧不查询 Herdr。
+各视图共用 `console-theme.ts` 中的颜色，不通过其他组件取得主题，也不引入通用组件框架。
 `console-sample.ts` 提供内存中的循环演示，不读取真实团队、不写记录、不获取调度锁。
 不引入 React 或第二套终端渲染循环。`--once` / `--line` 使用只读文本输出，不启动交互渲染器。
 

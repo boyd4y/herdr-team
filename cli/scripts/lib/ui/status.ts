@@ -82,10 +82,6 @@ export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleSta
   });
 }
 
-export function roleStatuses(project: Project, herdr: Herdr): RoleStatus[] {
-  return roleStatusesFrom(project, loadAgents(project, herdr));
-}
-
 /** 任务写的状态 和 Herdr 里真实状态 对不上的地方。 */
 export function findInconsistencies(
   project: Project,

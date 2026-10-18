@@ -151,10 +151,13 @@ export function taskFlow(task: TaskCard, project: Project, model: ConsoleModel):
   const delivery = deliveryState(task);
   const blocked = task.status === "blocked" || live?.agent_status === "blocked" ||
     ["uncertain", "invalid"].includes(delivery ?? "") || ["blocked", "invalid"].includes(integration?.state ?? "");
-  const active: FlowState = task.status === "cancelled" ? "cancelled" : task.status === "done" ? "done" : blocked ? "blocked" :
-    integration ? integration.state === "running" ? "running" : integration.state === "done" ? "done" : "waiting" :
-    delivery === "sending" || delivery === "submitted" ? "sending" : delivery === "queued" ? "waiting" :
-    live?.agent_status === "working" ? "running" : "idle";
+  let active: FlowState = "idle";
+  if (isTerminal(task.status)) active = task.status === "done" ? "done" : "cancelled";
+  else if (blocked) active = "blocked";
+  else if (integration) active = integration.state === "running" || integration.state === "done" ? integration.state : "waiting";
+  else if (delivery === "sending" || delivery === "submitted") active = "sending";
+  else if (delivery === "queued") active = "waiting";
+  else if (live?.agent_status === "working") active = "running";
   const labels: Record<FlowState, string> = { done: "Done", running: "Running", waiting: "Waiting", sending: "Delivering", blocked: "Needs input", idle: delivery === "claimed" ? "Claimed" : "Ready", cancelled: "Cancelled" };
   return { current, nodes: participants.map((name, i) => {
     const kind = integration && i === participants.length - 1 ? "integration" : "role";
@@ -176,18 +179,16 @@ interface PendingCounts {
   waiting: number;
   delivering: number;
   claimed: number;
-  needsYou: number;
   integration: number;
 }
 
 function pendingCounts(tasks: TaskCard[]): PendingCounts {
-  const counts = { waiting: 0, delivering: 0, claimed: 0, needsYou: 0, integration: 0 };
+  const counts = { waiting: 0, delivering: 0, claimed: 0, integration: 0 };
   for (const task of tasks) {
     if (isTerminal(task.status)) continue;
     const integration = integrationStatus(task);
     if (integration && integration.state !== "done") {
       counts.integration++;
-      if (["blocked", "invalid"].includes(integration.state)) counts.needsYou++;
       continue;
     }
     switch (deliveryState(task)) {
@@ -195,8 +196,6 @@ function pendingCounts(tasks: TaskCard[]): PendingCounts {
       case "sending":
       case "submitted": counts.delivering++; break;
       case "claimed": counts.claimed++; break;
-      case "uncertain":
-      case "invalid": counts.needsYou++; break;
     }
   }
   return counts;

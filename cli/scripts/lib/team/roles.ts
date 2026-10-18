@@ -138,9 +138,3 @@ export function describeRole(role: RoleCard): string {
   if (role.worktree) bits.push("worktree");
   return `${role.name.padEnd(10)}${bits.join("  ")}`;
 }
-
-export function readBodyFile(path: string): string {
-  if (path === "-") return readFileSync(0, "utf8");
-  if (!existsSync(path)) throw new RoleError(`File not found: ${path}`);
-  return readFileSync(path, "utf8");
-}

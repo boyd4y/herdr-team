@@ -274,6 +274,7 @@ function cmdEdit(args: string[]): number {
 
   const handoffRaw = parsed.values.get("handoff");
   const dependsOnRaw = parsed.values.get("depends-on");
+  const body = readBody(parsed);
   const result = editTask(
     project,
     id,
@@ -284,7 +285,7 @@ function cmdEdit(args: string[]): number {
       dependsOn: dependsOnRaw === undefined ? undefined : csv(dependsOnRaw),
       priority: parsed.values.get("priority"),
       status: parsed.values.get("status"),
-      body: readBody(parsed) === "" ? undefined : readBody(parsed),
+      body: body === "" ? undefined : body,
     },
     parsed.flags.has("force"),
   );
