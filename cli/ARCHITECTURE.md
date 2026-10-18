@@ -7,7 +7,7 @@
 
 | 目录 | 负责什么 | 从哪里看起 |
 | --- | --- | --- |
-| `scripts/lib/team/` | 项目配置、初始化、角色维护、模板/模型方案读取、校验 | `project.ts` 读取 .herdr；`init.ts` 建配置；`roles.ts` 改角色；`templates.ts` / `plans.ts` 读资产；`validate.ts` 校验引用 |
+| `scripts/lib/team/` | 项目配置、初始化、角色维护、模板/模型方案读取、校验 | `project.ts` 读取 .herdr；`init.ts` 建配置；`roles.ts` 改角色；`templates.ts` / `plans.ts` 读职责、模型目录与方案资产；`validate.ts` 校验引用 |
 | `scripts/lib/tasks/` | 任务卡、交付历史、交棒、版本验收 | `cards.ts` 建卡/修改；`handoff.ts` 记录结果并交接；`verification.ts` 管提交记录、checkout 校验和测试资源；`records.ts` 写历史 |
 | `scripts/lib/dispatch/` | 排队投递、任务会话启动、团队起停与清理、项目归属 | `queue.ts` 驱动投递；`delivery.ts` 定义投递记录；`assignment.ts` 组装输入；`task-agent.ts` 定位任务会话；`launch.ts` 起停团队；`team-scope.ts` 防跨项目误用；`cleanup.ts` 回收 worktree |
 | `scripts/lib/runtime/` | Herdr 适配、持久化锁与本机状态、原生会话、Console 所有权 | `herdr.ts` 是可替换 API 边界；`state.ts` 管状态目录与锁；`sessions.ts` 管原生会话记录；`console.ts` 保证一个调度 Console |
@@ -19,7 +19,7 @@
 
 职责正文的唯一源是 `skill/assets/roles/<role>/prompt.md`。
 lead、dev、test、search、docs、review 各有一个目录；default 是自定义角色的通用起点。
-模型和方案配置在 `skill/assets/plans.json`，项目背景模板在 `skill/assets/identity.md`，均不嵌在 TypeScript 中。
+模型初始目录在 `skill/assets/models.json`；init 在缺失时复制为 `.herdr/models.json`，后者优先读取且可由用户修改，角色方案在 `skill/assets/plans.json` 引用 harness/model，项目背景模板在 `skill/assets/identity.md`，均不嵌在 TypeScript 中。
 初始化只在项目 identity 缺失时复制该模板；Skill 按项目事实填写，已有内容不会被更新模板覆盖。
 
 修改角色正文直接改对应 Markdown。Skill 在 onboard 时按需读取并调整；CLI 对未提供正文的新角色读取同名模板，

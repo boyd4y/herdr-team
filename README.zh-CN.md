@@ -39,7 +39,7 @@ Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，�
 
 检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
-将 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选的 `workflow.md` 纳入 Git，便于跨机器共享团队配置。
+将 `.herdr/.gitignore`、`identity.md`、`models.json`、`roles/` 和可选的 `workflow.md` 纳入 Git，便于跨机器共享团队配置。
 初始化会创建内部 `.gitignore`，忽略任务、报告、已删除任务 ID 和 Herdr 本机 project/worktree 记录；已有忽略文件原样保留。
 不要整体忽略 `.herdr/`。已跟踪的本机记录用 `git rm --cached` 取消跟踪，保留磁盘文件。
 任务和原生会话留在本地；新机器仍需安装并登录所选工具。

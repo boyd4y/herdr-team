@@ -129,6 +129,15 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
     created.push(".gitignore");
   }
 
+  const modelsPath = join(project.herdrDir, "models.json");
+  try {
+    writeFileSync(modelsPath, readAsset("models.json"), { flag: "wx" });
+    created.push("models.json");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    skipped.push("models.json");
+  }
+
   const identityPath = join(project.herdrDir, "identity.md");
   if (existsSync(identityPath)) {
     skipped.push("identity.md");

@@ -16,7 +16,7 @@ const WRAP = (result: object) => JSON.stringify({ result });
 describe("herdr 客户端 —— 参数拼装", () => {
   test("tab create 把 env 展开成 --env K=V", () => {
     const { fn, calls } = recordingSpawn(WRAP({ tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } }));
-    realHerdr(fn).tabCreate("w1", "docs", "/tmp/p", { ANTHROPIC_MODEL: "deepseek-flash" });
+    realHerdr(fn).tabCreate("w1", "docs", "/tmp/p", { ANTHROPIC_MODEL: "sonnet" });
 
     expect(calls[0]).toEqual([
       "tab", "create",
@@ -24,7 +24,7 @@ describe("herdr 客户端 —— 参数拼装", () => {
       "--label", "docs",
       "--cwd", "/tmp/p",
       "--no-focus",
-      "--env", "ANTHROPIC_MODEL=deepseek-flash",
+      "--env", "ANTHROPIC_MODEL=sonnet",
     ]);
   });
 

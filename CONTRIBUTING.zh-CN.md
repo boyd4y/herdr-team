@@ -22,7 +22,7 @@ cd herdr-team
 - `herdr-plugin.toml`：Herdr 插件元数据、setup hook、actions 和事件 hook。
 - `README.md` / `README.zh-CN.md`：英文和简体中文用户指南。
 
-- 增加实现前先看 [CLI 模块导航](cli/ARCHITECTURE.md)；角色模板和模型方案统一在 `skill/assets/` 维护。
+- 增加实现前先看 [CLI 模块导航](cli/ARCHITECTURE.md)；角色模板、独立 models.json 模型目录和角色方案统一在 `skill/assets/` 维护。
 
 ## 开发与验证
 

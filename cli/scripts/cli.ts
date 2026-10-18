@@ -305,7 +305,7 @@ function cmdInit(args: string[]): number {
     process.stdout.write(
       `Usage: herdr-team init [--plan ${PLAN_NAMES.join("|")} | --roles-file F | --roles JSON] [--force] [--root DIR]\n\n` +
         PLAN_NAMES.map((p) => `  --plan ${p.padEnd(10)}${describePlan(p)}`).join("\n") +
-        "\n--force rewrites role metadata and preserves existing prompt.md; use role add <name> --force --body T to update responsibilities.\n",
+        "\nProject .herdr/models.json preferences override plan model suggestions.\n--force rewrites role metadata and preserves existing prompt.md; use role add <name> --force --body T to update responsibilities.\n",
     );
     return 0;
   }
@@ -326,7 +326,7 @@ function cmdInit(args: string[]): number {
     if (!isPlanName(plan)) {
       throw new UsageError(`Unknown plan "${plan}". Available: ${PLAN_NAMES.join(" / ")}`);
     }
-    specs = planRoles(plan);
+    specs = planRoles(plan, root);
   } else if (inline !== undefined) specs = parseRoleSpecs(inline);
   else if (file !== undefined) specs = parseRoleSpecs(readRolesFile(file));
 

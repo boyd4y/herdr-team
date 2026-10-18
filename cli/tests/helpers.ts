@@ -89,13 +89,13 @@ export function roleMeta(over: Record<string, unknown> = {}): Record<string, unk
 /** 建两个角色：**隔离的 dev** + 常驻的 docs。 */
 export function twoRoles(root: string): void {
   writeRole(root, "dev", roleMeta({ model: "sol-6.1", worktree: true, args: ["-m", "gpt-6.1-sol"] }), "你是开发者。");
-  writeRole(root, "docs", roleMeta({ kind: "claude", model: "ds-flash", env: { ANTHROPIC_MODEL: "deepseek-flash" } }), "你是文档。");
+  writeRole(root, "docs", roleMeta({ kind: "claude", model: "sonnet", env: { ANTHROPIC_MODEL: "sonnet" } }), "你是文档。");
 }
 
 /** 两个都常驻 —— 给只关心 tab 行为的测试用。 */
 export function twoResidentRoles(root: string): void {
   writeRole(root, "dev", roleMeta({ model: "sol-6.1", args: ["-m", "gpt-6.1-sol"] }), "你是开发者。");
-  writeRole(root, "docs", roleMeta({ kind: "claude", model: "ds-flash", env: { ANTHROPIC_MODEL: "deepseek-flash" } }), "你是文档。");
+  writeRole(root, "docs", roleMeta({ kind: "claude", model: "sonnet", env: { ANTHROPIC_MODEL: "sonnet" } }), "你是文档。");
 }
 
 // ---------------------------------------------------------------- 假 herdr

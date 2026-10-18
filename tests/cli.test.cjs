@@ -61,6 +61,10 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
   const f = fixture(t);
   const checkout = path.join(f.dir, 'build-checkout');
   fs.cpSync(root, checkout, { recursive: true, filter: (file) => !['tests', 'node_modules'].includes(path.basename(file)) });
+  const modelsFile = path.join(checkout, 'skill/assets/models.json');
+  const models = JSON.parse(fs.readFileSync(modelsFile, 'utf8'));
+  models.harnesses.codex.args.push('--test-catalog-flag');
+  fs.writeFileSync(modelsFile, JSON.stringify(models));
   const leadTemplate = path.join(checkout, 'skill/assets/roles/lead/prompt.md');
   fs.appendFileSync(leadTemplate, '\nProject-specific template change.\n');
   const expectedLead = fs.readFileSync(leadTemplate, 'utf8');
@@ -84,6 +88,9 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
   }
   f.cli('init', '--plan', 'balanced');
   assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/identity.md'), 'utf8'), expectedIdentity);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.dir, '.herdr/models.json'), 'utf8')), models);
+  const configured = JSON.parse(f.cli('role', 'list', '--json'));
+  assert(configured.find(role => role.name === 'dev').args.includes('--test-catalog-flag'));
   assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/roles/lead/prompt.md'), 'utf8'), expectedLead);
   f.cli('role', 'add', 'docs', '--kind', 'codex');
   assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/roles/docs/prompt.md'), 'utf8'), expectedDocs);

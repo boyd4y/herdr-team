@@ -18,7 +18,9 @@ Skill 把用户确认的流程写入 `.herdr/workflow.md`；格式和变更规�
 不复制命令清单或 claim/handoff/PR 的完整操作流程。新生成的正文使用英文，用户自带正文保留原语言。
 可复用职责模板按角色保存在 [assets/roles](../assets/roles)：lead、dev、test、search、docs、review；
 每个目录只有 `prompt.md`，通用职责放在 default。按当前职责选择、阅读并调整所需模板，不整套加载。
-模型方案是 [assets/plans.json](../assets/plans.json)，与职责正文分开维护。
+模型初始目录是 [assets/models.json](../assets/models.json)，init 只在缺失时复制到项目 `.herdr/models.json`。
+项目文件优先，用户可修改并共享；已有内容即使 --force 也保留。角色方案在 [assets/plans.json](../assets/plans.json) 中引用 harness/model。
+选择与刷新步骤只见 [models.md](models.md)，不在职责模板内复制模型列表。
 项目背景模板是 [assets/identity.md](../assets/identity.md)；CLI 仅在项目缺失 identity 时复制，
 Skill 结合项目事实填写背景、约定引用与偏好，不放角色指令或工作流步骤，已有内容保留。
 CLI 对未提供 body 的新角色按同名模板初始化，未知角色用 default；已有正文不随模板更新自动改写。
@@ -29,7 +31,7 @@ CLI 对未提供 body 的新角色按同名模板初始化，未知角色用 def
   {
     "name": "builder",
     "kind": "codex",
-    "model": "sol-6.1",
+    "model": "gpt-6.1-sol",
     "worktree": true,
     "args": ["--no-daemon", "-m", "gpt-6.1-sol"],
     "body": "Read the installed herdr-team skill before starting. Implement and self-test the assigned change. Stay within the task checkout; lead owns team configuration and branch lifecycle."
@@ -69,7 +71,7 @@ CLI 输出、错误和生成的默认指令保持英文，无需多语言支持�
 
 ## 跨机器共享
 
-共享 `.herdr/.gitignore`、`identity.md`、`roles/`、可选 `workflow.md`；不要整体忽略 `.herdr/`。
+共享 `.herdr/.gitignore`、`identity.md`、`models.json`、`roles/`、可选 `workflow.md`；不要整体忽略 `.herdr/`。
 `init` 创建内部忽略规则：tasks、reports、.retired-ids、projects、worktrees；已有忽略文件保留，根 `.gitignore` 不自动修改。
 已有整目录忽略规则由 Skill 按项目约定调整。已跟踪的本机记录只用 `git rm --cached` 取消跟踪，保留磁盘文件。
 

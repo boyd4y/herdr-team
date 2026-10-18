@@ -51,7 +51,7 @@ test("team configuration survives a Git clone while local tasks and runtime reco
     git(root, "init", "-b", "main");
     git(root, "add", ".herdr");
     expect(git(root, "ls-files", ".herdr").split("\n")).toEqual([
-      ".herdr/.gitignore", ".herdr/identity.md", ".herdr/roles/.gitkeep", ".herdr/roles/dev/.role.yaml", ".herdr/roles/dev/prompt.md", ".herdr/workflow.md",
+      ".herdr/.gitignore", ".herdr/identity.md", ".herdr/models.json", ".herdr/roles/.gitkeep", ".herdr/roles/dev/.role.yaml", ".herdr/roles/dev/prompt.md", ".herdr/workflow.md",
     ]);
     git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "Share team configuration");
     const clone = join(root, "..", "other-machine");
@@ -59,6 +59,7 @@ test("team configuration survives a Git clone while local tasks and runtime reco
     const shared = loadProject(clone);
     expect(shared.roles.map((role) => [role.name, role.kind, role.body])).toEqual(loadProject(root).roles.map((role) => [role.name, role.kind, role.body]));
     expect(readFileSync(join(clone, ".herdr/workflow.md"), "utf8")).toBe(readFileSync(join(root, ".herdr/workflow.md"), "utf8"));
+    expect(readFileSync(join(clone, ".herdr/models.json"), "utf8")).toBe(readFileSync(join(root, ".herdr/models.json"), "utf8"));
     expect(shared.hasIdentity).toBe(true);
     expect(shared.tasks).toEqual([]);
     expect(shared.retiredIds).toEqual([]);

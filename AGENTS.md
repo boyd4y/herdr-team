@@ -30,8 +30,9 @@ and summaries in their original language; Unicode input remains supported.
 
 # Role prompts and shared context
 
-- Maintain reusable role prompts in `skill/assets/roles/<role>/prompt.md` and model
-  plans in `skill/assets/plans.json`, and the shared identity template in
+- Maintain reusable role prompts in `skill/assets/roles/<role>/prompt.md` and the
+  harness model catalog in `skill/assets/models.json`; role plans reference it from
+  `skill/assets/plans.json`, and the shared identity template in
   `skill/assets/identity.md`; do not embed these texts or catalogs in code.
 - Role `prompt.md`: define the role's responsibilities, allowed scope, boundaries,
   and expected deliverables. Direct agents to the herdr-team skill for procedures;
@@ -77,3 +78,17 @@ YAML syntax and quoting belong to `Bun.YAML`; the metadata adapter only orders
 fields and checks the document shape. Do not add a custom YAML writer. Use
 `Bun.stringWidth` and `Intl.Segmenter` for plain table text instead of hand-maintained
 Unicode width ranges; interactive text layout stays with OpenTUI.
+
+# Harness model catalog
+
+Keep the initial model catalog in `skill/assets/models.json`, separate from role
+plans and prompts. Initialize `.herdr/models.json` only when missing, preserve it
+even with force, and prefer the project catalog and its optional per-harness
+`preferred` choices. Customers may edit and share that file. Codex and Claude entries use their respective official model IDs or
+native aliases; do not bundle third-party backend mappings. Every harness offers
+`default` without model override arguments or environment variables. Keep general
+launch flags separate from model flags. Skill owns checking official sources and
+refreshing the catalog/date; CLI expands explicit inputs without fetching models.
+Refreshing the skill seed never overwrites project catalogs. Project catalog
+changes are read on the next selection without reinstalling; they do not silently
+rewrite existing project roles or running sessions.

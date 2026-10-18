@@ -1,5 +1,5 @@
 kind: codex
-model: luna
+model: gpt-6-luna
 args:
   - "--no-daemon"
   - "-m"

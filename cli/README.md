@@ -4,7 +4,9 @@
 
 需要 Bun 1.3.14 或更新版本；启动团队还需要已安装的 Herdr 和对应角色使用的 agent CLI。
 
-实现按职责划分，先看 [模块导航](ARCHITECTURE.md)；角色模板源在 [skill/assets/roles](../skill/assets/roles)，模型方案在 [plans.json](../skill/assets/plans.json)。
+实现按职责划分，先看 [模块导航](ARCHITECTURE.md)；角色模板源在 [skill/assets/roles](../skill/assets/roles)，模型目录在 [models.json](../skill/assets/models.json)，角色方案在 [plans.json](../skill/assets/plans.json) 中引用它。
+初始化将模型模板复制到项目 `.herdr/models.json`（只补缺，--force 也不覆盖）。用户可直接修改目录与 preferred，项目文件优先，下一次选择直接生效。
+选择和刷新由 Skill 引导；`default` 跟随 harness 本地配置，团队不添加模型覆盖参数。
 
 ## 开发验证
 
@@ -52,7 +54,7 @@ herdr-team add "Implement login" --role dev --handoff test,review
 herdr-team tasks
 ```
 
-默认共享 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选 `workflow.md`，不整体忽略 `.herdr/`。
+默认共享 `.herdr/.gitignore`、`identity.md`、`models.json`、`roles/` 和可选 `workflow.md`，不整体忽略 `.herdr/`。
 `init` 创建内部 `.gitignore`，忽略 tasks、reports、.retired-ids、projects、worktrees；
 已有忽略文件原样保留，包括 `--force`。CLI 不改项目根 `.gitignore`，旧整目录忽略规则由 Skill 按项目约定调整。
 已跟踪的本机文件用 `git rm --cached` 取消跟踪，保留磁盘内容；任务和会话不随配置跨机器恢复。

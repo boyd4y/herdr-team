@@ -1,0 +1,67 @@
+{
+  "checked_at": "2026-10-18",
+  "harnesses": {
+    "codex": {
+      "source": "https://learn.chatgpt.com/docs/models",
+      "args": [
+        "--no-daemon"
+      ],
+      "models": {
+        "default": [],
+        "gpt-6.1-sol": [
+          "-m",
+          "gpt-6.1-sol"
+        ],
+        "gpt-6-luna": [
+          "-m",
+          "gpt-6-luna"
+        ],
+        "gpt-6-astra": [
+          "-m",
+          "gpt-6-astra"
+        ]
+      },
+      "preferred": "gpt-6.1-sol"
+    },
+    "claude": {
+      "source": "https://code.claude.com/docs/en/model-config",
+      "models": {
+        "default": [],
+        "sonnet": [
+          "--model",
+          "sonnet"
+        ],
+        "opus": [
+          "--model",
+          "opus"
+        ],
+        "haiku": [
+          "--model",
+          "haiku"
+        ],
+        "fable": [
+          "--model",
+          "fable"
+        ],
+        "best": [
+          "--model",
+          "best"
+        ]
+      },
+      "preferred": "default"
+    },
+    "grok": {
+      "args": [
+        "--trust"
+      ],
+      "models": {
+        "default": []
+      }
+    },
+    "kimi": {
+      "models": {
+        "default": []
+      }
+    }
+  }
+}

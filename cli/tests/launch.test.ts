@@ -60,7 +60,7 @@ describe("up —— 幂等：先找后建", () => {
       const herdr = fakeHerdr();
       up(p, herdr);
       const created = herdr.calls.find((c) => c.startsWith("tab create docs"));
-      expect(created).toContain('"ANTHROPIC_MODEL":"deepseek-flash"');
+      expect(created).toContain('"ANTHROPIC_MODEL":"sonnet"');
     });
   });
 

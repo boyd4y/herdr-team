@@ -37,7 +37,7 @@ Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onb
 
 Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project.
 
-Commit `.herdr/.gitignore`, `identity.md`, `roles/`, and the optional `workflow.md` to share team configuration across machines. Initialization creates an internal `.gitignore` for tasks, reports, retired task IDs, and Herdr's local project/worktree records; existing ignore files are preserved. Keep `.herdr/` itself visible to Git. Use `git rm --cached` for local records already tracked, keeping the files on disk. Tasks and native sessions remain local; install and authenticate the selected tools on each machine.
+Commit `.herdr/.gitignore`, `identity.md`, `models.json`, `roles/`, and the optional `workflow.md` to share team configuration across machines. Initialization creates an internal `.gitignore` for tasks, reports, retired task IDs, and Herdr's local project/worktree records; existing ignore files are preserved. Keep `.herdr/` itself visible to Git. Use `git rm --cached` for local records already tracked, keeping the files on disk. Tasks and native sessions remain local; install and authenticate the selected tools on each machine.
 
 To inspect roles, run `herdr-team role list`. Add a role with `herdr-team role add <name> --kind <kind>`; update an existing role's responsibilities with `herdr-team role add <name> --force --body <text>` or `--body-file <file>`; remove a role with `herdr-team role rm <name>`. Run `herdr-team up` after adding roles so they are started and reported.
 

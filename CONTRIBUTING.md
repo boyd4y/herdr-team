@@ -22,7 +22,7 @@ The repository is organized by purpose:
 - `herdr-plugin.toml`: Herdr plugin metadata, setup hook, actions, and event hooks.
 - `README.md` / `README.zh-CN.md`: public user guides in English and Simplified Chinese.
 
-- See the [CLI module map](cli/ARCHITECTURE.md) before adding implementation; reusable role templates and model plans live in `skill/assets/`.
+- See the [CLI module map](cli/ARCHITECTURE.md) before adding implementation; reusable role templates, the separate `models.json` catalog, and role plans live in `skill/assets/`.
 
 ## Develop and validate
 
