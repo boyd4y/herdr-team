@@ -38,7 +38,7 @@ herdr-team validate
 
 onboard 由 herdr-team Skill 对话引导，CLI 不提供 `onboard` 命令；`init` 只保存已确认的配置。
 Skill 用 `role list --json`、`workflow show` 和 `validate` 核对实际配置，再检查所需工具与登录，明确启动和派活。
-已有角色默认保留，研究与文档角色按需选择。默认帮助只列五个日常命令，`herdr-team --help --all` 列出 Skill 与维护接口；`sidebar` 属于插件 hook 内部入口。
+已有角色默认保留，研究与文档角色按需选择。`herdr-team --help` 列出全部可用命令，包括任务操作。侧栏刷新由插件内部 hook 执行。
 
 检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 

@@ -106,7 +106,7 @@ Lead keeps task-card handoff chains accurate and is the fallback owner when the 
 
 Use the herdr-team skill for onboarding: it confirms the project context, workflow, responsibilities, and models. Save the confirmed definitions with init --workflow NAME --roles-file F, or --plan P when the full preset is accepted. There is no onboard CLI command.
 
-Existing roles are preserved by default. Read role list --json and workflow show, review identity.md, and validate the saved configuration and selected tools/auth before starting the team. Use --help --all for Skill and maintenance operations. Creating configuration does not start agents or dispatch tasks.
+Existing roles are preserved by default. Read role list --json and workflow show, review identity.md, and validate the saved configuration and selected tools/auth before starting the team. Use --help to list all available commands. Creating configuration does not start agents or dispatch tasks.
 
 - List roles: `herdr-team role list`
 - Add a helper, including temporary roles:

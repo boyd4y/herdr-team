@@ -135,7 +135,7 @@ describe("稳定的 workspace 归属编号", () => {
   });
 });
 
-test("真实 CLI 可从非项目目录同步编号，并使用插件注入的 HERDR_BIN_PATH", async () => {
+test("插件 hook 可从非项目目录同步编号，并使用插件注入的 HERDR_BIN_PATH", async () => {
   const { root, cleanup } = makeProject();
   try {
     const { chmodSync } = await import("node:fs");
@@ -150,7 +150,7 @@ const fs = require('node:fs');
 const state = JSON.parse(fs.readFileSync(process.env.BADGE_TEST_STATE, 'utf8'));
 const args = process.argv.slice(2);
 let result = {};
-if(args[1] === 'list') result = args[0] === 'workspace' ? {workspaces:state.workspaces} : {agents:state.agents};
+if(args[1] === 'list') result = args[0] === 'workspace' ? {workspaces:state.workspaces} : args[0] === 'agent' ? {agents:state.agents} : {panes:[]};
 else if(args[1] === 'report-metadata') {
  const target = args[0] === 'workspace' ? state.workspaces.find(w=>w.workspace_id===args[2]) : state.agents.find(a=>a.pane_id===args[2]);
  target.tokens ??= {};
@@ -163,17 +163,17 @@ fs.writeFileSync(process.env.BADGE_TEST_STATE, JSON.stringify(state));
 process.stdout.write(JSON.stringify({result}));
 `);
     chmodSync(executable, 0o755);
-    const run = () => Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "sidebar", "--badges-only", "--json"], {
+    const run = (...args: string[]) => Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/refresh-sidebar.ts"), ...args], {
       cwd: dirname(root), env: { ...process.env, HERDR_ENV: "1", HERDR_BIN_PATH: executable,
         HERDR_PLUGIN_STATE_DIR: join(root, "plugin-state"), BADGE_TEST_STATE: state }, stdout: "pipe", stderr: "pipe",
     });
     const first = run();
     expect(first.stderr.toString()).toBe("");
     expect(first.exitCode).toBe(0);
-    expect(JSON.parse(first.stdout.toString())).toEqual({ updated: 4, failed: 0 });
+    expect(first.stdout.toString()).toBe("");
     const second = run();
     expect(second.exitCode).toBe(0);
-    expect(JSON.parse(second.stdout.toString())).toEqual({ updated: 0, failed: 0 });
+    expect(second.stdout.toString()).toBe("");
     expect(JSON.parse(readFileSync(state, "utf8")).agents.map((agent: {tokens: Record<string,string>}) => agent.tokens.team_workspace)).toEqual(["①", "②"]);
     const changed = JSON.parse(readFileSync(state, "utf8"));
     changed.agents[0].workspace_id = "w2";
@@ -182,5 +182,8 @@ process.stdout.write(JSON.stringify({result}));
     const moved = JSON.parse(readFileSync(state, "utf8")).agents[0].tokens;
     expect(moved.team_workspace_c1).toBe("② agent");
     expect(moved.team_workspace_c0).toBeUndefined();
+    const beforeSessions = readFileSync(state, "utf8");
+    expect(run("--sessions-only").exitCode).toBe(0);
+    expect(readFileSync(state, "utf8")).toBe(beforeSessions);
   } finally { cleanup(); }
 });

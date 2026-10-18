@@ -13,20 +13,18 @@ function run(root: string, args: string[]) {
   return Bun.spawnSync([process.execPath, entry, ...args, "--root", root], { cwd: root, stdout: "pipe", stderr: "pipe", env: process.env });
 }
 
-test("Skill onboarding has no CLI route; internal operations remain callable outside default help", () => {
+test("Skill onboarding has no CLI route; help exposes available commands without creating configuration", () => {
   const p = makeBareProject();
   try {
     rmSync(join(p.root, ".herdr"), { recursive: true });
-    expect(run(p.root, ["onboard", "--json"]).exitCode).toBe(2);
+    for (const command of ["onboard", "sidebar"]) expect(run(p.root, [command, "--json"]).exitCode).toBe(2);
     expect(existsSync(join(p.root, ".herdr"))).toBe(false);
     const common = run(p.root, ["--help"]);
     expect(common.exitCode).toBe(0);
-    expect(common.stdout.toString()).not.toContain("sidebar");
-    expect(common.stdout.toString()).not.toContain("claim <id>");
-    const tools = run(p.root, ["--help", "--all"]);
-    expect(tools.exitCode).toBe(0);
-    expect(tools.stdout.toString()).toContain("sidebar");
-    for (const command of ["sidebar", "claim", "handoff", "queue"]) {
+    expect(common.stdout.toString()).not.toContain("--all");
+    const routes = [...readFileSync(entry, "utf8").matchAll(/^    case "([^"]+)":/gm)].map((match) => match[1]!);
+    for (const command of routes) {
+      expect(common.stdout.toString()).toMatch(new RegExp(`^  ${command}\\b`, "m"));
       expect(run(p.root, [command, "--help"]).exitCode).toBe(0);
     }
     expect(existsSync(join(p.root, ".herdr"))).toBe(false);

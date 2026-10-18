@@ -33,7 +33,7 @@ herdr-team validate
 
 Use `workflow list`, `workflow show`, or `workflow set NAME` to inspect or change the optional project defaults in `.herdr/workflow.json`. Custom JSON via `--workflow-file` / `workflow set --file` maps step kinds to your own role names and selects manual or automatic PR merge. Each new task saves its workflow; changing defaults leaves existing tasks intact. `workflow apply ID` explicitly updates an unstarted todo task, which must then be dispatched again. `init` can also save roles without selecting a workflow; explicit handoff chains remain supported.
 
-Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onboard` command; `init` saves confirmed configuration. The skill checks the effective roles with `role list --json`, reads the workflow, and runs validation before starting or dispatching. Existing roles are preserved by default; research and docs are optional. Default help shows five everyday commands; `herdr-team --help --all` lists Skill and maintenance operations. `sidebar` is an internal plugin-hook entry point.
+Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onboard` command; `init` saves confirmed configuration. The skill checks the effective roles with `role list --json`, reads the workflow, and runs validation before starting or dispatching. Existing roles are preserved by default; research and docs are optional. `herdr-team --help` lists every available command, including task operations. Sidebar refresh runs through internal plugin hooks.
 
 Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project.
 

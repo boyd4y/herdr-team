@@ -91,8 +91,8 @@ onboard 是本 Skill 的对话流程，CLI 没有同名命令。用 `role list -
 
 ## 命令表
 
-默认 CLI 帮助只展示日常入口；本 Skill 的操作接口可用 `herdr-team --help --all` 查询。
-`sidebar` 由插件 hook 自动调用，作为内部维护入口保留，不要求用户手动执行。
+`herdr-team --help` 列出全部可用命令，具体参数用 `herdr-team <command> --help` 查询。
+侧栏刷新由插件内部 hook 执行，不提供 CLI 命令。
 
 | 命令 | 作用 |
 | --- | --- |

@@ -81,8 +81,8 @@ function applyPlan(plan, reload = false) {
 }
 
 function refreshSidebar() {
-  const result = spawnSync('bun', [path.join(__dirname, '..', 'cli', 'scripts', 'cli.ts'), 'sidebar', '--auto'], { env: process.env, encoding: 'utf8', timeout: 30000 });
-  if (result.status !== 0) console.log('Refresh team sidebar inside Herdr with: herdr-team sidebar --auto');
+  const result = spawnSync('bun', [path.join(__dirname, '..', 'cli', 'scripts', 'refresh-sidebar.ts')], { env: process.env, encoding: 'utf8', timeout: 30000 });
+  if (result.status !== 0) console.log('Sidebar refresh failed; run the herdr-team.configure plugin action inside Herdr to retry.');
 }
 
 function reloadConfig() {

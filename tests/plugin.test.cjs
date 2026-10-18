@@ -244,7 +244,7 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   assert(manifest.includes('on = "workspace.created"'));
   assert(manifest.includes('on = "pane.agent_detected"'));
   assert(manifest.includes('on = "pane.agent_status_changed"'));
-  assert(manifest.includes('"sidebar", "--auto", "--sessions-only"'));
-  assert(manifest.includes('"sidebar", "--auto"'));
-  assert(!manifest.includes('"sidebar", "--badges-only"'));
+  assert(manifest.includes('"cli/scripts/refresh-sidebar.ts", "--sessions-only"'));
+  assert(manifest.includes('"bun", "cli/scripts/refresh-sidebar.ts"'));
+  assert(!manifest.includes('"sidebar",'));
 });

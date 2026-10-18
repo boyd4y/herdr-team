@@ -211,7 +211,7 @@ describe("侧栏未提交文件数", () => {
   });
 });
 
-test("offline CLI migrates root statistics and clears nested/standalone worktree statistics", () => {
+test("offline Herdr adapter migrates root statistics and clears nested/standalone worktree statistics", () => {
   const dir = mkdtempSync(join(tmpdir(), "herdr-team-git-cli-"));
   try {
     const repo = join(dir, "repo");
@@ -265,7 +265,7 @@ process.stdout.write(JSON.stringify({result}));
 `);
     chmodSync(executable, 0o755);
     const run = () => {
-      const result = Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "sidebar", "--git-only", "--json"], {
+      const result = Bun.spawnSync([process.execPath, "--eval", `import { realHerdr } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/herdr.ts"))}; import { syncWorkspaceGit } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/workspace-git.ts"))}; console.log(JSON.stringify(syncWorkspaceGit(realHerdr())));`], {
         cwd: home, env: { ...env, HERDR_BIN_PATH: executable, GIT_TEST_STATE: stateFile, GIT_TEST_LOG: log }, stdout: "pipe", stderr: "pipe",
       });
       expect(result.stderr.toString()).toBe("");

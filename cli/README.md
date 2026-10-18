@@ -29,8 +29,8 @@ onboard 时先选择工作流，再用一张表一起配置各角色的职责、
 预设是分工的起点；需要定制职责时，把确认过的正文放入每个角色定义的 `body`，
 使用 `init --roles-file F`。只有连职责正文也原样接受预设时才直接 `init --plan`。
 完整引导见插件内置的 `herdr-team` skill 中的 `references/team-setup.md`。
-默认帮助展示 init、up、status、console、down；`--help --all` 列出 Skill 和维护接口，具体参数用 `<command> --help` 查询。
-`sidebar` 供插件事件 hook 自动调用，日常使用无需手动执行。
+`herdr-team --help` 列出全部可用命令，具体参数用 `<command> --help` 查询。
+侧栏刷新由插件事件 hook 内部执行，不提供 CLI 命令。
 
 完整顺序：读取项目与已有团队 → 选择流程 → 配置角色（职责与模型一起定） → 保存确认后的配置 → 校验 → 启动 → 明确派活。
 Skill 负责对话引导，CLI 负责确定性落盘；不会自行替用户完成选择。
@@ -303,11 +303,7 @@ workspace 复用按项目绑定或可验证的目录判断，不按相同的文�
 任务完成或交棒后清除旧负责人的 ID；常驻角色同时有多个任务时列出全部 ID。
 模型来自角色卡，未配置时显示 `default`，不推测 agent 内部当前选择的模型。
 
-`herdr-team sidebar` 刷新现有 agent 的信息与归属编号；`--badges-only` 只刷新所有
-workspace 和 agent 的编号，不要求当前目录是团队项目。均不启动或重启 agent。
-默认 sidebar 刷新还会更新 Git 摘要；`--git-only` 只刷新 Git 详情，不要求 `.herdr/`
-目录，但仍须在 Herdr pane 或插件环境中运行。
-
+插件事件 hook 自动刷新现有 agent 信息、归属编号和 Git 摘要，不启动或重启 agent。
 主 workspace 和普通 workspace 的 spaces 第二行显示一个 `team_git_summary` 文本摘要，包含本地分支、
 未提交文件数和 ahead/behind 提交差异，例如 `main · 📄15 ↑10`、`main · 📄0` 或
 `main · 📄2 ↑3 ↓1`。只显示非零的 ahead/behind 数；没有 upstream 时仍显示分支和文件数，

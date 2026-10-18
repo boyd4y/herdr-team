@@ -13,8 +13,7 @@ import { withTeamLock } from "./lib/runtime.ts";
 import { deliveryFor } from "./lib/delivery.ts";
 import { addRole, describeRole, removeRole, RoleError } from "./lib/role.ts";
 import { realHerdr, type Herdr } from "./lib/herdr.ts";
-import { refreshSessionSidebar, refreshSidebar } from "./lib/sidebar.ts";
-import { syncWorkspaceBadges } from "./lib/workspace-badges.ts";
+import { refreshSidebar } from "./lib/sidebar.ts";
 import { syncWorkspaceGit } from "./lib/workspace-git.ts";
 import { acquireConsole } from "./lib/console.ts";
 import { claimTask, pumpQueue, queueRows, retryDelivery } from "./lib/queue.ts";
@@ -51,29 +50,17 @@ const USAGE = `herdr-team - manage a Herdr agent team from .herdr/
 Usage:
   herdr-team <command> [arguments] [options]
 
-Commands:
+Team:
   init                 Save team configuration
+  workflow             Read or save workflow configuration
+  role <list|add|rm>    Read or update roles
+  validate             Validate team configuration and references
   up                   Start or resume the team and Console
   status               Show task and live agent status
   console              Open Team Console
   down                 Stop team agents
 
-Use the herdr-team skill for onboarding and task coordination.
-
-Options:
-  --root <DIR>         Project root; otherwise search parent directories
-  --json               JSON output where supported
-  -h, --help           Show help; add --all for Skill and maintenance operations
-  -v, --version        Show version
-
-Run herdr-team <command> --help for command options.
-`;
-
-const TOOL_HELP = `
-Skill operations:
-  workflow             Read or save workflow configuration
-  role <list|add|rm>   Read or update roles
-  validate             Validate team configuration and references
+Tasks:
   add <title>          Create a task
   edit <id>            Edit a task
   tasks [<id>]         List tasks or read full task details
@@ -86,8 +73,15 @@ Maintenance:
   merge                Integrate accepted work serially
   clean                Remove worktrees for terminal tasks
 
-Plugin internal:
-  sidebar              Refresh metadata from plugin hooks
+Use the herdr-team skill for onboarding and task coordination.
+
+Options:
+  --root <DIR>         Project root; otherwise search parent directories
+  --json               JSON output where supported
+  -h, --help           Show help
+  -v, --version        Show version
+
+Run herdr-team <command> --help for command options.
 `;
 
 class UsageError extends Error {}
@@ -416,38 +410,6 @@ function cmdWorkflow(args: string[]): number {
       delivery: null, review: null, test_result: null, acceptance: null, pr_decision: null, integration: null });
   });
   return out(parsed, { id, workflow: selected }, `Applied ${selected.name} to #${id}; dispatch explicitly when ready.`);
-}
-
-function cmdSidebar(args: string[]): number {
-  const parsed = parseArgs(args, ["root"]);
-  if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team sidebar [--root DIR] [--json] [--auto | --badges-only | --git-only] [--sessions-only]\nRefresh workspace badges, Git details, and agent metadata without starting agents.\n--auto Discover team projects across the session.\n--badges-only Refresh workspace badges without requiring .herdr/.\n--git-only Refresh primary/ordinary workspace branches, file counts, and ahead/behind counts from local Git; hide Git details for linked worktrees. No fetch or .herdr/ required.\n--sessions-only Save resident session references without writing Herdr metadata.\n");
-    return 0;
-  }
-  if (parsed.flags.has("auto") && parsed.flags.has("badges-only")) throw new UsageError("--auto and --badges-only cannot be combined");
-  if (parsed.flags.has("sessions-only") && parsed.flags.has("badges-only")) throw new UsageError("--sessions-only and --badges-only cannot be combined");
-  const automatic = parsed.flags.has("auto");
-  const gitOnly = parsed.flags.has("git-only");
-  if (gitOnly && (parsed.flags.has("sessions-only") || parsed.flags.has("badges-only"))) throw new UsageError("--git-only cannot be combined with --sessions-only or --badges-only");
-  const project = parsed.flags.has("badges-only") || automatic || gitOnly ? null : loadValidated(resolveRoot(parsed.values.get("root")));
-  const herdr = herdrClient();
-  if (!herdr.envOk()) throw new LaunchError("Run this command inside a Herdr pane (HERDR_ENV=1).");
-  if (gitOnly) {
-    const result = syncWorkspaceGit(herdr);
-    out(parsed, result, `Updated Git details for ${result.updated} workspaces${result.failed ? `; ${result.failed} failed` : ""}`);
-    return result.failed ? 1 : 0;
-  }
-  if (parsed.flags.has("sessions-only")) {
-    const result = automatic ? refreshSessionSidebar(herdr, true) : refreshSidebar(project!, herdr, true);
-    out(parsed, result, `Checked sessions for ${result.updated} agents${result.failed ? `; ${result.failed} failed` : ""}`);
-    return result.failed ? 1 : 0;
-  }
-  const badges = syncWorkspaceBadges(herdr);
-  if (!parsed.flags.has("badges-only")) badges.failed += syncWorkspaceGit(herdr).failed;
-  const result = automatic ? refreshSessionSidebar(herdr) : project === null ? badges : refreshSidebar(project, herdr);
-  if (project !== null || automatic) result.failed += badges.failed;
-  out(parsed, result, `Updated ${result.updated} ${project === null && !automatic ? "badges" : "agents"}${result.failed ? `; ${result.failed} failed` : ""}`);
-  return result.failed ? 1 : 0;
 }
 
 function cmdStatus(args: string[]): number {
@@ -913,7 +875,7 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
   if (command === "-h" || command === "--help" || command === "help") {
-    process.stdout.write(USAGE + (rest.includes("--all") ? TOOL_HELP : ""));
+    process.stdout.write(USAGE);
     return 0;
   }
   if (command === "-v" || command === "--version") {
@@ -942,8 +904,6 @@ async function main(argv: string[]): Promise<number> {
       return cmdTasks(rest);
     case "status":
       return cmdStatus(rest);
-    case "sidebar":
-      return cmdSidebar(rest);
     case "console":
       return cmdConsole(rest);
     case "claim":
