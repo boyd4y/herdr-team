@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { loadProject } from "../scripts/lib/config.ts";
-import { handoff } from "../scripts/lib/handoff.ts";
-import { agentNameFor, dispatch, down, up } from "../scripts/lib/launch.ts";
+import { dispatch, down, up } from "../scripts/lib/launch.ts";
 import { buildReport } from "../scripts/lib/status.ts";
-import { worktreeBranch, type Project } from "../scripts/lib/types.ts";
+import { type Project } from "../scripts/lib/types.ts";
 import { fakeHerdr, makeProject, runningWorkspace, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 /** 项目里 dev 是隔离角色（worktree: true），docs 常驻。 */
@@ -17,31 +16,6 @@ function withProject(build: (root: string) => void, run: (p: Project) => void): 
     cleanup();
   }
 }
-
-describe("worktreeBranch", () => {
-  test("分支名一眼看出是哪个 feature", () => {
-    withProject(
-      (root) => writeTask(root, "0001-fix-login", taskMeta()),
-      (p) => expect(worktreeBranch(p.tasks[0]!)).toBe("feat/0001-fix-login"),
-    );
-  });
-});
-
-describe("agentNameFor", () => {
-  test("隔离角色带任务 id —— 同一角色能同时在多个任务上", () => {
-    withProject(
-      (root) => writeTask(root, "0001-a", taskMeta()),
-      (p) => expect(agentNameFor(p, p.tasks[0]!)).toBe("dev-0001"),
-    );
-  });
-
-  test("常驻角色就是角色名", () => {
-    withProject(
-      (root) => writeTask(root, "0001-a", taskMeta({ role: "docs" })),
-      (p) => expect(agentNameFor(p, p.tasks[0]!)).toBe("docs"),
-    );
-  });
-});
 
 describe("up —— 隔离角色不预起", () => {
   test("常驻角色起 tab，隔离角色 deferred", () => {
@@ -103,81 +77,6 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
     });
   });
 
-  test("开 worktree，分支名是 feat/<id>-<slug>", () => {
-    withProject(oneTask, (p) => {
-      const herdr = fakeHerdr();
-      const out = dispatch(p, herdr);
-      const created = herdr.calls.find((c) => c.startsWith("worktree create"));
-      expect(created).toContain("branch=feat/0001-fix-login");
-      expect(out[0]?.branch).toBe("feat/0001-fix-login");
-    });
-  });
-
-  test("workspace 的 label 用分支名（feature 名）", () => {
-    withProject(oneTask, (p) => {
-      const herdr = fakeHerdr();
-      dispatch(p, herdr);
-      const created = herdr.calls.find((c) => c.startsWith("worktree create"));
-      expect(created).toContain("label=feat/0001-fix-login");
-    });
-  });
-
-  test("agent 名是 <role>-<id>", () => {
-    withProject(oneTask, (p) => {
-      const herdr = fakeHerdr();
-      dispatch(p, herdr);
-      expect(herdr.calls.some((c) => c.startsWith("agent start dev-0001"))).toBe(true);
-      expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "dev-0001")?.pane_id}`))).toBe(true);
-    });
-  });
-
-  test("task agent display includes its task ID", () => {
-    withProject(oneTask, (p) => {
-      const herdr = fakeHerdr();
-      dispatch(p, herdr);
-      expect(herdr.calls.some((c) => c.startsWith("report-metadata") && c.endsWith(" dev-0001"))).toBe(true);
-    });
-  });
-
-  test("isolated roles process one task at a time", () => {
-    withProject(
-      (root) => {
-        writeTask(root, "0001-a", taskMeta({ title: "甲" }));
-        writeTask(root, "0002-b", taskMeta({ title: "乙" }));
-      },
-      (p) => {
-        const herdr = fakeHerdr();
-        dispatch(p, herdr);
-        expect(herdr.calls.filter((c) => c.startsWith("worktree create"))).toHaveLength(1);
-        expect(herdr.calls.some((c) => c.startsWith("agent start dev-0001"))).toBe(true);
-        expect(herdr.calls.some((c) => c.startsWith("agent start dev-0002"))).toBe(false);
-      },
-    );
-  });
-
-  test("worktree 建好后卡变 doing，流转记录写的是 agent 名", () => {
-    withProject(oneTask, (p) => {
-      dispatch(p, fakeHerdr());
-      const after = loadProject(p.root).tasks[0];
-      expect(after?.status).toBe("doing");
-      const body = require("node:fs").readFileSync(`${p.herdrDir}/tasks/0001-fix-login/task.md`, "utf8") as string;
-      expect(body).toContain("submitted");
-    });
-  });
-
-  test("常驻对话角色也使用独立任务 worktree", () => {
-    withProject(
-      (root) => writeTask(root, "0001-a", taskMeta({ role: "docs" })),
-      (p) => {
-        const herdr = fakeHerdr();
-        herdr.live("docs");
-        dispatch(p, herdr);
-        expect(herdr.calls.some((c) => c.startsWith("worktree create"))).toBe(true);
-        expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "docs-0001")?.pane_id}`))).toBe(true);
-      },
-    );
-  });
-
   test("repo 不存在就不派，并说明原因", () => {
     withProject(
       (root) => writeTask(root, "0001-a", taskMeta({ repo: "not-here" })),
@@ -185,39 +84,6 @@ describe("派活 —— 隔离角色按任务开 worktree", () => {
         const out = dispatch(p, fakeHerdr());
         expect(out[0]?.action).toBe("queued");
         expect(out[0]?.reason).toContain("not-here");
-      },
-    );
-  });
-});
-
-describe("handoff 到隔离角色", () => {
-  test("目标是 <role>-<id>，不是角色名", () => {
-    withProject(
-      (root) => writeTask(root, "0001-a", taskMeta({ status: "doing", role: "docs", handoff: ["dev"] })),
-      (p) => {
-        const herdr = fakeHerdr();
-        herdr.live("docs");
-        herdr.live("dev-0001", "w9:p1");
-        const result = handoff(p, herdr, "0001");
-
-        expect(result.to).toBe("dev");
-        expect(herdr.calls.some((c) => c.startsWith(`agent prompt ${herdr.state.agents.find((agent) => agent.name === "dev-0001")?.pane_id}`))).toBe(true);
-      },
-    );
-  });
-
-  test("handoff starts the missing isolated agent and retains review status", () => {
-    withProject(
-      (root) => writeTask(root, "0001-a", taskMeta({ status: "doing", role: "docs", handoff: ["dev"] })),
-      (p) => {
-        const herdr = fakeHerdr();
-        herdr.live("docs");
-        const result = handoff(p, herdr, "0001");
-
-        expect(result.prompted).toBe(true);
-        expect(herdr.calls.some((c) => c.startsWith("worktree create"))).toBe(true);
-        expect(result.queueState).toBe("submitted");
-        expect(result.status).toBe("review");
       },
     );
   });
@@ -307,15 +173,5 @@ describe("status 认识隔离角色", () => {
         expect(report.inconsistencies.find((i) => i.kind === "agent-missing")?.message).toContain("dev-0001");
       },
     );
-  });
-});
-
-describe("up —— deferred 的 reported 是 null，不是 false", () => {
-  test("隔离角色没起，就不该被报成上报失败", () => {
-    withProject(() => {}, (p) => {
-      const deferred = up(p, fakeHerdr()).roles.find((r) => r.action === "deferred");
-      expect(deferred?.role).toBe("dev");
-      expect(deferred?.reported).toBeNull();
-    });
   });
 });

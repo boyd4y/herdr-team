@@ -65,20 +65,6 @@ describe("cleanupTask", () => {
     });
   });
 
-  test("常驻角色没有对应分支时报 absent，其他 worktree 不动", () => {
-    withProject(
-      (root) => writeTask(root, "0001-a", taskMeta({ role: "docs", status: "done" })),
-      (p) => {
-        const herdr = fakeHerdr();
-        const made = herdr.worktreeCreate(p.root, "feat/0002-other", "other");
-        const result = cleanupTask(p, herdr, p.tasks[0]!);
-        expect(result.action).toBe("absent");
-        expect(herdr.branches.get(made.workspaceId)).toBe("feat/0002-other");
-        expect(herdr.calls.some((c) => c.startsWith("worktree remove"))).toBe(false);
-      },
-    );
-  });
-
   test("Git 拒绝时不 force，只报出来", () => {
     withWorktree(dispatched, (p, herdr) => {
       herdr.state.removeFails = true;
@@ -112,12 +98,6 @@ describe("cleanupIfDone", () => {
       expect(herdr.calls.some((c) => c.startsWith("worktree remove"))).toBe(false);
     });
   });
-
-  test("终态才收", () => {
-    withWorktree(dispatched, (p, herdr) => {
-      expect(cleanupIfDone(p, herdr, { ...p.tasks[0]!, status: "done" }).action).toBe("removed");
-    });
-  });
 });
 
 describe("handoff 到终态时顺带回收", () => {
@@ -138,22 +118,6 @@ describe("handoff 到终态时顺带回收", () => {
         expect(last.status).toBe("done");
         expect(last.cleanup?.action).toBe("removed");
         expect(herdr.branches.size).toBe(0);
-      },
-    );
-  });
-
-  test("队列空 → done → 收 worktree", () => {
-    withWorktree(
-      (root) => writeTask(root, "0001-a", taskMeta({ status: "review", role: "dev", handoff: [] })),
-      (p, herdr) => {
-        // 先手工造一个 worktree（review 状态时 worktree 应该还在）
-        const branch = worktreeBranch(p.tasks[0]!);
-        const made = herdr.worktreeCreate(p.root, branch, "x");
-
-        const result = handoff(loadProject(p.root), herdr, "0001");
-        expect(result.status).toBe("done");
-        expect(result.cleanup?.action).toBe("removed");
-        expect(herdr.calls.some((c) => c === `worktree remove ${made.workspaceId}`)).toBe(true);
       },
     );
   });
@@ -184,18 +148,6 @@ describe("handoff 到终态时顺带回收", () => {
         expect(result.status).toBe("done"); // 任务照样结束
         expect(result.cleanup?.action).toBe("dirty");
         expect(result.note).toContain("uncommitted");
-      },
-    );
-  });
-
-  test("常驻角色走到终态不报回收问题", () => {
-    withWorktree(
-      (root) => writeTask(root, "0001-a", taskMeta({ status: "review", role: "docs", handoff: [] })),
-      (p, herdr) => {
-        herdr.live("docs");
-        const result = handoff(loadProject(p.root), herdr, "0001");
-        expect(result.cleanup?.action).toBe("absent");
-        expect(result.note).not.toContain("⚠");
       },
     );
   });

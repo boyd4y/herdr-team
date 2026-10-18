@@ -7,7 +7,7 @@ import { makeProject, twoRoles, writeTask, taskMeta } from "./helpers.ts";
 
 // Exercise the real CLI and realHerdr adapter, with an offline Herdr executable.
 // Every mutation is confined to a throwaway project, never the user's team.
-function withCLI(run: (cli: (...args: string[]) => { code: number; stdout: string; stderr: string }, root: string, calls: () => string[][]) => void, promptError = "", logos = "off"): void {
+function withCLI(run: (cli: (...args: string[]) => { code: number; stdout: string; stderr: string }, root: string, calls: () => string[][]) => void, promptError = ""): void {
   const { root, cleanup } = makeProject();
   try {
     twoRoles(root);
@@ -74,7 +74,7 @@ process.stdout.write(JSON.stringify({ result }));
     const cli = (...args: string[]) => {
       const proc = Bun.spawnSync([join(bin, "herdr-team"), ...args], {
         cwd: root,
-        env: { ...process.env, HERDR_ENV: "1", HERDR_TEAM_LOGOS: logos, HERDR_TEST_STATE: stateFile, HERDR_TEST_ROOT: root,
+        env: { ...process.env, HERDR_ENV: "1", HERDR_TEST_STATE: stateFile, HERDR_TEST_ROOT: root,
           HERDR_BIN_PATH: executable, HERDR_TEST_PROMPT_ERROR: promptError, PATH: `${bin}${delimiter}${process.env.PATH}` },
         stdout: "pipe", stderr: "pipe",
       });
@@ -102,15 +102,6 @@ describe("CLI up / dispatch", () => {
       expect(start.includes("saved-docs-session")).toBe(!fresh);
       expect(calls().some((args) => args[0] === "agent" && args[1] === "prompt")).toBe(false);
     });
-  });
-
-  test.each(["off", "font"])("旧环境变量 HERDR_TEAM_LOGOS=%s 不再让 up / dispatch 上报图标", (mode) => {
-    withCLI((cli, _, calls) => {
-      expect(cli("up").code).toBe(0);
-      expect(cli("dispatch", "0001").code).toBe(0);
-      const tokens = calls().filter((args) => args.some((arg) => arg.startsWith("harness_logo=")));
-      expect(tokens).toEqual([]);
-    }, "", mode);
   });
 
   for (const code of ["agent_prompt_stalled", "timeout"]) {

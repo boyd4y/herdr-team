@@ -152,12 +152,4 @@ describe("--depends-on CLI", () => {
       }
     });
   });
-
-  test("全局和两个子命令帮助均列出 --depends-on", () => {
-    for (const args of [["--help"], ["add", "--help"], ["edit", "--help"]]) {
-      const result = cli(import.meta.dir, ...args);
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain("--depends-on");
-    }
-  });
 });

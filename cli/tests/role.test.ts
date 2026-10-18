@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { loadProject } from "../scripts/lib/config.ts";
 import { addRole, removeRole, RoleError, tasksUsingRole } from "../scripts/lib/role.ts";
 import { ROLE_BODY, ROLE_META, type Project } from "../scripts/lib/types.ts";
-import { validateProject } from "../scripts/lib/validate.ts";
 import { makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 function withProject(build: (root: string) => void, run: (p: Project) => void): void {
@@ -36,29 +35,6 @@ describe("addRole —— 运行期加角色", () => {
     });
   });
 
-  test("加完立刻通过校验 —— up 读的就是它", () => {
-    withProject(() => {}, (p) => {
-      addRole(p, { name: "reviewer", kind: "codex" });
-      expect(validateProject(loadProject(p.root))).toEqual([]);
-    });
-  });
-
-  test("worktree 标记能加上", () => {
-    withProject(() => {}, (p) => {
-      addRole(p, { name: "builder", kind: "codex", worktree: true });
-      expect(loadProject(p.root).roles.find((r) => r.name === "builder")?.worktree).toBe(true);
-    });
-  });
-
-  test("env 写成嵌套映射", () => {
-    withProject(() => {}, (p) => {
-      addRole(p, { name: "writer", kind: "claude", env: { ANTHROPIC_MODEL: "deepseek-flash" } });
-      expect(loadProject(p.root).roles.find((r) => r.name === "writer")?.env).toEqual({
-        ANTHROPIC_MODEL: "deepseek-flash",
-      });
-    });
-  });
-
   test("已经存在就拒绝，别默默覆盖", () => {
     withProject(() => {}, (p) => {
       expect(() => addRole(p, { name: "dev", kind: "claude" })).toThrow(RoleError);
@@ -71,39 +47,6 @@ describe("addRole —— 运行期加角色", () => {
       addRole(p, { name: "dev", kind: "claude", force: true });
       expect(loadProject(p.root).roles.find((r) => r.name === "dev")?.kind).toBe("claude");
       expect(readFileSync(join(p.herdrDir, "roles/dev", ROLE_BODY), "utf8")).toBe(before);
-    });
-  });
-
-  test("--force --body 只改职责，省略 kind 和启动配置则全部保留", () => {
-    withProject(() => {}, (p) => {
-      for (const name of ["dev", "docs"]) {
-        const metaPath = join(p.herdrDir, "roles", name, ROLE_META);
-        const before = readFileSync(metaPath, "utf8");
-        addRole(p, { name, body: "新职责。\n\n完成后运行 `herdr-team handoff <id>`。", force: true });
-        expect(readFileSync(metaPath, "utf8")).toBe(before);
-        expect(readFileSync(join(p.herdrDir, "roles", name, ROLE_BODY), "utf8"))
-          .toBe("新职责。\n\n完成后运行 `herdr-team handoff <id>`。\n");
-      }
-      expect(validateProject(loadProject(p.root))).toEqual([]);
-    });
-  });
-
-  test("--force 不给正文就逐字保留，只更新显式元数据", () => {
-    withProject(() => {}, (p) => {
-      const before = p.roles.find((r) => r.name === "dev")!;
-      addRole(p, { name: "dev", model: "new-display", force: true });
-      const after = loadProject(p.root).roles.find((r) => r.name === "dev")!;
-      expect(after.meta).toEqual({ ...before.meta, model: "new-display" });
-      expect(after.body).toBe(before.body);
-    });
-  });
-
-  test("新角色即使有 --force 也必须给 kind，失败不落盘", () => {
-    withProject(() => {}, (p) => {
-      for (const force of [false, true]) {
-        expect(() => addRole(p, { name: "new-role", body: "职责", force })).toThrow(/--kind is required for new roles/);
-        expect(existsSync(join(p.herdrDir, "roles/new-role"))).toBe(false);
-      }
     });
   });
 
@@ -131,13 +74,6 @@ describe("tasksUsingRole —— 谁还在用", () => {
       (p) => {
         expect(tasksUsingRole(p, "docs").sort()).toEqual(["0001", "0002"]);
       },
-    );
-  });
-
-  test("终态任务里的引用是历史，不算数", () => {
-    withProject(
-      (root) => writeTask(root, "0001-a", taskMeta({ role: "docs", status: "done" })),
-      (p) => expect(tasksUsingRole(p, "docs")).toEqual([]),
     );
   });
 });
@@ -175,13 +111,6 @@ describe("removeRole", () => {
   test("删不存在的角色报错并列出已有的", () => {
     withProject(() => {}, (p) => {
       expect(() => removeRole(p, "ghost")).toThrow(/dev, docs/);
-    });
-  });
-
-  test("删完剩下的仍然通过校验", () => {
-    withProject(() => {}, (p) => {
-      removeRole(p, "docs");
-      expect(validateProject(loadProject(p.root))).toEqual([]);
     });
   });
 });

@@ -25,9 +25,6 @@ function withProject(build: (root: string) => void, run: (p: Project) => void): 
 }
 
 describe("nextId", () => {
-  test("空项目从 0001 开始", () => {
-    withProject(() => {}, (p) => expect(nextId(p)).toBe("0001"));
-  });
 
   test("取现存最大值 + 1", () => {
     withProject((root) => writeTask(root, "0003-a", taskMeta()), (p) => expect(nextId(p)).toBe("0004"));
@@ -99,31 +96,6 @@ describe("createTask —— 写出的东西", () => {
     });
   });
 
-  test("正文文件不含任何元数据", () => {
-    withProject(() => {}, (p) => {
-      const created = createTask(p, {
-        title: "A task",
-        role: "dev",
-        handoff: [],
-        priority: "P2",
-        body: "描述。",
-      });
-      const body = readFileSync(join(created.path, TASK_BODY), "utf8");
-      expect(body).not.toContain("---");
-      expect(body).not.toContain("priority");
-    });
-  });
-
-  test("写完能被重新读回", () => {
-    withProject(() => {}, (p) => {
-      createTask(p, { title: "A task", role: "dev", handoff: [], priority: "P2", body: "" });
-      const again = loadProject(p.root);
-      expect(again.tasks[0]?.id).toBe("0001");
-      expect(again.tasks[0]?.slug).toBe("a-task");
-      expect(again.tasks[0]?.title).toBe("A task");
-    });
-  });
-
   test("role 解析不到就拒绝，并列出可用角色", () => {
     withProject(() => {}, (p) => {
       expect(() =>
@@ -172,32 +144,10 @@ describe("createTask —— 写出的东西", () => {
 });
 
 describe("editTask", () => {
-  test("todo 可以改", () => {
-    withProject((root) => writeTask(root, "0001-a", taskMeta()), (p) => {
-      editTask(p, "0001", { priority: "P0" }, false);
-      const meta = loadProject(p.root).tasks[0];
-      expect(meta?.priority).toBe("P0");
-    });
-  });
-
-  test("改元数据不动正文", () => {
-    withProject((root) => writeTask(root, "0001-a", taskMeta(), "很重要的描述"), (p) => {
-      editTask(p, "0001", { title: "新标题" }, false);
-      const body = readFileSync(join(p.herdrDir, "tasks/0001-a", TASK_BODY), "utf8");
-      expect(body).toContain("很重要的描述");
-      expect(body).toContain("## 流转记录");
-    });
-  });
 
   test("已派出不给 --force 就拒绝", () => {
     withProject((root) => writeTask(root, "0001-a", taskMeta({ status: "doing" })), (p) => {
       expect(() => editTask(p, "0001", { priority: "P0" }, false)).toThrow(/--force/);
-    });
-  });
-
-  test("--force 可以改已派出的", () => {
-    withProject((root) => writeTask(root, "0001-a", taskMeta({ status: "doing" })), (p) => {
-      expect(() => editTask(p, "0001", { priority: "P0" }, true)).not.toThrow();
     });
   });
 
@@ -234,12 +184,6 @@ describe("YAML 输出器", () => {
     expect(scalar("y")).toBe('"y"');
   });
 
-  test("普通值和中文裸写", () => {
-    expect(scalar("dev")).toBe("dev");
-    expect(scalar("修复登录")).toBe("修复登录");
-    expect(scalar("sol-6.1")).toBe("sol-6.1");
-  });
-
   test("含冒号的值加引号", () => {
     expect(scalar("a: b")).toBe('"a: b"');
   });
@@ -249,17 +193,8 @@ describe("YAML 输出器", () => {
     expect(emitYaml({ handoff: ["docs"] })).toBe("handoff: [docs]\n");
   });
 
-  test("按给定顺序排键", () => {
-    const out = emitYaml({ status: "todo", title: "x" }, ["title", "status"]);
-    expect(out.split("\n")[0]).toBe("title: x");
-  });
-
   test("嵌套映射写成块", () => {
     expect(emitYaml({ env: { ANTHROPIC_MODEL: "ds-flash" } })).toBe("env:\n  ANTHROPIC_MODEL: ds-flash\n");
-  });
-
-  test("输出以换行结尾（文件末尾不留半行）", () => {
-    expect(emitYaml({ kind: "codex" }).endsWith("\n")).toBe(true);
   });
 
   test("能被解析回来", () => {

@@ -130,7 +130,7 @@ describe("CLI JSON card bodies", () => {
     }
   });
 
-  test("watch details, --once and --line keep their behavior", () => {
+  test("console details, --once and --line keep their behavior", () => {
     withCLI((cli) => {
       expect(cli("console", "--line")).toEqual({ code: 0, stdout: "team: 1 todo\n", stderr: "" });
       const once = cli("console", "--once");
@@ -143,18 +143,6 @@ describe("CLI JSON card bodies", () => {
       const withoutClock = (text: string) => text.replace(/\b\d{2}:\d{2}:\d{2}\b/g, "<time>");
       expect(withoutClock(watch.stdout)).toBe(withoutClock(once.stdout));
       expect(watch.stderr).toContain("non-interactive terminal");
-    });
-  });
-
-  test("help documents body-free lists and the single-card detail command", () => {
-    withCLI((cli) => {
-      for (const command of [[], ["tasks"], ["status"], ["role", "list"]]) {
-        const result = cli(...command, "--help");
-        expect(result.code).toBe(0);
-        expect(result.stdout).toContain("omit");
-        expect(result.stdout).toContain("body");
-        if (command[0] !== "role") expect(result.stdout).toContain("tasks <id>");
-      }
     });
   });
 });

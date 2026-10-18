@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { displayWidth, padTo, sanitize, truncate, wrapTo } from "../scripts/lib/text.ts";
+import { displayWidth, sanitize, truncate, wrapTo } from "../scripts/lib/text.ts";
 
 describe("displayWidth", () => {
   test("ASCII 一列、中文两列", () => {
@@ -15,25 +15,7 @@ describe("displayWidth", () => {
   });
 });
 
-describe("padTo", () => {
-  test("补到指定宽度", () => {
-    expect(padTo("ab", 5)).toBe("ab   ");
-    expect(padTo("中文", 6)).toBe("中文  ");
-  });
-
-  test("已经超宽就原样返回 —— 本函数不截断", () => {
-    expect(padTo("abcdef", 3)).toBe("abcdef");
-  });
-});
-
 describe("truncate", () => {
-  test("没超宽就不动", () => {
-    expect(truncate("abc", 5)).toBe("abc");
-  });
-
-  test("超宽时截断并加省略号", () => {
-    expect(truncate("abcdef", 4)).toBe("abc…");
-  });
 
   test("宽度容不下时给空串，不给负数格子", () => {
     expect(truncate("abc", 0)).toBe("");

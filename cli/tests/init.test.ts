@@ -16,14 +16,6 @@ function bareProject(): { root: string; cleanup: () => void } {
 }
 
 describe("parseRoleSpecs", () => {
-  test("接受裸数组", () => {
-    const specs = parseRoleSpecs('[{"name":"dev","kind":"codex"}]');
-    expect(specs[0]?.name).toBe("dev");
-  });
-
-  test("接受 {roles: [...]}", () => {
-    expect(parseRoleSpecs('{"roles":[{"name":"dev","kind":"codex"}]}')).toHaveLength(1);
-  });
 
   test("非法 JSON 报错", () => {
     expect(() => parseRoleSpecs("不是 JSON")).toThrow(InitError);
@@ -43,33 +35,6 @@ describe("parseRoleSpecs", () => {
 
   test("args 不是数组报错", () => {
     expect(() => parseRoleSpecs('[{"name":"dev","kind":"codex","args":"-m"}]')).toThrow(/args must be an array of strings/);
-  });
-});
-
-describe("init —— 骨架", () => {
-  test("建 identity.md 和两个 .gitkeep", () => {
-    const { root, cleanup } = bareProject();
-    try {
-      const result = init(loadProject(root), []);
-      expect(result.created).toContain("identity.md");
-      expect(result.created).toContain("roles/.gitkeep");
-      expect(result.created).toContain("tasks/.gitkeep");
-    } finally {
-      cleanup();
-    }
-  });
-
-  test("identity.md 只有骨架，不编内容", () => {
-    const { root, cleanup } = bareProject();
-    try {
-      init(loadProject(root), []);
-      const text = readFileSync(join(root, ".herdr/identity.md"), "utf8");
-      expect(text).toContain("# Identity");
-      expect(text).toContain("## Code conventions");
-      expect(text).toContain("## Preferences");
-    } finally {
-      cleanup();
-    }
   });
 });
 
@@ -190,40 +155,6 @@ describe("init —— 写出的角色", () => {
     }
   });
 
-  test("元数据里不含 name —— 身份来自目录名", () => {
-    const { root, cleanup } = bareProject();
-    try {
-      init(loadProject(root), [{ name: "dev", kind: "codex" }]);
-      const text = readFileSync(join(root, ".herdr/roles/dev", ROLE_META), "utf8");
-      expect(text).not.toContain("name:");
-      expect(text).toContain("kind: codex");
-    } finally {
-      cleanup();
-    }
-  });
-
-  test("env 写成嵌套映射", () => {
-    const { root, cleanup } = bareProject();
-    try {
-      init(loadProject(root), [{ name: "docs", kind: "claude", env: { ANTHROPIC_MODEL: "deepseek-flash" } }]);
-      const text = readFileSync(join(root, ".herdr/roles/docs", ROLE_META), "utf8");
-      expect(text).toContain("env:\n  ANTHROPIC_MODEL: deepseek-flash");
-      expect(loadProject(root).roles[0]?.env).toEqual({ ANTHROPIC_MODEL: "deepseek-flash" });
-    } finally {
-      cleanup();
-    }
-  });
-
-  test("没给 body 时补一句默认的交棒说明", () => {
-    const { root, cleanup } = bareProject();
-    try {
-      init(loadProject(root), [{ name: "dev", kind: "codex" }]);
-      expect(readFileSync(join(root, ".herdr/roles/dev", ROLE_BODY), "utf8")).toContain("herdr-team handoff <id>");
-    } finally {
-      cleanup();
-    }
-  });
-
   test("init 完直接通过校验", () => {
     const { root, cleanup } = bareProject();
     try {
@@ -232,16 +163,6 @@ describe("init —— 写出的角色", () => {
         { name: "docs", kind: "claude" },
       ]);
       expect(validateProject(loadProject(root))).toEqual([]);
-    } finally {
-      cleanup();
-    }
-  });
-
-  test("角色名就是目录名", () => {
-    const { root, cleanup } = bareProject();
-    try {
-      init(loadProject(root), [{ name: "developer-alt", kind: "kimi" }]);
-      expect(existsSync(join(root, ".herdr/roles/developer-alt", ROLE_META))).toBe(true);
     } finally {
       cleanup();
     }

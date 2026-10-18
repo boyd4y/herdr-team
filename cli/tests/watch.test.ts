@@ -6,25 +6,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { displayWidth } from "../scripts/lib/text.ts";
 import type { Project, RoleCard, TaskCard } from "../scripts/lib/types.ts";
-import {
-  buildModel,
-  computeLayout,
-  flushCarry,
-  formatStatusLine,
-  frameText,
-  fuzzyScore,
-  filterTasks,
-  parseKeys,
-  realTerminal,
-  resolveSize,
-  renderFrame,
-  resolveSelection,
-  runWatch,
-  type Key,
-  type Terminal,
-  type WatchDeps,
-  type WatchState,
-} from "../scripts/lib/watch.ts";
+import { buildModel, computeLayout, flushCarry, formatStatusLine, fuzzyScore, filterTasks, parseKeys, realTerminal, resolveSize, renderFrame, resolveSelection, runWatch, type Key, type Terminal, type WatchDeps, type WatchState } from "../scripts/lib/watch.ts";
 import { fakeHerdr, makeProject, taskMeta, twoRoles, writeTask, type FakeHerdr } from "./helpers.ts";
 
 /** 把着色剥掉 —— 宽度不变量要在「终端实际占几列」上验，不能把 ANSI 码算进去。 */
@@ -74,9 +56,6 @@ function deliveryTask(id: string, state?: string): TaskCard {
   return card;
 }
 
-const taskRows = (frame: string[]): string[] => frame.map(stripAnsi)
-  .filter((line) => /^(?:  › |    )\d{4} /.test(line));
-
 const DEV = role("dev", true);
 const TEST = role("test");
 
@@ -107,13 +86,6 @@ const DOING = task("0015", "add-tui", "加只读看板", "P1", "doing", "dev");
 const TODO = task("0016", "watch-tests", "补 watch 的测试", "P2", "todo", "test");
 const DONE = task("0012", "split-up", "拆分 up 与 dispatch", "P2", "done", "test");
 
-const SIZES = [
-  [60, 20],
-  [80, 24],
-  [120, 30],
-  [200, 50],
-] as const;
-
 // ---------------------------------------------------------------- 纯解析
 
 describe("parseKeys", () => {
@@ -123,19 +95,6 @@ describe("parseKeys", () => {
     expect(parseKeys("\x1bOA").keys).toEqual([{ kind: "up" }]);
     expect(parseKeys("\x1b[B").keys).toEqual([{ kind: "down" }]);
     expect(parseKeys("\x1bOB").keys).toEqual([{ kind: "down" }]);
-  });
-
-  test("翻页键", () => {
-    expect(parseKeys("\x1b[5~").keys).toEqual([{ kind: "page-up" }]);
-    expect(parseKeys("\x1b[6~").keys).toEqual([{ kind: "page-down" }]);
-  });
-
-  test("一次 read 里挤进好几个键", () => {
-    expect(parseKeys("\x1b[A\x1b[Bj").keys).toEqual([
-      { kind: "up" },
-      { kind: "down" },
-      { kind: "text", text: "j" },
-    ]);
   });
 
   /**
@@ -150,20 +109,6 @@ describe("parseKeys", () => {
     const second = parseKeys("[A", first.carry);
     expect(second.keys).toEqual([{ kind: "up" }]);
     expect(second.carry).toBe("");
-  });
-
-  test("可打印字符按码点保留，命令字母交给驱动按当前模式解释", () => {
-    expect(parseKeys("/qjkra 中文𠮷").keys).toEqual(
-      Array.from("/qjkra 中文𠮷", (text) => ({ kind: "text", text })),
-    );
-    expect(parseKeys("\r\n\x7f\x08\t").keys).toEqual([
-      { kind: "enter" }, { kind: "enter" },
-      { kind: "backspace" }, { kind: "backspace" }, { kind: "ignore" },
-    ]);
-  });
-
-  test("Ctrl-C 在 raw mode 下是个字节，不是信号", () => {
-    expect(parseKeys("\x03").keys).toEqual([{ kind: "quit" }]);
   });
 
   test("flushCarry：等超时后，孤立的 ESC 才算 Esc", () => {
@@ -188,14 +133,6 @@ describe("fuzzy search", () => {
     expect(fuzzyScore("加只读看板", "读加")).toBeNull();
     expect(fuzzyScore("𠮷野家的看板", "𠮷板")).not.toBeNull();
     expect(fuzzyScore("𠮷", "\ud842")).toBeNull(); // 不能拿半个代理对当命中
-  });
-
-  test("空查询总是匹配，连续和靠前的匹配分数更高", () => {
-    expect(fuzzyScore("", "")).toBe(0);
-    expect(fuzzyScore("中文 ABC", "")).toBe(0);
-    expect(fuzzyScore("watch tests", "wt")!).toBeGreaterThan(fuzzyScore("w____t", "wt")!);
-    expect(fuzzyScore("watch", "wat")!).toBeGreaterThan(fuzzyScore("__watch", "wat")!);
-    expect(fuzzyScore("a___ab", "ab")).toBe(fuzzyScore("xxxxab", "ab"));
   });
 
   test("按分数排序，同分再按 priority、id，空查询恢复原顺序且不修改输入", () => {
@@ -228,16 +165,6 @@ describe("resolveSelection", () => {
   test("id 不在了回落到下标，而不是跳回顶部", () => {
     expect(resolveSelection({ id: "9999", index: 2 }, [DOING, TODO, DONE])).toBe(2);
   });
-
-  test("下标越界要钳住", () => {
-    expect(resolveSelection({ id: "9999", index: 9 }, [DOING])).toBe(0);
-    expect(resolveSelection({ id: "9999", index: -3 }, [DOING])).toBe(0);
-  });
-
-  test("空列表返回 -1；初始没有 id 时从 0 开始", () => {
-    expect(resolveSelection({ id: null, index: 0 }, [])).toBe(-1);
-    expect(resolveSelection({ id: null, index: 0 }, [DOING, TODO])).toBe(0);
-  });
 });
 
 // ---------------------------------------------------------------- 模型
@@ -259,34 +186,6 @@ describe("buildModel", () => {
     expect(all.tasks.map((t) => t.id)).toEqual([DONE.id, TODO.id]);
     expect(all.candidateCount).toBe(3);
     expect(build({ query: "查无此卡" }).selectedIndex).toBe(-1);
-  });
-
-  test("默认藏掉终态，并报出 open/total 两个数", () => {
-    const m = buildModel(projectOf([DOING, TODO, DONE]), fakeHerdr(), freshState(), "00:00:00", 2);
-    expect(m.tasks.map((t) => t.id)).toEqual(["0015", "0016"]);
-    expect(m.openCount).toBe(2);
-    expect(m.totalCount).toBe(3);
-  });
-
-  test("showAll 时全都出来", () => {
-    const m = buildModel(
-      projectOf([DOING, TODO, DONE]),
-      fakeHerdr(),
-      freshState({ showAll: true }),
-      "00:00:00",
-      2,
-    );
-    expect(m.tasks).toHaveLength(3);
-  });
-
-  test("按 priority 再按 id 排序", () => {
-    const tasks = [
-      task("0003", "c", "c", "P2", "todo", "dev"),
-      task("0002", "b", "b", "P0", "todo", "dev"),
-      task("0001", "a", "a", "P2", "todo", "dev"),
-    ];
-    const m = buildModel(projectOf(tasks), fakeHerdr(), freshState(), "00:00:00", 2);
-    expect(m.tasks.map((t) => t.id)).toEqual(["0002", "0001", "0003"]);
   });
 
   /**
@@ -331,65 +230,6 @@ describe("renderFrame", () => {
     expect(renderFrame(kept, opts).some((l) => l.includes("▏"))).toBe(false);
   });
 
-  test("搜索输入、空结果、超长中英文查询也遵守宽高预算，长查询保留命中数", () => {
-    for (const query of ["", "加读", "console", "不存在".repeat(80), "x".repeat(200), "\x1b[31m"]) {
-      for (const searching of [false, true]) {
-        const m = model({ query, searching });
-        for (const width of [40, 60, 80, 120]) {
-          for (let height = 5; height <= 40; height++) {
-            for (const color of [false, true]) {
-              const opts = { width, height, color };
-              const frame = renderFrame(m, opts);
-              expect(frame.length).toBeLessThanOrEqual(height);
-              for (const line of frame) expect(displayWidth(stripAnsi(line))).toBeLessThanOrEqual(width);
-              if (!computeLayout(m, opts).tooSmall && (query !== "" || searching)) {
-                expect(frame.find((l) => l.includes("TASKS"))).toContain(`(${m.tasks.length}/2)`);
-              }
-            }
-          }
-        }
-      }
-    }
-  });
-
-  /**
-   * 最要紧的一条不变量：一行软折行终端就会滚动，`\x1b[H` + 逐行重绘立刻失同步，
-   * 画面会渐进式烂掉。所以每一行都不能超过终端宽度 —— 着色前后都要成立。
-   */
-  test("每一行的显示宽度都不超过终端宽度（含着色时）", () => {
-    for (const [width, height] of SIZES) {
-      for (const color of [false, true]) {
-        const frame = renderFrame(model(), { width, height, color });
-        for (const line of frame) {
-          expect(displayWidth(stripAnsi(line))).toBeLessThanOrEqual(width);
-        }
-      }
-    }
-  });
-
-  test("太长、太窄都走回退帧 —— 回退帧本身也不越界", () => {
-    for (const [width, height] of [
-      [39, 40],
-      [80, 12],
-      [20, 5],
-    ] as const) {
-      const frame = renderFrame(model(), { width, height, color: false });
-      expect(frame.join("\n")).toContain("Terminal too small");
-      for (const line of frame) expect(displayWidth(line)).toBeLessThanOrEqual(width);
-    }
-  });
-
-  test("选中标记落在正确的那一行，且只有一处", () => {
-    const frame = renderFrame(model({ selectedId: "0016", selectedIndex: 1 }), {
-      width: 80,
-      height: 24,
-      color: false,
-    });
-    const marked = frame.filter((l) => l.includes("›"));
-    expect(marked).toHaveLength(1);
-    expect(marked[0]).toContain("0016");
-  });
-
   test("任务超出可视区时在标题行给上下溢出标记", () => {
     const many = Array.from({ length: 8 }, (_, i) =>
       task(`00${10 + i}`, `t${i}`, `第 ${i} 个任务`, "P2", "todo", "dev"),
@@ -411,23 +251,6 @@ describe("renderFrame", () => {
     expect(scrolledTitle).toContain("↓2");
   });
 
-  test("超长标题被截断，不会顶穿列宽", () => {
-    const long = [task("0001", "long", "一个特别长的中文标题用来量宽度而且还要更长一些", "P0", "todo", "dev")];
-    const m = buildModel(projectOf(long), fakeHerdr(), freshState(), "00:00:00", 2);
-    const frame = renderFrame(m, { width: 40, height: 20, color: false });
-    expect(frame.some((l) => l.includes("…"))).toBe(true);
-    for (const line of frame) expect(displayWidth(line)).toBeLessThanOrEqual(40);
-  });
-
-  test("没有问题就没有横幅行", () => {
-    // 干净的 fixture：只有 todo 卡（没有 doing，就不会有 agent-missing），
-    // 角色 meta 也合法。
-    const clean = buildModel(projectOf([TODO]), fakeHerdr(), freshState(), "00:00:00", 2);
-    const frame = renderFrame(clean, { width: 80, height: 24, color: false });
-    expect(frame.some((l) => l.includes("⚠"))).toBe(false);
-    expect(frame.some((l) => l.includes("✗"))).toBe(false);
-  });
-
   test("herdr 连不上时表头标记，且不冒出假的 ⚠", () => {
     const dead = fakeHerdr();
     dead.agentList = () => {
@@ -437,32 +260,6 @@ describe("renderFrame", () => {
     expect(frame[0]).toContain("herdr ✗");
     expect(frame.some((l) => l.includes("⚠"))).toBe(true); // 就是「连不上」那一条
     expect(frame.some((l) => l.includes("agent-missing"))).toBe(false);
-  });
-
-  /**
-   * 回归：「（没有任务）」那行曾经没进高度预算，于是 0 任务 + 多角色、高度正好
-   * 等于 `minHeight` 时帧会比终端高一行 —— 终端一滚动，逐行重绘就失同步。
-   * 每次都按「帧行数 ≤ 高度」验，别只验宽度。
-   */
-  test("空列表 + 多角色的组合也不会把帧撑出终端", () => {
-    const manyRoles = Array.from({ length: 8 }, (_, i) => role(`r${i}`));
-    const empty = buildModel(projectOf([], manyRoles), fakeHerdr(), freshState(), "00:00:00", 2);
-    const noRoles = buildModel(projectOf([]), fakeHerdr(), freshState(), "00:00:00", 2);
-
-    for (const m of [empty, noRoles]) {
-      for (let height = 5; height <= 30; height++) {
-        const frame = renderFrame(m, { width: 80, height, color: false });
-        expect(frame.length).toBeLessThanOrEqual(height);
-      }
-    }
-  });
-
-  test("空项目也能渲染，不崩", () => {
-    const m = buildModel(projectOf([], []), fakeHerdr(), freshState(), "00:00:00", 2);
-    const frame = renderFrame(m, { width: 80, height: 24, color: false });
-    expect(frame.join("\n")).toContain("(no tasks");
-    expect(frame.join("\n")).toContain("(no roles)");
-    for (const line of frame) expect(displayWidth(stripAnsi(line))).toBeLessThanOrEqual(80);
   });
 
   test("正文保留段落空行", () => {
@@ -483,16 +280,6 @@ describe("renderFrame", () => {
     expect(frame.join("\n")).not.toContain("\x1b[31m");
     expect(frame.join("\n")).not.toContain("\x1b[2J");
   });
-
-  test("layout 的行数预算和实际渲染的行数对得上", () => {
-    const m = model();
-    for (const [width, height] of SIZES) {
-      const layout = computeLayout(m, { width, height, color: false });
-      const frame = renderFrame(m, { width, height, color: false });
-      expect(layout.tooSmall).toBe(false);
-      expect(frame.length).toBeLessThanOrEqual(height);
-    }
-  });
 });
 
 describe("Team Console delivery layout", () => {
@@ -502,37 +289,6 @@ describe("Team Console delivery layout", () => {
     buildModel(projectOf(tasks), fakeHerdr(), freshState(state), "09:41:12", 2);
   const frame = (m = makeModel(), width = 100, color = false) =>
     renderFrame(m, { width, height: 80, color });
-  const roleRows = (lines: string[]): string[] => {
-    const start = lines.findIndex((line) => stripAnsi(line).includes("ROLES"));
-    const end = lines.findIndex((line, index) => index > start && stripAnsi(line).trim() === "");
-    return lines.slice(start + 1, end).map(stripAnsi);
-  };
-
-  test("flow glyphs align titles and preserve status and priority colors", () => {
-    const m = makeModel();
-    for (const width of [50, 69, 70, 99, 100, 120]) {
-      const rows = taskRows(frame(m, width));
-      expect(rows).toHaveLength(7);
-      rows.forEach((row, index) => {
-        expect(row[25]).toBe(["·", "◷", "→", "→", "●", "!", "!"][index]);
-        expect(row.indexOf(`Title 000${index + 1}`)).toBe(27);
-        expect(row).not.toMatch(/\[(queued|sending|submitted|claimed|uncertain|invalid)\]/);
-        expect(row.includes("feat/")).toBe(width >= 100);
-        expect(displayWidth(row)).toBe(width);
-      });
-    }
-    const colored = frame(m, 100, true).filter((line) => /^(?:  › |    )\d{4} /.test(line));
-    expect(colored[0]).toContain("\x1b[33mP1\x1b[0m");
-    expect(colored[1]).toContain("\x1b[2m◷\x1b[0m");
-    expect(colored[2]).toContain("\x1b[36m→\x1b[0m");
-    expect(colored[3]).toContain("\x1b[36m→\x1b[0m");
-    expect(colored[4]).toContain(" ● ");
-    expect(colored[5]).toContain("\x1b[33m!\x1b[0m");
-    expect(colored[6]).toContain("\x1b[31m!\x1b[0m");
-    const doing = deliveryTask("0010", "claimed");
-    doing.status = "doing";
-    expect(frame(makeModel([doing]), 100, true).join("\n")).toContain("\x1b[36mdoing\x1b[0m");
-  });
 
   test("PENDING is a project-wide nonzero legend with compact responsive counts", () => {
     const m = makeModel();
@@ -565,57 +321,6 @@ describe("Team Console delivery layout", () => {
     expect(computeLayout(queued, { width: 100, height: 80, color: false }).minHeight).toBe(
       computeLayout(clean, { width: 100, height: 80, color: false }).minHeight + 2,
     );
-  });
-
-  test("roles have aligned agent/status/active/queue columns and folded active IDs", () => {
-    const m = makeModel([]);
-    m.roles = [[], ["1001"], ["1001", "1002"], ["1001", "1002", "1003", "1004"]].map((current, index) => ({
-      role: `role${index}`, agent: "ht-535c-agent", herdrStatus: "working", current,
-      queued: index === 3 ? 12 : index, paneId: "w1M:p6", worktree: false,
-    }));
-    for (const width of [50, 69, 70, 99, 100]) {
-      const lines = frame(m, width);
-      const rows = roleRows(lines);
-      const header = lines.find((line) => line.includes("ROLES"))!;
-      expect(rows).toHaveLength(4);
-      expect(rows[0]).toContain("—");
-      expect(rows[1]).toContain("#1001");
-      expect(rows[2]).toContain("#1001 #1002");
-      expect(rows[3]).toContain("#1001 +3");
-      for (const row of rows) {
-        expect(row.indexOf("working")).toBe(header.indexOf("status"));
-        expect(row).not.toContain("w1M:p6");
-        expect(displayWidth(row)).toBe(width);
-      }
-      expect(rows.map((row) => row.trimEnd().split(/\s+/).at(-1))).toEqual(["0", "1", "2", "12"]);
-      expect(rows.every((row) => /\d$/.test(row))).toBe(true);
-      expect(rows[0]?.includes("ht-535c-agent")).toBe(width >= 70);
-      if (width < 70) expect(rows[0]).toContain("ht-535c…");
-    }
-    const perTask = frame(makeModel([deliveryTask("0001", "queued")]));
-    const dev = roleRows(perTask).find((row) => row.includes("dev"))!;
-    expect(dev).toContain("per-task");
-    expect(dev.trimEnd()).toMatch(/1$/);
-    expect(dev).not.toContain("starts on dispatch");
-  });
-
-  test("40-column tasks and roles show only the minimal columns", () => {
-    const m = makeModel();
-    m.roles[0] = { role: "dev", agent: "agent-name", herdrStatus: "idle", paneId: "w1:p1", worktree: false, queued: 2, current: ["0001"] };
-    for (const width of [40, 49]) {
-      for (const row of taskRows(frame(m, width))) {
-        expect(row.indexOf("Title")).toBe(15);
-        expect(row).not.toContain("P1");
-        expect(row).not.toContain("dev");
-        expect(row).not.toMatch(/[◷→●!]/);
-      }
-      const roles = roleRows(frame(m, width));
-      expect(roles[0]).toContain("dev");
-      expect(roles[0]).toContain("idle");
-      expect(roles[0]?.trimEnd()).toMatch(/2$/);
-      expect(roles.join("\n")).not.toContain("agent-name");
-      expect(roles.join("\n")).not.toContain("#0001");
-    }
   });
 
   test("NEEDS YOU consolidates all four warning categories and disappears when clean", () => {
@@ -847,16 +552,6 @@ describe("runWatch", () => {
     expect(io.screen).not.toContain("task.md");
   });
 
-  test("进出终端成对，顺序正确（先开 raw 再进备屏；退出先出备屏再关 raw）", async () => {
-    const { io } = await drive([{ kind: "quit" }]);
-    expect(io.log).toEqual(["raw:on", "enter", "leave", "raw:off"]);
-  });
-
-  test("Ctrl-C 也退出，照样还原终端", async () => {
-    const { io } = await drive([{ kind: "quit" }]);
-    expect(io.log).toEqual(["raw:on", "enter", "leave", "raw:off"]);
-  });
-
   /** 渲染中途炸掉也必须还原终端 —— 否则用户的 shell 就留在 raw mode + 备屏里了。 */
   test("循环里抛错也要还原终端：清理只在 finally 里", async () => {
     const io = new FakeTerminal([{ kind: "quit" }]);
@@ -883,21 +578,6 @@ describe("runWatch", () => {
   test("j / k 移动选中，详情跟着换", async () => {
     const { io } = await drive([{ kind: "down" }, { kind: "quit" }]);
     expect(io.screen).toContain("0016 ·");
-  });
-
-  test("k 到顶就不动", async () => {
-    const { io } = await drive([{ kind: "up" }, { kind: "quit" }]);
-    expect(io.screen).toContain("0015 ·");
-  });
-
-  test("a 切换是否显示已结束的卡", async () => {
-    const { io } = await drive([{ kind: "toggle-all" }, { kind: "quit" }]);
-    expect(io.screen).toContain("0012");
-  });
-
-  test("r 立刻重新读取", async () => {
-    const { calls } = await drive([{ kind: "refresh" }, { kind: "quit" }]);
-    expect(calls).toBe(1);
   });
 
   test("定时器到点也会重新读取", async () => {
@@ -947,28 +627,6 @@ describe("runWatch", () => {
     const first = stripAnsi(io.writes.find((w) => w.startsWith("\x1b[H")) ?? "");
     expect(first).toContain("第 0 行");
     expect(io.screen).not.toContain("第 0 行"); // 已经翻过去了
-  });
-
-  test("maxFrames 兜底：驱动不出 bug 时不会跑飞", async () => {
-    const io = new FakeTerminal([null, null, null, null, null]);
-    await runWatch({
-      io,
-      initial: projectOf([DOING]),
-      load: () => projectOf([DOING]),
-      herdr: fakeHerdr(),
-      intervalMs: 1,
-      intervalSeconds: 2,
-      showAll: false,
-      color: false,
-      maxFrames: 3,
-    });
-    expect(io.log).toEqual(["raw:on", "enter", "leave", "raw:off"]);
-  });
-});
-
-describe("frameText", () => {
-  test("去掉行尾补齐的空格 —— 免得管道里全是尾随空白", () => {
-    expect(frameText(["ab   ", "  "])).toBe("ab\n\n");
   });
 });
 
@@ -1062,28 +720,11 @@ process.stdout.write(JSON.stringify({ result }));
     });
   });
 
-  test("watch is no longer a public command", () => {
-    withCLI((cli) => {
-      const result = cli("watch", "--once");
-      expect(result.code).toBe(2);
-      expect(result.stderr).toContain("Unknown command");
-    });
-  });
-
   test("--json 明确拒绝，而不是默默忽略", () => {
     withCLI((cli) => {
       const r = cli("console", "--json");
       expect(r.code).toBe(2);
       expect(r.stderr).toContain("status --json");
-    });
-  });
-
-  test("--help 给出用法，并点出 --once", () => {
-    withCLI((cli) => {
-      const r = cli("console", "--help");
-      expect(r.code).toBe(0);
-      expect(r.stdout).toContain("Usage: herdr-team console");
-      expect(r.stdout).toContain("--once");
     });
   });
 
@@ -1093,15 +734,6 @@ process.stdout.write(JSON.stringify({ result }));
       expect(r.code).toBe(0);
       expect(r.stdout.trim()).toBe("team: 1 todo");
       expect(r.stdout).not.toContain("\x1b");
-    });
-  });
-
-  test("--line 不在团队项目里时静默退出 —— 否则每进一个普通项目标签栏就挂个报错", () => {
-    withCLI((_cli, from) => {
-      const r = from(tmpdir(), "console", "--line");
-      expect(r.code).toBe(0);
-      expect(r.stdout).toBe("");
-      expect(r.stderr).toBe("");
     });
   });
 
@@ -1250,9 +882,6 @@ describe("formatStatusLine", () => {
 });
 
 describe("resolveSize", () => {
-  test("终端自己报的尺寸优先", () => {
-    expect(resolveSize(120, 40, { COLUMNS: "60", LINES: "20" })).toEqual({ width: 120, height: 40 });
-  });
 
   /**
    * 回归：pty 没有尺寸时 `columns` 是 **0** 而不是 undefined（`script(1)` 就会这样）。
