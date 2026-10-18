@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { up, dispatch, down } from "../scripts/lib/launch.ts";
-import { handoff } from "../scripts/lib/handoff.ts";
-import { buildReport } from "../scripts/lib/status.ts";
-import { refreshSidebar } from "../scripts/lib/sidebar.ts";
-import { cleanupTask } from "../scripts/lib/cleanup.ts";
-import { worktreeBranch } from "../scripts/lib/types.ts";
-import { projectAgents, projectKey, resolveProjectWorkspace, TeamScopeError } from "../scripts/lib/team-scope.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { up, dispatch, down } from "../scripts/lib/dispatch/launch.ts";
+import { handoff } from "../scripts/lib/tasks/handoff.ts";
+import { buildReport } from "../scripts/lib/ui/status.ts";
+import { refreshSidebar } from "../scripts/lib/ui/sidebar.ts";
+import { cleanupTask } from "../scripts/lib/dispatch/cleanup.ts";
+import { worktreeBranch } from "../scripts/lib/shared/types.ts";
+import { projectAgents, projectKey, resolveProjectWorkspace, TeamScopeError } from "../scripts/lib/dispatch/team-scope.ts";
 import { claimCurrent, fakeHerdr, makeProject, roleMeta, taskMeta, writeRole, writeTask } from "./helpers.ts";
 
 function fixture(run: (a: ReturnType<typeof loadProject>, b: ReturnType<typeof loadProject>, herdr: ReturnType<typeof fakeHerdr>) => void) {

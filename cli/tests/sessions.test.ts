@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { loadProject } from "../scripts/lib/config.ts";
-import type { AgentSessionInfo } from "../scripts/lib/herdr.ts";
-import { down, up } from "../scripts/lib/launch.ts";
-import { refreshSessionSidebar } from "../scripts/lib/sidebar.ts";
-import { rememberRoleSession, resumeArgs, roleSessionPath, savedResumeArgs } from "../scripts/lib/sessions.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import type { AgentSessionInfo } from "../scripts/lib/runtime/herdr.ts";
+import { down, up } from "../scripts/lib/dispatch/launch.ts";
+import { refreshSessionSidebar } from "../scripts/lib/ui/sidebar.ts";
+import { rememberRoleSession, resumeArgs, roleSessionPath, savedResumeArgs } from "../scripts/lib/runtime/sessions.ts";
 import { fakeHerdr, makeProject, runningWorkspace, twoResidentRoles } from "./helpers.ts";
 
 const session = (agent = "codex", value = "session-123"): AgentSessionInfo => ({

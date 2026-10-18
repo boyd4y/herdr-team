@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { cleanupAll, cleanupIfDone, cleanupTask } from "../scripts/lib/cleanup.ts";
-import { loadProject } from "../scripts/lib/config.ts";
-import { handoff } from "../scripts/lib/handoff.ts";
-import { dispatch } from "../scripts/lib/launch.ts";
-import { worktreeBranch, type Project } from "../scripts/lib/types.ts";
+import { cleanupAll, cleanupIfDone, cleanupTask } from "../scripts/lib/dispatch/cleanup.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { handoff } from "../scripts/lib/tasks/handoff.ts";
+import { dispatch } from "../scripts/lib/dispatch/launch.ts";
+import { worktreeBranch, type Project } from "../scripts/lib/shared/types.ts";
 import { claimCurrent, fakeHerdr, makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 function withProject(build: (root: string) => void, run: (p: Project) => void): void {

@@ -1,8 +1,8 @@
 // Internal plugin hook; independent of the caller's project directory.
-import { realHerdr } from "./lib/herdr.ts";
-import { refreshSessionSidebar } from "./lib/sidebar.ts";
-import { syncWorkspaceBadges } from "./lib/workspace-badges.ts";
-import { syncWorkspaceGit } from "./lib/workspace-git.ts";
+import { realHerdr } from "./lib/runtime/herdr.ts";
+import { refreshSessionSidebar } from "./lib/ui/sidebar.ts";
+import { syncWorkspaceBadges } from "./lib/ui/workspace-badges.ts";
+import { syncWorkspaceGit } from "./lib/ui/workspace-git.ts";
 
 try {
   const sessionsOnly = process.argv.slice(2).includes("--sessions-only");

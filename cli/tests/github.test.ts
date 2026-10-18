@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { realGitHub, type PullRequest } from "../scripts/lib/pull-request.ts";
+import { realGitHub, type PullRequest } from "../scripts/lib/integration/pull-request.ts";
 import { makeProject } from "./helpers.ts";
 
 function fixture(run: (f: ReturnType<typeof setup>) => void) {

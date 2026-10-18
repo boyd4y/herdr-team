@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { init, InitError, parseRoleSpecs } from "../scripts/lib/init.ts";
-import { ROLE_BODY, ROLE_META } from "../scripts/lib/types.ts";
-import { validateProject } from "../scripts/lib/validate.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { init, InitError, parseRoleSpecs } from "../scripts/lib/team/init.ts";
+import { ROLE_BODY, ROLE_META } from "../scripts/lib/shared/types.ts";
+import { validateProject } from "../scripts/lib/team/validate.ts";
 import { makeBareProject } from "./helpers.ts";
-import { git } from "../scripts/lib/execution.ts";
-import { createTask } from "../scripts/lib/task.ts";
+import { git } from "../scripts/lib/tasks/verification.ts";
+import { createTask } from "../scripts/lib/tasks/cards.ts";
 
 /** 一个只有 .herdr/identity.md 的空项目。 */
 function bareProject(): { root: string; cleanup: () => void } {

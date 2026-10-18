@@ -1,0 +1,100 @@
+{
+  "models": {
+    "sol-6.1": {
+      "kind": "codex",
+      "args": [
+        "--no-daemon",
+        "-m",
+        "gpt-6.1-sol"
+      ]
+    },
+    "luna": {
+      "kind": "codex",
+      "args": [
+        "--no-daemon",
+        "-m",
+        "gpt-6-luna"
+      ]
+    },
+    "k3": {
+      "kind": "kimi",
+      "args": [
+        "-m",
+        "kimi-code/k3"
+      ]
+    },
+    "ds-flash": {
+      "kind": "claude",
+      "env": {
+        "ANTHROPIC_MODEL": "deepseek-flash"
+      }
+    },
+    "grok-4.7": {
+      "kind": "grok",
+      "args": [
+        "--trust",
+        "-m",
+        "grok-4.7"
+      ]
+    }
+  },
+  "plans": {
+    "cheap": [
+      {
+        "name": "lead",
+        "model": "ds-flash"
+      },
+      {
+        "name": "dev",
+        "model": "ds-flash",
+        "worktree": true
+      },
+      {
+        "name": "test",
+        "model": "ds-flash"
+      },
+      {
+        "name": "search",
+        "model": "grok-4.7"
+      }
+    ],
+    "balanced": [
+      {
+        "name": "lead",
+        "model": "ds-flash"
+      },
+      {
+        "name": "dev",
+        "model": "sol-6.1",
+        "worktree": true
+      },
+      {
+        "name": "test",
+        "model": "ds-flash"
+      },
+      {
+        "name": "search",
+        "model": "grok-4.7"
+      }
+    ],
+    "strong": [
+      {
+        "name": "lead",
+        "model": "sol-6.1"
+      },
+      {
+        "name": "dev",
+        "model": "sol-6.1",
+        "worktree": true
+      },
+      {
+        "name": "test",
+        "model": "sol-6.1"
+      },
+      {
+        "name": "search",
+        "model": "grok-4.7"
+      }
+    ]
+  }
+}

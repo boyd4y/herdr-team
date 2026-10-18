@@ -9,12 +9,12 @@ CLI 的 cheap/balanced/strong 只是旧角色配置集合；需要自定义分�
 
 ### 已验证的 harness 配置
 
-下面的 `.role.yaml` 形状与 `cli/scripts/lib/plans.ts` 的内置模型映射一致。这里的 `model` 是侧栏显示用短名，实际模型 id 在 `args` 或 `env` 中。
+下面的 `.role.yaml` 形状与 [assets/plans.json](../assets/plans.json) 的模型映射一致。这里的 `model` 是侧栏显示用短名，实际模型 id 在 `args` 或 `env` 中。
 
 | kind | `.role.yaml` 字段 | 配置说明 |
 | --- | --- | --- |
 | `claude` | `kind: claude`<br>`model: ds-flash`<br>`env: { ANTHROPIC_MODEL: deepseek-flash }` | 用 `ANTHROPIC_MODEL` 指定后端；Claude Code 的 `--model` 不接受这里的后端自定义名称。 |
-| `codex` | `kind: codex`<br>`model: sol-6.1`<br>`args: ["--no-daemon", "-m", "gpt-6.1-sol"]` | 共享 daemon 的 feature 设置可能冲突；`--no-daemon` 让会话独立运行。`plans.ts` 为通过内置 plan 生成的每个 Codex 角色自动加上该参数。 |
+| `codex` | `kind: codex`<br>`model: sol-6.1`<br>`args: ["--no-daemon", "-m", "gpt-6.1-sol"]` | 共享 daemon 的 feature 设置可能冲突；`--no-daemon` 让会话独立运行。该参数随资产配置一起保存，读取器不按 harness 追加隐含参数。 |
 | `kimi` | `kind: kimi`<br>`model: k3`<br>`args: ["-m", "kimi-code/k3"]` | 默认模型来自 `~/.kimi-code/config.toml`，可能随配置变化；要固定模型时显式指定。 |
 | `grok` | `kind: grok`<br>`model: grok-4.7`<br>`args: ["--trust", "-m", "grok-4.7"]` | `--trust` 授权当前工作目录。使用它，不要为此修改全局 trusted folders。 |
 

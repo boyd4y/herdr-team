@@ -1,33 +1,25 @@
 #!/usr/bin/env bun
-import { resolveProjectWorkspace, TeamScopeError } from "./lib/team-scope.ts";
+import { resolveProjectWorkspace, TeamScopeError } from "./lib/dispatch/team-scope.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { cleanupAll } from "./lib/cleanup.ts";
-import { findRoot, loadProject } from "./lib/config.ts";
-import { mergeRows, mergeTask, retryMerge } from "./lib/integration.ts";
-import { handoff } from "./lib/handoff.ts";
-import { init, InitError, parseRoleSpecs, readRolesFile } from "./lib/init.ts";
-import { describePlan, isPlanName, PLAN_NAMES, planRoles } from "./lib/plans.ts";
-import { withTeamLock } from "./lib/runtime.ts";
-import { deliveryFor } from "./lib/delivery.ts";
-import { addRole, describeRole, removeRole, RoleError } from "./lib/role.ts";
-import { realHerdr, type Herdr } from "./lib/herdr.ts";
-import { refreshSidebar } from "./lib/sidebar.ts";
-import { syncWorkspaceGit } from "./lib/workspace-git.ts";
-import { acquireConsole } from "./lib/console.ts";
-import { claimTask, pumpQueue, queueRows, retryDelivery } from "./lib/queue.ts";
-import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/launch.ts";
-import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/status.ts";
-import { createTask, editTask, findTask, writeTaskMeta, TaskError } from "./lib/task.ts";
-import { formatProblems, validateProject } from "./lib/validate.ts";
-import {
-  realTerminal,
-  renderOnce,
-  renderStatusLine,
-  resolveSize,
-  runWatch,
-} from "./lib/watch.ts";
-import { isTerminal, type Project } from "./lib/types.ts";
+import { cleanupAll } from "./lib/dispatch/cleanup.ts";
+import { findRoot, loadProject } from "./lib/team/project.ts";
+import { mergeRows, mergeTask, retryMerge } from "./lib/integration/merge.ts";
+import { handoff } from "./lib/tasks/handoff.ts";
+import { init, InitError, parseRoleSpecs, readRolesFile } from "./lib/team/init.ts";
+import { describePlan, isPlanName, PLAN_NAMES, planRoles } from "./lib/team/plans.ts";
+import { addRole, describeRole, removeRole, RoleError } from "./lib/team/roles.ts";
+import { realHerdr, type Herdr } from "./lib/runtime/herdr.ts";
+import { refreshSidebar } from "./lib/ui/sidebar.ts";
+import { syncWorkspaceGit } from "./lib/ui/workspace-git.ts";
+import { acquireConsole } from "./lib/runtime/console.ts";
+import { claimTask, pumpQueue, queueRows, retryDelivery } from "./lib/dispatch/queue.ts";
+import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/dispatch/launch.ts";
+import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
+import { createTask, editTask, findTask, TaskError } from "./lib/tasks/cards.ts";
+import { formatProblems, validateProject } from "./lib/team/validate.ts";
+import { renderOnce, renderStatusLine } from "./lib/ui/console-model.ts";
+import { isTerminal, type Project } from "./lib/shared/types.ts";
 
 /** 所有碰 herdr 的命令都从这里拿，测试时能替换。 */
 function herdrClient(): Herdr {
@@ -390,12 +382,6 @@ function parseInterval(value: string | undefined): number {
   return seconds;
 }
 
-/** 上色与否。`NO_COLOR` 按它的规范：存在且非空就关。 */
-function useColor(): boolean {
-  const noColor = process.env["NO_COLOR"];
-  return process.stdout.isTTY === true && (noColor === undefined || noColor === "");
-}
-
 const CONSOLE_USAGE = `Usage: herdr-team console [--all] [--interval SECONDS] [--once] [--root DIR]
 
 Team Console displays tasks, agents, and queues. It automatically delivers queued work every 2 seconds.
@@ -470,15 +456,10 @@ async function cmdConsole(args: string[]): Promise<number> {
 
   const interactive = process.stdout.isTTY === true && process.stdin.isTTY === true;
   if (parsed.flags.has("once") || !interactive) {
-    const size = resolveSize(process.stdout.columns, process.stdout.rows, process.env);
     process.stdout.write(
       renderOnce(project, herdrClient(), {
-        width: size.width,
-        height: size.height,
-        color: useColor(),
         showAll,
         intervalSeconds: seconds,
-        consoleMode: true,
       }),
     );
     if (!interactive && !parsed.flags.has("once")) {
@@ -487,22 +468,20 @@ async function cmdConsole(args: string[]): Promise<number> {
     return 0;
   }
 
-  // 注意这里绝不 process.exit() —— 终端还原全在 runWatch 的 finally 里，
+  // 注意这里绝不 process.exit() —— 终端还原全在 runConsole 的 finally 里，
   // 提前退出会把用户的 shell 留在 raw mode + 备屏里。
   const herdr = herdrClient();
   if (!observe && !herdr.envOk()) throw new LaunchError("Team Console requires a Herdr-managed pane");
+  const { runConsole } = await import("./lib/ui/console-view.ts");
   const lease = observe ? undefined : acquireConsole(project);
-  try { return await runWatch({
-    io: realTerminal(),
+  try { return await runConsole({
     initial: project,
     load: () => loadProject(root),
     herdr,
     intervalMs: seconds * 1000,
     intervalSeconds: seconds,
     showAll,
-    color: useColor(),
     tick: observe ? undefined : () => { pumpQueue(loadValidated(root), herdr, new Date(), () => lease!.stopped()); },
-    consoleMode: true,
     shouldQuit: () => lease?.stopped() ?? false,
   }); } finally { lease?.close(); }
 }
@@ -510,7 +489,7 @@ async function cmdConsole(args: string[]): Promise<number> {
 function cmdHandoff(args: string[]): number {
   const parsed = parseArgs(args, ["root", "summary", "summary-file", "delivery", "commit", "accept", "pr"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team handoff <id> [--delivery ID] [--summary TEXT | --summary-file FILE] [--commit SHA | --accept SHA [--pr URL] | --reject] [--root DIR] [--json]\n--commit submits a pinned version to the next owner. --accept records validation at that SHA; --pr attaches an existing tested PR and hands it to the next owner. Final approval queues integration; the skill explicitly invokes merge. --reject returns defects to the developer and repeats the recorded review path. Existing legacy tasks retain their saved behavior.\nQueue-managed tasks require their claimed delivery ID; repeated IDs do not advance twice.\n");
+    process.stdout.write("Usage: herdr-team handoff <id> [--delivery ID] [--summary TEXT | --summary-file FILE] [--commit SHA | --accept SHA [--pr URL] | --reject] [--root DIR] [--json]\n--commit submits a pinned version to the next owner. --accept records validation at that SHA; --pr attaches an existing tested PR and hands it to the next owner. Final approval queues integration; the skill explicitly invokes merge. --reject returns defects to the developer and repeats the recorded review path.\nQueue-managed tasks require their claimed delivery ID; repeated IDs do not advance twice.\n");
     return 0;
   }
   const id = parsed.pos[0];
@@ -535,7 +514,7 @@ function cmdHandoff(args: string[]): number {
 function cmdMerge(args: string[]): number {
   const parsed = parseArgs(args, ["root", "migrate"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team merge [list | next | <id> | retry <id>] [--migrate COMMAND] [--root DIR] [--json]\nMerge approved PRs or accepted local commits under one integration lock. PR workflows require both test results and PR review at the exact head SHA; review approval can trigger automatic merge when selected. Console never bypasses approval. Inspect blocked/interrupted operations before retrying.\n");
+    process.stdout.write("Usage: herdr-team merge [list | next | <id> | retry <id>] [--migrate COMMAND] [--root DIR] [--json]\nMerge approved PRs or accepted local commits under one integration lock. PR workflows require both test results and PR review at the exact head SHA; approval queues integration; the skill explicitly requests merge. Console never bypasses approval. Inspect blocked/interrupted operations before retrying.\n");
     return 0;
   }
   const project = loadValidated(resolveRoot(parsed.values.get("root")));

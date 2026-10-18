@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { rememberRoleSession } from "../scripts/lib/sessions.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { rememberRoleSession } from "../scripts/lib/runtime/sessions.ts";
 import { makeProject, twoRoles, writeTask, taskMeta } from "./helpers.ts";
 
 // Exercise the real CLI and realHerdr adapter, with an offline Herdr executable.

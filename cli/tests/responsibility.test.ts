@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
 import { makeProject, twoRoles } from "./helpers.ts";
 
 // Run documented commands against this checkout, offline and only in a disposable project.

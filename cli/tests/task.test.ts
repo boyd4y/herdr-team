@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
 import {
   createTask,
   deriveSlug,
   editTask,
   nextId,
   TaskError,
-} from "../scripts/lib/task.ts";
-import { TASK_BODY, TASK_META, type Project } from "../scripts/lib/types.ts";
-import { emitYaml, parseYaml, scalar } from "../scripts/lib/yaml.ts";
+} from "../scripts/lib/tasks/cards.ts";
+import { TASK_BODY, TASK_META, type Project } from "../scripts/lib/shared/types.ts";
+import { emitYaml, parseYaml, scalar } from "../scripts/lib/shared/yaml.ts";
 import { makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 function withProject(build: (root: string) => void, run: (p: Project) => void): void {

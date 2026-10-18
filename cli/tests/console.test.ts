@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
-import { loadProject } from "../scripts/lib/config.ts";
-import { acquireConsole, ensureConsole, stopConsole } from "../scripts/lib/console.ts";
-import { runtimePath } from "../scripts/lib/runtime.ts";
-import { enqueueTasks, pumpQueue } from "../scripts/lib/queue.ts";
-import { down, up } from "../scripts/lib/launch.ts";
-import { runWatch, type Terminal } from "../scripts/lib/watch.ts";
+import { existsSync, writeFileSync } from "node:fs";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { acquireConsole, ensureConsole, stopConsole } from "../scripts/lib/runtime/console.ts";
+import { runtimePath } from "../scripts/lib/runtime/state.ts";
+import { enqueueTasks, pumpQueue } from "../scripts/lib/dispatch/queue.ts";
+import { down, up } from "../scripts/lib/dispatch/launch.ts";
+import { mountConsole } from "../scripts/lib/ui/console-view.ts";
+import { createTestRenderer } from "@opentui/core/testing";
 import { makeProject, runningWorkspace, taskMeta, twoResidentRoles, writeTask } from "./helpers.ts";
 
 function fixture(run: (root: string, herdr: ReturnType<typeof runningWorkspace>) => void): void {
@@ -19,7 +20,10 @@ test("up creates one owned Team Console tab in the project workspace", () => fix
   const pane = h.state.panes.find((p) => p.tokens?.team_console_project)!;
   expect(pane.workspace_id).toBe("w1");
   expect(pane.cwd).toBe(root);
-  expect(h.calls.find((c) => c.startsWith("pane run"))).toContain("console --root");
+  const command = h.calls.find((c) => c.startsWith("pane run"))!;
+  expect(command).toContain("console --root");
+  const entry = /'([^']+cli\.ts)'/.exec(command)?.[1];
+  expect(entry && existsSync(entry)).toBe(true);
   // Fake shell remains at a prompt; starting again must reuse the existing tab.
   ensureConsole(p, h, "w1");
   expect(h.calls.filter((c) => c.startsWith("tab create Team Console"))).toHaveLength(1);
@@ -91,19 +95,17 @@ test("Console drives queued delivery and restores the terminal when quitting", a
     writeTask(f.root, "0001-a", taskMeta());
     const p = loadProject(f.root), h = runningWorkspace();
     enqueueTasks(p);
-    const log: string[] = [];
-    const io: Terminal = {
-      setRawMode: (on) => { log.push(`raw:${on}`); },
-      enter: () => { log.push("enter"); }, leave: () => { log.push("leave"); },
-      write: (text) => { log.push(text); }, size: () => ({ width: 120, height: 45 }),
-      nextEvent: async () => ({ kind: "quit" }),
-    };
-    const code = await runWatch({ io, initial: p, load: () => loadProject(f.root), herdr: h,
-      intervalMs: 2000, intervalSeconds: 2, showAll: false, color: false,
-      tick: () => { pumpQueue(loadProject(f.root), h); } });
-    expect(code).toBe(0);
-    expect(log.join("\n")).toContain("Team Console");
-    expect(log.slice(-2)).toEqual(["leave", "raw:false"]);
+    const screen = await createTestRenderer({ width: 120, height: 45 });
+    try {
+      mountConsole(screen.renderer, { initial: p, load: () => loadProject(f.root), herdr: h,
+        intervalMs: 0, intervalSeconds: 2, showAll: false,
+        tick: () => { pumpQueue(loadProject(f.root), h); } });
+      await screen.renderOnce();
+      expect(screen.captureCharFrame()).toContain("Team Console");
+      screen.mockInput.pressKey("q");
+      await screen.renderer.closed;
+      expect(screen.renderer.isDestroyed).toBe(true);
+    } finally { await screen.dispose(); }
     expect(h.calls.filter((c) => c.startsWith("agent prompt"))).toHaveLength(1);
   } finally { f.cleanup(); }
 });

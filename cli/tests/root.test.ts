@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findRoot, loadProject } from "../scripts/lib/config.ts";
+import { findRoot, loadProject } from "../scripts/lib/team/project.ts";
 
 /** macOS 上 /var 和 /private/var 是同一个地方 —— 比较前先归一化。 */
 function canonical(p: string): string {

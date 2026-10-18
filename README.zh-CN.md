@@ -2,11 +2,11 @@
 
 [English](README.md) · 简体中文
 
-Herdr Team 是面向项目级 agent 团队协作的公开 Herdr 插件，内置 `herdr-team` CLI 和 agent skill。CLI 读取和更新项目 `.herdr/` 中的身份、角色卡和任务卡；Herdr 运行原生 agent 会话；Team Console 调度已明确入队的工作。无需独立 daemon 或运行时 npm 依赖。
+Herdr Team 是面向项目级 agent 团队协作的公开 Herdr 插件，内置 `herdr-team` CLI 和 agent skill。CLI 读取和更新项目 `.herdr/` 中的身份、角色卡和任务卡；Herdr 运行原生 agent 会话；Team Console 调度已明确入队的工作。Team Console 使用 [OpenTUI Core](https://github.com/anomalyco/opentui) 处理终端绘制和输入，无需独立 daemon。
 
 ## 安装
 
-Herdr Team 支持 macOS 和 Linux。请安装 [Herdr](https://herdr.dev) 0.9.3 或更新版本、[Node.js](https://nodejs.org) 22.20 或更新版本（含 `npm`/`npx`），以及 [Bun](https://bun.sh) 1.2 或更新版本。CLI 安装需要 Bun 在 `PATH` 中；skill 安装通过 `npx` 使用 Skills CLI，首次下载时可能需要网络。
+Herdr Team 支持 macOS 和 Linux。请安装 [Herdr](https://herdr.dev) 0.9.3 或更新版本、[Node.js](https://nodejs.org) 22.20 或更新版本（含 `npm`/`npx`），以及 [Bun](https://bun.sh) 1.3.14 或更新版本。CLI 安装需要 Bun 在 `PATH` 中，并安装锁定版本的生产依赖及当前平台的 OpenTUI 原生库，首次安装可能需要网络，不需要 Zig 编译器；skill 安装通过 `npx` 使用 Skills CLI，首次下载时可能需要网络。
 
 从公开 GitHub 仓库安装插件：
 
@@ -31,7 +31,7 @@ herdr-team init --roles-file roles.json
 herdr-team validate
 ```
 
-Skill 将职责、交棒顺序、PR 交付和合并策略写入 `.herdr/workflow.md`。建卡时显式传入 `--role` 和 `--handoff`；CLI 不提供 workflow 命令、流程预设或自动套用的默认交接链。修改约定不改变已有任务；旧任务快照仍按原流程执行。
+Skill 将职责、交棒顺序、PR 交付和合并策略写入 `.herdr/workflow.md`。建卡时显式传入 `--role` 和 `--handoff`；CLI 不提供 workflow 命令、流程预设或自动套用的默认交接链。修改约定不改变已有任务；CLI 不再执行旧 workflow 快照。历史记录可读；活动旧格式需明确处理后重新建卡。
 
 onboard 由 herdr-team Skill 对话引导，CLI 不提供 `onboard` 命令；`init` 只保存已确认的配置。
 Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，再检查所需工具与登录，明确启动和派活。

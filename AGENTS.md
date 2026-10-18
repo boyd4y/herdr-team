@@ -20,15 +20,18 @@ and summaries in their original language; Unicode input remains supported.
   exact commit checks, and concurrency locks. Do not decide orchestration policy.
 - Do not add workflow presets, workflow management commands, or role-specific
   next-step decisions to the CLI. A handoff must not implicitly publish a PR or
-  merge because of a preset; retain such behavior only for existing legacy tasks.
+  merge because of a preset. Do not retain obsolete workflow execution engines.
 - Keep task state CLI-owned. Workflow prose is Skill-owned; it must not override
-  an active task's recorded assignment or silently migrate legacy workflows.
+  an active task's recorded assignment. Reject unsupported active task formats explicitly;
+  leave completed historical records readable.
 - Keep `skill/SKILL.md` a short entry point. Put setup, workflow, and handoff
   instructions in their respective references; link to each topic instead of
   copying its procedures or role prompts into multiple files.
 
 # Role prompts and shared context
 
+- Maintain reusable role prompts in `skill/assets/roles/<role>/prompt.md` and model
+  plans in `skill/assets/plans.json`; do not embed these texts or catalogs in code.
 - Role `prompt.md`: define the role's responsibilities, allowed scope, boundaries,
   and expected deliverables. Direct agents to the herdr-team skill for procedures;
   do not copy command catalogs, workflow rules, or handoff/PR/merge recipes here.
@@ -51,3 +54,19 @@ Check existing coverage before adding a case; avoid repeating it at every layer.
 Do not lock down prompt wording, preset model lists, exact spacing, or colors.
 Retain coverage for delivery, session recovery, commit acceptance, merge safety,
 and preserving user files. Remove obsolete compatibility tests with their code.
+
+# CLI module layout
+
+Keep `cli/scripts/cli.ts` as the argument/input/output adapter. Put implementation
+under `lib/team`, `tasks`, `dispatch`, `runtime`, `integration`, `ui`, or `shared`
+according to responsibility; see `cli/README.md` for the map. Do not add new flat
+`lib/*.ts` files, compatibility re-export shims, or a generic helpers bucket.
+Use direct module imports instead of importing implementation from the CLI entry.
+
+# Terminal UI
+
+Use `@opentui/core` components for Console layout, input, focus, scrolling, drawing,
+and terminal lifecycle. Keep application code to data models, component assembly,
+and business key bindings. Do not add a custom ANSI renderer, escape-sequence
+parser, raw-mode loop, or replacement widget toolkit. Use OpenTUI's test renderer
+for interaction tests; keep plain `--once` and `--line` output independent of it.

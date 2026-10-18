@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseWorkspaceGit, readWorkspaceGit, syncWorkspaceGit } from "../scripts/lib/workspace-git.ts";
-import { realHerdr } from "../scripts/lib/herdr.ts";
+import { parseWorkspaceGit, readWorkspaceGit, syncWorkspaceGit } from "../scripts/lib/ui/workspace-git.ts";
+import { realHerdr } from "../scripts/lib/runtime/herdr.ts";
 import { fakeHerdr } from "./helpers.ts";
 
 describe("侧栏未提交文件数", () => {
@@ -107,7 +107,7 @@ describe("侧栏未提交文件数", () => {
         { workspace_id: "w2", label: "b", pane_count: 1, tab_count: 1 },
         { workspace_id: "w3", label: "child", pane_count: 1, tab_count: 1,
           worktree: { repo_key: "/repo/.git", checkout_path: "/worktree", is_linked_worktree: true },
-          tokens: { team_git_files: "📄5", team_git_summary: "old · 📄5 ↑3" } },
+          tokens: { team_git_summary: "old · 📄5 ↑3" } },
         { workspace_id: "w4", label: "primary", pane_count: 0, tab_count: 1,
           worktree: { repo_key: "/other/.git", checkout_path: "/other", is_linked_worktree: false } },
       ],
@@ -118,7 +118,6 @@ describe("侧栏未提交文件数", () => {
     expect(syncWorkspaceGit(h, read)).toEqual({ updated: 4, failed: 0 });
     expect(reads).toEqual(["/repo", "/other"]);
     expect(h.state.workspaces.map((w) => w.tokens?.team_git_summary)).toEqual(["main · 📄3 ↑2 ↓1", "main · 📄3 ↑2 ↓1", undefined, "main · 📄0 ↑2 ↓1"]);
-    expect(h.state.workspaces.every((w) => w.tokens?.team_git_files === undefined)).toBe(true);
     expect(syncWorkspaceGit(h, read).updated).toBe(0);
     expect(h.calls).toHaveLength(4);
     expect(syncWorkspaceGit(h, () => undefined).updated).toBe(3);
@@ -156,11 +155,11 @@ describe("侧栏未提交文件数", () => {
     expect(h.state.workspaces[0]!.label).toBe("unchanged label");
   });
 
-  test("classification changes and unavailable Git clear stale summaries and legacy counts", () => {
+  test("classification changes and unavailable Git clear stale summaries ", () => {
     const h = fakeHerdr({
       workspaces: [{ workspace_id: "w1", label: "开发 checkout", pane_count: 1, tab_count: 1,
         worktree: { repo_key: "/repo/.git", checkout_path: "/checkout", is_linked_worktree: true },
-        tokens: { team_git_files: "📄4", team_git_summary: "old · 📄9 ↑3", user_token: "keep" } }],
+        tokens: { team_git_summary: "old · 📄9 ↑3", user_token: "keep" } }],
     });
     const workspace = h.state.workspaces[0]!;
     const noRead = () => { throw new Error("must not read linked worktree Git"); };
@@ -206,8 +205,8 @@ describe("侧栏未提交文件数", () => {
   test("Git 字段有独立 metadata source，可清除过期值", () => {
     const calls: string[][] = [];
     const h = realHerdr((args) => { calls.push(args); return { code: 0, stdout: "{}", stderr: "" }; });
-    h.reportWorkspaceMetadata("w1", { team_git_files: null }, "herdr-team-git");
-    expect(calls[0]).toEqual(["workspace", "report-metadata", "w1", "--source", "herdr-team-git", "--clear-token", "team_git_files"]);
+    h.reportWorkspaceMetadata("w1", { team_git_summary: null }, "herdr-team-git");
+    expect(calls[0]).toEqual(["workspace", "report-metadata", "w1", "--source", "herdr-team-git", "--clear-token", "team_git_summary"]);
   });
 });
 
@@ -235,12 +234,12 @@ test("offline Herdr adapter migrates root statistics and clears nested/standalon
     writeFileSync(join(linked, "linked change"), "hidden");
     const workspace = (id: string, cwd: string, isLinked: boolean) => ({ workspace_id: id, label: `名字 ${id}`, pane_count: 1, tab_count: 1,
       worktree: { repo_key: join(repo, ".git"), checkout_path: cwd, is_linked_worktree: isLinked },
-      tokens: { team_git_files: "📄9", team_git_summary: "stale · 📄9 ↑9 ↓9", user_token: "keep" } });
+      tokens: { team_git_summary: "stale · 📄9 ↑9 ↓9", user_token: "keep" } });
     const stateFile = join(dir, "herdr.json");
     const log = join(dir, "calls.jsonl");
     writeFileSync(stateFile, JSON.stringify({
       workspaces: [workspace("w1", repo, false), workspace("w2", linked, true), workspace("w3", linked, true),
-        { workspace_id: "w4", label: "ordinary", pane_count: 1, tab_count: 1, tokens: { team_git_files: "📄7", team_git_summary: "stale" } }],
+        { workspace_id: "w4", label: "ordinary", pane_count: 1, tab_count: 1, tokens: { team_git_summary: "stale" } }],
       panes: [{ workspace_id: "w4", tab_id: "w4:t1", pane_id: "w4:p1", cwd: home }],
     }));
     const executable = join(dir, "fake-herdr");
@@ -265,7 +264,7 @@ process.stdout.write(JSON.stringify({result}));
 `);
     chmodSync(executable, 0o755);
     const run = () => {
-      const result = Bun.spawnSync([process.execPath, "--eval", `import { realHerdr } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/herdr.ts"))}; import { syncWorkspaceGit } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/workspace-git.ts"))}; console.log(JSON.stringify(syncWorkspaceGit(realHerdr())));`], {
+      const result = Bun.spawnSync([process.execPath, "--eval", `import { realHerdr } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/runtime/herdr.ts"))}; import { syncWorkspaceGit } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/ui/workspace-git.ts"))}; console.log(JSON.stringify(syncWorkspaceGit(realHerdr())));`], {
         cwd: home, env: { ...env, HERDR_BIN_PATH: executable, GIT_TEST_STATE: stateFile, GIT_TEST_LOG: log }, stdout: "pipe", stderr: "pipe",
       });
       expect(result.stderr.toString()).toBe("");
@@ -276,7 +275,6 @@ process.stdout.write(JSON.stringify({result}));
     expect(run()).toEqual({ updated: 4, failed: 0 });
     expect(state().workspaces.map((w: {tokens: Record<string, string>}) => w.tokens.team_git_summary)).toEqual(["main · 📄1", undefined, undefined, undefined]);
     expect(state().workspaces[1]).toMatchObject({ label: "名字 w2", tokens: { user_token: "keep" } });
-    expect(state().workspaces.every((w: {tokens: Record<string, string>}) => w.tokens.team_git_files === undefined)).toBe(true);
     expect(run()).toEqual({ updated: 0, failed: 0 });
     const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]);
     expect(calls.filter((args) => args[1] === "report-metadata")).toHaveLength(4);

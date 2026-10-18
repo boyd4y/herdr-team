@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { displayWidth, sanitize, truncate, wrapTo } from "../scripts/lib/text.ts";
+import { displayWidth, sanitize, truncate } from "../scripts/lib/shared/text.ts";
 
 describe("displayWidth", () => {
   test("ASCII 一列、中文两列", () => {
@@ -39,30 +39,6 @@ describe("truncate", () => {
         expect(displayWidth(truncate(s, width))).toBeLessThanOrEqual(width);
       }
     }
-  });
-});
-
-describe("wrapTo", () => {
-  test("优先在空格断", () => {
-    expect(wrapTo("hello world foo", 11)).toEqual(["hello world", "foo"]);
-  });
-
-  test("中文在宽度边界硬断", () => {
-    expect(wrapTo("中文中文", 4)).toEqual(["中文", "中文"]);
-  });
-
-  test("保留原有的换行与空行", () => {
-    expect(wrapTo("a\n\nb", 10)).toEqual(["a", "", "b"]);
-    expect(wrapTo("", 10)).toEqual([""]);
-  });
-
-  test("宽度连一个宽字都容不下也不能死循环", () => {
-    expect(wrapTo("中", 1)).toEqual(["中"]);
-    expect(wrapTo("中文", 1)).toEqual(["中", "文"]);
-  });
-
-  test("宽度为 0 时返回空", () => {
-    expect(wrapTo("abc", 0)).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PLAN_NAMES, planRoles } from "../scripts/lib/plans.ts";
+import { PLAN_NAMES, planRoles } from "../scripts/lib/team/plans.ts";
 
 describe("各家的启动参数都带上了各自的坑位开关", () => {
   test("grok 带 --trust（否则启动时弹信任提示卡住 agent）", () => {

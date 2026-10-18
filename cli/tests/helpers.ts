@@ -1,13 +1,13 @@
-import { loadProject } from "../scripts/lib/config.ts";
-import { deliveryFor } from "../scripts/lib/delivery.ts";
-import { claimTask } from "../scripts/lib/queue.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
+import { claimTask } from "../scripts/lib/dispatch/queue.ts";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { projectKey } from "../scripts/lib/team-scope.ts";
-import { ROLE_BODY, ROLE_META, TASK_BODY, TASK_META } from "../scripts/lib/types.ts";
-import { emitYaml } from "../scripts/lib/yaml.ts";
-import { badgeTokens, type AgentInfo, type Herdr, type PaneInfo, type TabInfo, type WorkspaceInfo } from "../scripts/lib/herdr.ts";
+import { projectKey } from "../scripts/lib/dispatch/team-scope.ts";
+import { ROLE_BODY, ROLE_META, TASK_BODY, TASK_META } from "../scripts/lib/shared/types.ts";
+import { emitYaml } from "../scripts/lib/shared/yaml.ts";
+import { badgeTokens, type AgentInfo, type Herdr, type PaneInfo, type TabInfo, type WorkspaceInfo } from "../scripts/lib/runtime/herdr.ts";
 
 /**
  * **测试绝不能碰用户真实的信任表。**

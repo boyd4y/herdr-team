@@ -28,24 +28,28 @@ function requireBun(env) {
   const result = spawnSync('bun', ['--version'], { env, encoding: 'utf8', timeout: 10000 });
   const version = /^(\d+)\.(\d+)\.(\d+)/.exec(result.stdout || '');
   if (result.error || result.status !== 0 || !version ||
-      (Number(version[1]) < 1 || (Number(version[1]) === 1 && Number(version[2]) < 2))) {
-    throw new Error('Bun 1.2+ must be installed on PATH before installing the team CLI.');
+      (Number(version[1]) < 1 || (Number(version[1]) === 1 &&
+        (Number(version[2]) < 3 || (Number(version[2]) === 3 && Number(version[3]) < 14))))) {
+    throw new Error('Bun 1.3.14+ must be installed on PATH before installing the team CLI.');
   }
 }
 
-// Freeze only runtime files, never tests, dev dependencies or local settings.
+// Freeze runtime source and assets; install the production dependency graph separately.
 // Build checkouts move after setup; a shim pointing into that checkout breaks.
-function runtime(stateDir, source = path.resolve(__dirname, '..', 'cli')) {
-  const files = [['package.json', fs.readFileSync(path.join(source, 'package.json'), 'utf8')]];
-  function collect(relative) {
-    for (const entry of fs.readdirSync(path.join(source, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+function runtime(stateDir, source = path.resolve(__dirname, '..', 'cli'), env = process.env) {
+  const files = ['package.json', 'bun.lock'].map((name) =>
+    [path.join('cli', name), fs.readFileSync(path.join(source, name), 'utf8')]);
+  function collect(directory, relative, destination, extensions) {
+    for (const entry of fs.readdirSync(path.join(directory, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const name = path.join(relative, entry.name);
-      if (entry.isDirectory()) collect(name);
-      else if (entry.isFile() && name.endsWith('.ts')) files.push([name, fs.readFileSync(path.join(source, name), 'utf8')]);
-      else throw new Error(`Unexpected CLI runtime file: ${name}`);
+      if (entry.isDirectory()) collect(directory, name, destination, extensions);
+      else if (entry.isFile() && extensions.includes(path.extname(name))) {
+        files.push([path.join(destination, name), fs.readFileSync(path.join(directory, name), 'utf8')]);
+      } else throw new Error(`Unexpected CLI runtime file: ${name}`);
     }
   }
-  collect('scripts');
+  collect(source, 'scripts', 'cli', ['.ts']);
+  collect(path.join(source, '..', 'skill', 'assets'), '', 'skill/assets', ['.md', '.json']);
   const directory = path.join(stateDir, 'cli-runtime', hash(JSON.stringify(files)));
   for (const [name, contents] of files) {
     const destination = path.join(directory, name);
@@ -58,7 +62,19 @@ function runtime(stateDir, source = path.resolve(__dirname, '..', 'cli')) {
       }
     }
   }
-  return path.join(directory, 'scripts', 'cli.ts');
+  // Bun resolves the pinned production graph and selects the host native library.
+  // Validate it before publishing a new shim; a failed upgrade leaves the old CLI usable.
+  for (const args of [
+    ['install', '--production', '--frozen-lockfile', '--ignore-scripts'],
+    ['-e', 'await import("@opentui/core");'],
+  ]) {
+    const result = spawnSync('bun', args, { cwd: path.join(directory, 'cli'), env,
+      encoding: 'utf8', timeout: 120000 });
+    if (result.error || result.status !== 0) {
+      throw new Error(`CLI dependency setup failed: ${result.error?.message || result.stderr || result.stdout}`);
+    }
+  }
+  return path.join(directory, 'cli', 'scripts', 'cli.ts');
 }
 
 function readState(file) {
@@ -123,7 +139,7 @@ async function installCLI(uninstall = false, env = process.env) {
     if (stat(file) && (!record || !owned(record))) {
       console.log(`Skipped existing CLI: ${file}`); return;
     }
-    const text = `#!/usr/bin/env bun\nawait import(${JSON.stringify(pathToFileURL(runtime(stateDir)).href)});\n`;
+    const text = `#!/usr/bin/env bun\nawait import(${JSON.stringify(pathToFileURL(runtime(stateDir, undefined, env)).href)});\n`;
     if (!stat(file)) {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       let created;

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { loadProject } from "../scripts/lib/config.ts";
-import { dispatch, up } from "../scripts/lib/launch.ts";
-import { buildReport } from "../scripts/lib/status.ts";
-import { type Project } from "../scripts/lib/types.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { dispatch, up } from "../scripts/lib/dispatch/launch.ts";
+import { buildReport } from "../scripts/lib/ui/status.ts";
+import { type Project } from "../scripts/lib/shared/types.ts";
 import { fakeHerdr, makeProject, runningWorkspace, taskMeta, twoResidentRoles, writeTask } from "./helpers.ts";
 
 function withProject(build: (root: string) => void, run: (p: Project) => void): void {

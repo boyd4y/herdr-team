@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { deliveryFor } from "../scripts/lib/delivery.ts";
-import { handoff } from "../scripts/lib/handoff.ts";
-import { realHerdr } from "../scripts/lib/herdr.ts";
-import { dispatch, up } from "../scripts/lib/launch.ts";
-import { claimTask, pumpQueue } from "../scripts/lib/queue.ts";
-import { buildReport } from "../scripts/lib/status.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
+import { handoff } from "../scripts/lib/tasks/handoff.ts";
+import { realHerdr } from "../scripts/lib/runtime/herdr.ts";
+import { dispatch, up } from "../scripts/lib/dispatch/launch.ts";
+import { claimTask, pumpQueue } from "../scripts/lib/dispatch/queue.ts";
+import { buildReport } from "../scripts/lib/ui/status.ts";
 import { fakeHerdr, makeProject, taskMeta, twoResidentRoles, twoRoles, writeTask } from "./helpers.ts";
 
 for (const isolated of [false, true]) {

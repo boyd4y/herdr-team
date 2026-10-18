@@ -1,20 +1,20 @@
-import { taskAgent } from "../scripts/lib/task-agent.ts";
-import { refreshSidebar } from "../scripts/lib/sidebar.ts";
-import { rememberRoleSession, roleSessionPath, savedResumeArgs, scopeForTaskSession } from "../scripts/lib/sessions.ts";
-import { down, up } from "../scripts/lib/launch.ts";
+import { taskAgent } from "../scripts/lib/dispatch/task-agent.ts";
+import { refreshSidebar } from "../scripts/lib/ui/sidebar.ts";
+import { rememberRoleSession, roleSessionPath, savedResumeArgs, scopeForTaskSession } from "../scripts/lib/runtime/sessions.ts";
+import { down, up } from "../scripts/lib/dispatch/launch.ts";
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { acceptanceFor, git, integrationFor, taskEnvironment } from "../scripts/lib/execution.ts";
-import { handoff } from "../scripts/lib/handoff.ts";
-import { mergeRows, mergeTask, retryMerge } from "../scripts/lib/integration.ts";
-import { dispatch } from "../scripts/lib/launch.ts";
-import { pumpQueue } from "../scripts/lib/queue.ts";
-import { runtimePath } from "../scripts/lib/runtime.ts";
-import { roleStatusesFrom } from "../scripts/lib/status.ts";
-import { createTask, writeTaskMeta } from "../scripts/lib/task.ts";
-import { worktreeBranch } from "../scripts/lib/types.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { acceptanceFor, git, integrationFor, taskEnvironment } from "../scripts/lib/tasks/verification.ts";
+import { handoff } from "../scripts/lib/tasks/handoff.ts";
+import { mergeRows, mergeTask, retryMerge } from "../scripts/lib/integration/merge.ts";
+import { dispatch } from "../scripts/lib/dispatch/launch.ts";
+import { pumpQueue } from "../scripts/lib/dispatch/queue.ts";
+import { runtimePath } from "../scripts/lib/runtime/state.ts";
+import { roleStatusesFrom } from "../scripts/lib/ui/status.ts";
+import { createTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
+import { worktreeBranch } from "../scripts/lib/shared/types.ts";
 import { claimCurrent, fakeHerdr, makeProject, roleMeta, taskMeta, writeRole, writeTask } from "./helpers.ts";
 
 function setup() {
@@ -205,8 +205,8 @@ test("real concurrent integration processes serialize merge plus local migration
       handoff(f.load(), f.herdr, id, new Date(), { delivery, accept: sha, summary: "Passed" });
     }
     const log = join(f.root, "..", "integration-events.log"), worker = join(f.root, "..", "integration-worker.ts");
-    writeFileSync(worker, `import { loadProject } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/config.ts"))};
-import { mergeTask } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/integration.ts"))};
+    writeFileSync(worker, `import { loadProject } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/team/project.ts"))};
+import { mergeTask } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/integration/merge.ts"))};
 const command = ${JSON.stringify(process.execPath)} + ' -e ' + JSON.stringify('const fs=require("node:fs");fs.appendFileSync(' + JSON.stringify(process.argv[4]) + ', "start '+process.argv[3]+'\\n");Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,400);fs.appendFileSync(' + JSON.stringify(process.argv[4]) + ', "end '+process.argv[3]+'\\n");');
 mergeTask(loadProject(process.argv[2]), process.argv[3], command);`);
     const workers = ["0001", "0002"].map((id) => Bun.spawn([process.execPath, worker, f.root, id, log], { stdout: "pipe", stderr: "pipe" }));

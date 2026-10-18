@@ -1,12 +1,14 @@
 # herdr-team
 
-用项目内 `.herdr/` 的身份、角色卡和任务卡管理 Herdr agent 团队的 CLI，无运行时 npm 依赖。
+用项目内 `.herdr/` 的身份、角色卡和任务卡管理 Herdr agent 团队的 CLI，交互式 Console 使用 OpenTUI Core。
 
-需要 Bun 1.2 或更新版本；启动团队还需要已安装的 Herdr 和对应角色使用的 agent CLI。
+需要 Bun 1.3.14 或更新版本；启动团队还需要已安装的 Herdr 和对应角色使用的 agent CLI。
+
+实现按职责划分，先看 [模块导航](ARCHITECTURE.md)；角色模板源在 [skill/assets/roles](../skill/assets/roles)，模型方案在 [plans.json](../skill/assets/plans.json)。
 
 ## 开发验证
 
-在仓库根目录运行离线验证：
+先在 `cli/` 运行 `bun install --frozen-lockfile`，再从仓库根目录验证：
 
 ```sh
 (cd cli && bun test)
@@ -14,7 +16,7 @@ node --test tests/*.test.cjs
 ```
 
 类型检查需要先在 `cli/` 安装开发依赖，再运行 `bun run typecheck`。
-`cli/bun.lock` 固定 TypeScript 和 Bun 类型定义；`node_modules/` 不提交。
+`cli/bun.lock` 固定运行时和开发依赖；`node_modules/` 不提交。
 测试使用临时项目和 Herdr 替身，不访问真实团队。
 
 ## 快速开始
@@ -73,9 +75,9 @@ herdr-team add "Implement login" --role dev --handoff test,review
 ```
 
 约定变化只影响后续编排。未开始任务可以用 `edit --handoff` 明确调整；已投递任务先核对执行。
-新任务只有 role/handoff 执行链，不再复制一份 workflow.steps。已有 task workflow 快照继续兼容读取，
+新任务只有 role/handoff 执行链，不再复制一份 workflow.steps。不再执行 task workflow 快照；
 旧 `.herdr/workflow.json` 不再影响新任务，也不会因过期内容阻塞 CLI。
-已有快照任务不能用普通 edit 改动职责链；完成或取消后按新约定建卡，不手改元数据。
+活动旧格式先核对并取消，再按新约定建卡，不手改历史元数据。
 
 ### 推荐的 PR 流程
 
@@ -91,7 +93,7 @@ herdr-team add "Implement login" --role dev --handoff test,review
    手动方案由 lead 执行。CLI 不自动根据新任务的流程约定合并。
 
 CLI 保留 SHA 一致性、delivery 去重、PR 身份和合并锁校验。
-已有 legacy workflow 快照的任务继续原来的自动发布和合并行为，不额外重复新方案操作。
+旧 workflow 引擎、隐式 PR 发布和自动合并分支已移除；历史记录可读，活动旧格式明确报错。
 
 列表与详情分开：`tasks --json`、`status --json`、`role list --json` 的卡片对象不包含
 正文 `body`，其余元数据保留，避免批量输出被整篇任务描述或角色职责撑大。
@@ -304,31 +306,23 @@ workspace 复用按项目绑定或可验证的目录判断，不按相同的文�
 herdr-team console
 ```
 
-显示把任务状态、投递流程和 agent 可用性分开：
+Console 使用 [OpenTUI Core](https://github.com/anomalyco/opentui) 的列表、输入框、滚动框和 flex 布局。
+框架负责按键解析、焦点、鼠标滚动、终端绘制和退出恢复。
 
-- 标题下的 `PENDING` 按固定顺序显示全项目非零投递计数：`◷ N waiting`（queued）、
-  `→ N delivering`（sending 或 submitted）、`● N claimed`、`! N needs you`（uncertain 或 invalid）。
-  全部为零时整条及其空行隐藏；搜索和 `--all` 不改变这些计数。
-- 任务行有独立的 FLOW 符号列：`·` 无投递、`◷` 等待、`→` 投递中、`●` 已领取、`!` 需处理。
-  标题起始列固定，不再加 `[queued]` 等前缀。等待用暗色、投递中用青色、不确定用黄色、无效用红色。
-- `ROLES` 表头同时标出 agent、Herdr status、active 和 queue 列。active 最多列两个 `#id`；
-  超过两个时折为 `#id +N`（N 是其余任务数），无任务显示 `—`，queue 是右对齐的等待投递数。
-- `NEEDS YOU` 汇总加载失败、Herdr 不可用、状态不一致（含投递不确定）、校验问题；
-  每类最多一行，状态不一致和校验问题显示首项及总数。无问题时隐藏。
-- 详情保留任务字段和 task.md 正文，另列 flow 的人类可读名称、短 delivery ID 和原因，
-  以及 agent 的名称、实时状态和 pane ID；隔离角色显示当前所选任务的 agent。
+- `PENDING` 显示全项目等待、投递中、已领取、需处理和待合并计数；搜索不改变这些数字。
+- `TASKS` 展示任务 ID、优先级、状态和标题；详情展示投递状态、短 delivery ID、原因、当前任务 agent 及 task.md 正文。
+- `ROLES` 显示各角色的实时状态、当前任务和排队数量。
+- `NEEDS YOU` 汇总加载失败、Herdr 不可用、状态不一致和校验问题。
 
-终端最小宽度为 40 列。100 列及以上显示任务分支；70–99 列隐藏分支；50–69 列把
-`PENDING` 压缩为符号加数字并缩短 agent 名称；40–49 列的任务只显示 id、status、title，
-角色只显示 role、status、queue。列宽不足时用 `…` 截断，终端高度不足时显示尺寸提示。
-这些都是显示调整，原始投递状态和 JSON 字段保持不变。
+宽窗口左右排列列表与详情，窄于 90 列时改为上下排列；组件负责截断与换行，详情和角色区支持滚动。
+`Tab` 在列表与详情之间切换焦点，`r` 立即刷新。
 
 `↑↓`（或 `j`/`k`）选任务、`PgUp`/`PgDn` 翻详情正文、`a` 切换是否显示已结束的卡、
 `/` 进入搜索，边输入边按 id、标题、角色过滤；`Enter` 保留过滤并退出输入，
 `Backspace` 删除一个码点，`Esc` 退出输入并清空过滤（输入外且无过滤时退出看板）。输入时字母快捷键作为查询文本，
 `Ctrl-C` 始终退出；输入外 `q` 退出。搜索按子序列匹配，ASCII 大小写不敏感，中文按码点匹配；
 结果优先显示靠前、连续的匹配，同分按 priority、id 排，空查询恢复原顺序。
-搜索沿用 `a` / `--all` 的范围，TASKS 右侧显示查询及命中数/范围内任务数，角色和健康检查仍显示全项目。
+搜索沿用 `a` / `--all` 的范围，输入框保留查询，TASKS 标题显示命中数/范围内任务数，角色和健康检查仍显示全项目。
 
 `--interval <秒>` 改刷新间隔（调度时必须大于 0），`--all` 显示已结束的卡。
 每个项目只允许一个调度 Console。关闭 tab 或按 q 退出会暂停自动投递，队列仍保存在磁盘；再次 `up` 或运行 `console` 即可继续。
@@ -383,7 +377,7 @@ cwd 是服务器启动时的目录（通常是你家目录），从那儿往上�
 所以卡片总数可能比 `tasks/` 下的目录数少，看到这类提示就是原因。
 
 在 linked worktree 里跑会读**主检出**的 `.herdr/`（`findRoot` 的既有行为，见
-`scripts/lib/config.ts`）—— 那才是活的卡片，worktree 里那份是切出去时的过期副本。
+`scripts/lib/team/project.ts`）—— 那才是活的卡片，worktree 里那份是切出去时的过期副本。
 
 自动查找项目根时，`.herdr/` 中至少要有 `identity.md`、`roles`、`tasks` 之一；
 只有 `projects/`、`worktrees/` 的 Herdr 数据目录不会被当成团队项目。

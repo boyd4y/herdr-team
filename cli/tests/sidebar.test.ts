@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { dispatch, up } from "../scripts/lib/launch.ts";
-import { handoff } from "../scripts/lib/handoff.ts";
-import { refreshSessionSidebar, refreshSidebar } from "../scripts/lib/sidebar.ts";
-import { syncWorkspaceBadges } from "../scripts/lib/workspace-badges.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { dispatch, up } from "../scripts/lib/dispatch/launch.ts";
+import { handoff } from "../scripts/lib/tasks/handoff.ts";
+import { refreshSessionSidebar, refreshSidebar } from "../scripts/lib/ui/sidebar.ts";
+import { syncWorkspaceBadges } from "../scripts/lib/ui/workspace-badges.ts";
 import { claimCurrent, fakeHerdr, makeProject, roleMeta, runningWorkspace, taskMeta, twoResidentRoles, writeRole, writeTask } from "./helpers.ts";
 
 describe("agent sidebar 的两行信息", () => {

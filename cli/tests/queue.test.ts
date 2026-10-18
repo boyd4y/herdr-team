@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { deliveryFor, newDelivery } from "../scripts/lib/delivery.ts";
-import { handoff } from "../scripts/lib/handoff.ts";
-import { dispatch } from "../scripts/lib/launch.ts";
-import { claimTask, enqueueTasks, flushTaskHistory, pumpQueue, queueRows, retryDelivery } from "../scripts/lib/queue.ts";
-import { editTask, writeTaskMeta } from "../scripts/lib/task.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { deliveryFor, newDelivery } from "../scripts/lib/dispatch/delivery.ts";
+import { handoff } from "../scripts/lib/tasks/handoff.ts";
+import { dispatch } from "../scripts/lib/dispatch/launch.ts";
+import { claimTask, enqueueTasks, flushTaskHistory, pumpQueue, queueRows, retryDelivery } from "../scripts/lib/dispatch/queue.ts";
+import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
 import { claimCurrent, makeProject, runningWorkspace, taskMeta, twoResidentRoles, writeTask } from "./helpers.ts";
 
 function fixture(run: (f: ReturnType<typeof setup>) => void): void {
@@ -149,7 +149,7 @@ test("concurrent claim processes commit a single acknowledgement", async () => {
     dispatch(f.load(), f.herdr, "0001");
     const id = deliveryFor(f.task())!.id;
     const script = join(f.root, "claim-worker.ts");
-    writeFileSync(script, `import { loadProject } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/config.ts"))};\nimport { claimTask } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/queue.ts"))};\nconsole.log(JSON.stringify(claimTask(loadProject(process.argv[2]), "0001", process.argv[3])));`);
+    writeFileSync(script, `import { loadProject } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/team/project.ts"))};\nimport { claimTask } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/dispatch/queue.ts"))};\nconsole.log(JSON.stringify(claimTask(loadProject(process.argv[2]), "0001", process.argv[3])));`);
     const results = await Promise.all([1, 2].map(async () => {
       const p = Bun.spawn([process.execPath, script, f.root, id], { stdout: "pipe", stderr: "pipe" });
       const output = await new Response(p.stdout).text();

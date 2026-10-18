@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { addRole, removeRole, RoleError, tasksUsingRole } from "../scripts/lib/role.ts";
-import { ROLE_BODY, ROLE_META, type Project } from "../scripts/lib/types.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { addRole, removeRole, RoleError, tasksUsingRole } from "../scripts/lib/team/roles.ts";
+import { ROLE_BODY, ROLE_META, type Project } from "../scripts/lib/shared/types.ts";
 import { makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 function withProject(build: (root: string) => void, run: (p: Project) => void): void {

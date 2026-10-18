@@ -1,10 +1,9 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { loadProject } from "../scripts/lib/config.ts";
-import { createTask, editTask, writeTaskMeta } from "../scripts/lib/task.ts";
-import { taskWorkflow } from "../scripts/lib/legacy-workflow.ts";
-import { validateProject } from "../scripts/lib/validate.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { createTask, editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
+import { validateProject } from "../scripts/lib/team/validate.ts";
 import { makeBareProject, makeProject, roleMeta, writeRole } from "./helpers.ts";
 
 const entry = join(import.meta.dir, "../scripts/cli.ts");
@@ -68,14 +67,12 @@ test("Skill agreements and old project defaults cannot implicitly configure new 
   } finally { p.cleanup(); }
 });
 
-test("initialization preserves role bodies, Skill agreements and legacy task snapshots", () => {
+test("initialization preserves role bodies, Skill agreements and existing task records", () => {
   const p = makeProject();
   try {
-    const workflow = { name: "old-local", delivery: "local", merge: "manual", steps: [{ kind: "develop", role: "builder" }, { kind: "test", role: "qa" }] };
     for (const role of ["builder", "qa"]) writeRole(p.root, role, roleMeta(), "Existing responsibilities");
     const load = () => loadProject(p.root);
     createTask(load(), { title: "Existing", role: "builder", handoff: ["qa"], priority: "P2", body: "Criteria" });
-    writeTaskMeta(load(), load().tasks[0]!, { workflow });
     const taskPath = join(p.root, ".herdr", load().tasks[0]!.dir, ".task.yaml");
     const before = readFileSync(taskPath, "utf8");
     const agreement = join(p.root, ".herdr/workflow.md"); writeFileSync(agreement, "Keep this agreement.\n");
@@ -83,8 +80,20 @@ test("initialization preserves role bodies, Skill agreements and legacy task sna
     expect(load().roles.find((role) => role.name === "builder")!.body.trim()).toBe("Existing responsibilities");
     expect(readFileSync(agreement, "utf8")).toBe("Keep this agreement.\n");
     expect(readFileSync(taskPath, "utf8")).toBe(before);
-    expect(taskWorkflow(load().tasks[0]!)).toEqual(workflow);
-    expect(() => editTask(load(), "0001", { handoff: [] }, false)).toThrow(/Legacy/);
-    expect(readFileSync(taskPath, "utf8")).toBe(before);
+  } finally { p.cleanup(); }
+});
+
+test("unsupported task snapshots are rejected while completed historical records remain readable", () => {
+  const p = makeProject();
+  try {
+    writeRole(p.root, "dev", roleMeta());
+    const load = () => loadProject(p.root);
+    createTask(load(), { title: "Old task", role: "dev", handoff: [], priority: "P2", body: "Historical work" });
+    writeTaskMeta(load(), load().tasks[0]!, { workflow: { name: "removed-format" } });
+    expect(validateProject(load()).some((problem) => problem.message.includes("no longer supported"))).toBe(true);
+    editTask(load(), "0001", { status: "cancelled" }, false);
+    expect(validateProject(load())).toEqual([]);
+    expect(run(p.root, ["tasks", "0001", "--json"]).exitCode).toBe(0);
+    expect(load().tasks[0]!.meta.workflow).toEqual({ name: "removed-format" });
   } finally { p.cleanup(); }
 });

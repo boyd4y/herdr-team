@@ -22,9 +22,11 @@ The repository is organized by purpose:
 - `herdr-plugin.toml`: Herdr plugin metadata, setup hook, actions, and event hooks.
 - `README.md` / `README.zh-CN.md`: public user guides in English and Simplified Chinese.
 
+- See the [CLI module map](cli/ARCHITECTURE.md) before adding implementation; reusable role templates and model plans live in `skill/assets/`.
+
 ## Develop and validate
 
-Install Bun 1.2 or later and Node.js 22.20 or later. The CLI has no runtime npm dependencies; TypeScript and Bun type definitions are development dependencies. Install them from `cli/`:
+Install Bun 1.3.14 or later and Node.js 22.20 or later. Console uses `@opentui/core`; Bun installs its native platform package. TypeScript and Bun type definitions support development. Install them from `cli/`:
 
 ```sh
 cd cli
@@ -40,7 +42,7 @@ Run plugin/package tests from the repository root:
 node --test tests/*.test.cjs
 ```
 
-Automated tests use temporary project directories and offline Herdr executables. They do not need a live Herdr session. Manual integration setup installs user-level CLI and skill files and writes Herdr user configuration. A separate named Herdr session does not isolate those files. Use a disposable environment with its own home, config, and bin directories (for example, a separate development user or container), or knowingly test against your personal installation. Use a temporary project in that environment. From the repository root, link this checkout and invoke setup:
+Automated tests use temporary project directories, fake Herdr executables, and OpenTUI’s real in-memory renderer. Package tests install the locked production dependencies and may need network access on an empty Bun cache. They do not need a live Herdr session. Manual integration setup installs user-level CLI and skill files and writes Herdr user configuration. A separate named Herdr session does not isolate those files. Use a disposable environment with its own home, config, and bin directories (for example, a separate development user or container), or knowingly test against your personal installation. Use a temporary project in that environment. From the repository root, link this checkout and invoke setup:
 
 ```sh
 herdr plugin link .
@@ -55,7 +57,7 @@ The link registers the plugin; the install action runs its setup entry point. Af
 - Documentation can be English or Chinese. Keep the English and Chinese user entry points aligned when public behavior changes.
 - Preserve user-provided titles, descriptions, role prompts, summaries, and other Unicode data.
 - Treat `.herdr/` task cards as the workflow record. Use the CLI for task metadata and delivery claims/handoffs.
-- Keep runtime dependencies and system services out of the project unless the product requirements change.
+- Reuse OpenTUI for terminal UI infrastructure; add other dependencies only for a clear product need. Do not introduce a separate service for Console.
 - Do not commit credentials, personal absolute paths, live delivery IDs, or private task contents.
 
 ## Open an issue or pull request

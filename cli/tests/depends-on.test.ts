@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { createTask, editTask } from "../scripts/lib/task.ts";
-import { TASK_BODY, TASK_META } from "../scripts/lib/types.ts";
-import { validateProject } from "../scripts/lib/validate.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { createTask, editTask } from "../scripts/lib/tasks/cards.ts";
+import { TASK_BODY, TASK_META } from "../scripts/lib/shared/types.ts";
+import { validateProject } from "../scripts/lib/team/validate.ts";
 import { makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 const cliPath = join(import.meta.dir, "../scripts/cli.ts");

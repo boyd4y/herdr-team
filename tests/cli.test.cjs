@@ -40,7 +40,7 @@ function fixture(t) {
     records: () => JSON.parse(fs.readFileSync(ledger, 'utf8')) };
 }
 
-test('requires a PATH-visible user bin and Bun 1.2+ before installing', (t) => {
+test('requires a PATH-visible user bin and Bun 1.3.14+ before installing', (t) => {
   const f = fixture(t);
   const homeBin = path.join(f.dir, '.local/bin');
   assert.equal(target({ PATH: homeBin }, f.dir), path.join(homeBin, 'herdr-team'));
@@ -50,10 +50,10 @@ test('requires a PATH-visible user bin and Bun 1.2+ before installing', (t) => {
   assert(!fs.existsSync(f.file));
   const noBun = f.run([], { PATH: f.bin });
   assert.notEqual(noBun.status, 0);
-  assert.match(noBun.stderr, /Bun 1.2\+/);
+  assert.match(noBun.stderr, /Bun 1.3.14\+/);
   const bun = path.join(f.bin, 'bun');
-  fs.writeFileSync(bun, '#!/bin/sh\necho 1.1.99\n', { mode: 0o755 });
-  assert.match(f.run([], { PATH: f.bin }).stderr, /Bun 1.2\+/);
+  fs.writeFileSync(bun, '#!/bin/sh\necho 1.3.13\n', { mode: 0o755 });
+  assert.match(f.run([], { PATH: f.bin }).stderr, /Bun 1.3.14\+/);
   assert(!fs.existsSync(f.ledger));
 });
 
@@ -61,6 +61,11 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
   const f = fixture(t);
   const checkout = path.join(f.dir, 'build-checkout');
   fs.cpSync(root, checkout, { recursive: true, filter: (file) => !['tests', 'node_modules'].includes(path.basename(file)) });
+  const leadTemplate = path.join(checkout, 'skill/assets/roles/lead/prompt.md');
+  fs.appendFileSync(leadTemplate, '\nProject-specific template change.\n');
+  const expectedLead = fs.readFileSync(leadTemplate, 'utf8');
+  const expectedDocs = fs.readFileSync(path.join(checkout, 'skill/assets/roles/docs/prompt.md'), 'utf8');
+  const expectedDefault = fs.readFileSync(path.join(checkout, 'skill/assets/roles/default/prompt.md'), 'utf8');
   const buildState = path.join(f.env.XDG_STATE_HOME, 'herdr/plugins/herdr-team');
   f.ok([], { HERDR_PLUGIN_STATE_DIR: '' }, checkout);
   const moved = path.join(f.dir, 'installed-plugin');
@@ -75,14 +80,37 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
     assert(f.cli(command, '--help').includes(`Usage: herdr-team ${command}`));
   }
   f.cli('init', '--plan', 'balanced');
+  assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/roles/lead/prompt.md'), 'utf8'), expectedLead);
+  f.cli('role', 'add', 'docs', '--kind', 'codex');
+  assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/roles/docs/prompt.md'), 'utf8'), expectedDocs);
+  f.cli('role', 'add', 'helper', '--kind', 'codex');
+  assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/roles/helper/prompt.md'), 'utf8'), expectedDefault);
   assert.equal(JSON.parse(f.cli('validate', '--json')).ok, true);
   const herdr = path.join(f.bin, 'herdr');
   fs.writeFileSync(herdr, '#!/bin/sh\nprintf \'%s\' \'{"result":{"agents":[],"workspaces":[],"panes":[],"worktrees":[]}}\'\n', { mode: 0o755 });
   assert.equal(typeof JSON.parse(f.cli('status', '--json')), 'object');
   assert.match(f.cli('console', '--once'), /TASKS/);
-  // No tests, node_modules or local settings are copied into the runtime cache.
+  // Only production dependencies, source and assets survive removal of the checkout.
   const snapshot = fs.readdirSync(path.join(buildState, 'cli-runtime'))[0];
-  assert.deepEqual(fs.readdirSync(path.join(buildState, 'cli-runtime', snapshot)).sort(), ['package.json', 'scripts']);
+  assert.deepEqual(fs.readdirSync(path.join(buildState, 'cli-runtime', snapshot)).sort(), ['cli', 'skill']);
+  assert.deepEqual(fs.readdirSync(path.join(buildState, 'cli-runtime', snapshot, 'cli')).sort(), ['bun.lock', 'node_modules', 'package.json', 'scripts']);
+  assert.deepEqual(fs.readdirSync(path.join(buildState, 'cli-runtime', snapshot, 'skill')), ['assets']);
+  const runtimeCli = path.join(buildState, 'cli-runtime', snapshot, 'cli');
+  assert(!fs.existsSync(path.join(runtimeCli, 'node_modules/@types/bun')));
+  const native = spawnSync('bun', ['-e', `
+    const { createTestRenderer } = await import("@opentui/core/testing");
+    const { mountConsole } = await import("./scripts/lib/ui/console-view.ts");
+    const { loadProject } = await import("./scripts/lib/team/project.ts");
+    const screen = await createTestRenderer({ width: 100, height: 28 });
+    try {
+      const project = loadProject(process.env.TEST_PROJECT);
+      mountConsole(screen.renderer, { initial: project, load: () => project,
+        herdr: { agentList: () => [] }, intervalMs: 0, intervalSeconds: 2, showAll: false });
+      await screen.renderOnce();
+      if (!screen.captureCharFrame().includes("Team Console")) throw new Error("Missing Console frame");
+    } finally { await screen.dispose(); }
+  `], { cwd: runtimeCli, env: { ...f.env, TEST_PROJECT: f.dir }, encoding: 'utf8', timeout: 10000 });
+  assert.equal(native.status, 0, native.stdout + native.stderr);
   f.ok(['--uninstall'], { HERDR_PLUGIN_STATE_DIR: buildState, XDG_BIN_HOME: '/unused', PATH: '' });
   assert(!fs.existsSync(f.file));
   assert(fs.existsSync(herdr));
@@ -98,8 +126,15 @@ test('installation is idempotent and upgrades only its unchanged shim', (t) => {
   for (const file of [f.file, f.ledger]) fs.utimesSync(file, old, old);
   f.ok([], {}, plugin);
   for (const file of [f.file, f.ledger]) assert.equal(fs.statSync(file).mtimeMs, old.getTime());
-  const entrypoint = path.join(plugin, 'cli/scripts/cli.ts');
-  fs.appendFileSync(entrypoint, '\n// next plugin version\n');
+  const template = path.join(plugin, 'skill/assets/roles/dev/prompt.md');
+  fs.appendFileSync(template, '\nUpdated role responsibilities.\n');
+  const failingBun = path.join(f.bin, 'bun');
+  fs.writeFileSync(failingBun, '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.3.14; else echo "Dependency download failed" >&2; exit 1; fi\n', { mode: 0o755 });
+  const failed = f.run([], {}, plugin);
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /CLI dependency setup failed/);
+  assert.equal(fs.readFileSync(f.file, 'utf8'), before);
+  fs.unlinkSync(failingBun);
   f.ok([], {}, plugin);
   assert.notEqual(fs.readFileSync(f.file, 'utf8'), before);
   assert.equal(f.records().length, 1);

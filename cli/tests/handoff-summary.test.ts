@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import { handoff } from "../scripts/lib/handoff.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { handoff } from "../scripts/lib/tasks/handoff.ts";
 import { claimCurrent, fakeHerdr, makeProject, taskMeta, twoResidentRoles, writeTask } from "./helpers.ts";
 
 function fixture(run: (root: string, herdr: ReturnType<typeof fakeHerdr>) => void): void {

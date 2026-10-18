@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { badgeLabel, badgeStatePath, syncWorkspaceBadges } from "../scripts/lib/workspace-badges.ts";
-import { syncWorkspaceGit } from "../scripts/lib/workspace-git.ts";
+import { badgeLabel, badgeStatePath, syncWorkspaceBadges } from "../scripts/lib/ui/workspace-badges.ts";
+import { syncWorkspaceGit } from "../scripts/lib/ui/workspace-git.ts";
 import { fakeHerdr, makeProject } from "./helpers.ts";
-import type { WorkspaceInfo } from "../scripts/lib/herdr.ts";
+import type { WorkspaceInfo } from "../scripts/lib/runtime/herdr.ts";
 
 const workspace = (id: string, label = id): WorkspaceInfo => ({ workspace_id: id, label, pane_count: 1, tab_count: 1 });
 
@@ -49,7 +49,7 @@ describe("稳定的 workspace 归属编号", () => {
       const file = join(root, "badges.json");
       syncWorkspaceBadges(fakeHerdr({ workspaces: [workspace("w1"), workspace("w2")] }), file);
       const parent = { ...workspace("w2"), worktree: { repo_key: "/repo/.git", checkout_path: "/repo", is_linked_worktree: false } };
-      const child = { ...workspace("w3"), tokens: { team_workspace: "②", team_workspace_c1: "②", team_git_files: "📄9", team_git_summary: "old · 📄9 ↑1" },
+      const child = { ...workspace("w3"), tokens: { team_workspace: "②", team_workspace_c1: "②", team_git_summary: "old · 📄9 ↑1" },
         worktree: { repo_key: "/repo/.git", checkout_path: "/worktree", is_linked_worktree: true } };
       const herdr = fakeHerdr({ workspaces: [child, parent], agents: [{ name: "dev-0003", agent_status: "working", pane_id: "w3:p1", workspace_id: "w3" }] });
       syncWorkspaceBadges(herdr, file);
@@ -62,7 +62,6 @@ describe("稳定的 workspace 归属编号", () => {
       expect(herdr.state.workspaces[0]!.tokens?.team_workspace_c1).toBeUndefined();
       expect(herdr.state.workspaces[0]!.tokens?.team_label).toBe("w3");
       expect(child.tokens).not.toHaveProperty("team_git_summary");
-      expect(child.tokens).not.toHaveProperty("team_git_files");
       expect(parent).toMatchObject({ tokens: { team_git_summary: "main · 📄3 ↑2 ↓1" } });
       expect(herdr.state.agents[0]!.tokens?.team_workspace).toBe("②");
       expect(syncWorkspaceBadges(herdr, file).updated).toBe(0);
@@ -73,7 +72,6 @@ describe("稳定的 workspace 归属编号", () => {
       expect(child.tokens?.team_label).toBeUndefined();
       expect(syncWorkspaceGit(herdr, readGit)).toEqual({ updated: 0, failed: 0 });
       expect(child.tokens).not.toHaveProperty("team_git_summary");
-      expect(child.tokens).not.toHaveProperty("team_git_files");
       herdr.state.workspaces.push(parent);
       syncWorkspaceBadges(herdr, file);
       expect(child.tokens).toMatchObject({ team_label: "w3" });

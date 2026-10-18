@@ -2,11 +2,11 @@
 
 [简体中文](README.zh-CN.md) · English
 
-Herdr Team is a public Herdr plugin for coordinating project-scoped agent teams. It bundles a `herdr-team` CLI and an agent skill. The CLI reads and updates a project's `.herdr/` identity, role cards, and task cards; Herdr runs the native agent sessions; Team Console schedules explicitly queued work. No separate daemon or runtime npm dependencies are required.
+Herdr Team is a public Herdr plugin for coordinating project-scoped agent teams. It bundles a `herdr-team` CLI and an agent skill. The CLI reads and updates a project's `.herdr/` identity, role cards, and task cards; Herdr runs the native agent sessions; Team Console schedules explicitly queued work. Team Console uses [OpenTUI Core](https://github.com/anomalyco/opentui) for terminal rendering and input; no separate daemon is required.
 
 ## Install
 
-Herdr Team supports macOS and Linux. Install [Herdr](https://herdr.dev) 0.9.3 or later, [Node.js](https://nodejs.org) 22.20 or later (with `npm`/`npx`), and [Bun](https://bun.sh) 1.2 or later. The CLI installer requires Bun on `PATH`; the skill installer uses `npx` and may need network access the first time it downloads Skills CLI.
+Herdr Team supports macOS and Linux. Install [Herdr](https://herdr.dev) 0.9.3 or later, [Node.js](https://nodejs.org) 22.20 or later (with `npm`/`npx`), and [Bun](https://bun.sh) 1.3.14 or later. The CLI installer requires Bun on `PATH` and installs locked production dependencies, including the platform-specific OpenTUI native library; its first run may need network access. No Zig compiler is needed. The skill installer uses `npx` and may need network access the first time it downloads Skills CLI.
 
 Install the public plugin from GitHub:
 
@@ -31,7 +31,7 @@ herdr-team init --roles-file roles.json
 herdr-team validate
 ```
 
-The skill saves the agreed flow in `.herdr/workflow.md`, including responsibilities, handoff order, PR delivery, and merge policy. It supplies each task's `--role` and `--handoff` explicitly. The CLI has no workflow command, preset, or implicit default chain. Changing the agreement leaves existing assignments intact; legacy task snapshots retain their original behavior.
+The skill saves the agreed flow in `.herdr/workflow.md`, including responsibilities, handoff order, PR delivery, and merge policy. It supplies each task's `--role` and `--handoff` explicitly. The CLI has no workflow command, preset, or implicit default chain. Changing the agreement leaves existing assignments intact; the CLI does not execute old workflow snapshots. Historical records stay readable; unsupported active snapshots require explicit reconciliation.
 
 Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onboard` command; `init` saves confirmed configuration. The skill checks the effective roles with `role list --json`, reads the workflow agreement, and runs validation before starting or dispatching. Existing roles are preserved by default; research and docs are optional. Role prompts define responsibilities, while the skill guides collaboration; assignments ask agents to read the skill before using the supplied CLI argument templates. `herdr-team --help` lists every available command, including task operations. Sidebar refresh runs through internal plugin hooks.
 

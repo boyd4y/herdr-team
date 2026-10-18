@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { HerdrError, realHerdr, type SpawnFn } from "../scripts/lib/herdr.ts";
+import { HerdrError, realHerdr, type SpawnFn } from "../scripts/lib/runtime/herdr.ts";
 
 /** 记录参数、返回预设 JSON 的假 spawn。 */
 function recordingSpawn(stdout: string, code = 0): { fn: SpawnFn; calls: string[][] } {

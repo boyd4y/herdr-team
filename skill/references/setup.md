@@ -16,6 +16,10 @@ onboard 是 Skill 对话，不是 CLI 向导。复用已确认的选择与授权
 Skill 把用户确认的流程写入 `.herdr/workflow.md`；格式和变更规则只见 [workflow.md](workflow.md)。
 角色通过 CLI 保存，不手拼 YAML。`body` 只保留角色职责、边界、交付要求和先读 herdr-team Skill 的入口，
 不复制命令清单或 claim/handoff/PR 的完整操作流程。新生成的正文使用英文，用户自带正文保留原语言。
+可复用职责模板按角色保存在 [assets/roles](../assets/roles)：lead、dev、test、search、docs、review；
+每个目录只有 `prompt.md`，通用职责放在 default。按当前职责选择、阅读并调整所需模板，不整套加载。
+模型方案是 [assets/plans.json](../assets/plans.json)，与职责正文分开维护。
+CLI 对未提供 body 的新角色按同名模板初始化，未知角色用 default；已有正文不随模板更新自动改写。
 例如临时 `roles.json` 的输入形状：
 
 ```json

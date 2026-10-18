@@ -22,9 +22,11 @@ cd herdr-team
 - `herdr-plugin.toml`：Herdr 插件元数据、setup hook、actions 和事件 hook。
 - `README.md` / `README.zh-CN.md`：英文和简体中文用户指南。
 
+- 增加实现前先看 [CLI 模块导航](cli/ARCHITECTURE.md)；角色模板和模型方案统一在 `skill/assets/` 维护。
+
 ## 开发与验证
 
-安装 Bun 1.2 或更新版本，以及 Node.js 22.20 或更新版本。CLI 没有运行时 npm 依赖；TypeScript 和 Bun 类型定义属于开发依赖。在 `cli/` 安装依赖并运行检查：
+安装 Bun 1.3.14 或更新版本，以及 Node.js 22.20 或更新版本。Console 依赖 `@opentui/core`，Bun 会安装相应平台的原生包；TypeScript 和 Bun 类型定义用于开发。在 `cli/` 安装依赖并运行检查：
 
 ```sh
 cd cli
@@ -40,7 +42,7 @@ cd ..
 node --test tests/*.test.cjs
 ```
 
-自动化测试使用临时项目目录和离线 Herdr 可执行文件，无需连接正在运行的 Herdr。手动集成 setup 会安装用户级 CLI 和 skill 文件，并写入 Herdr 用户配置。单独创建一个命名的 Herdr session 并不能隔离这些文件。请使用拥有独立 home、config 和 bin 目录的一次性环境（例如单独的开发用户或容器），或者明确选择在个人安装中测试；同时使用临时项目。在该环境的仓库根目录 link 本检出并调用 setup：
+自动化测试使用临时项目目录、Herdr 替身和 OpenTUI 的真实内存渲染器，无需连接正在运行的 Herdr。安装包测试会安装锁定的生产依赖，Bun 缓存为空时可能需要网络。手动集成 setup 会安装用户级 CLI 和 skill 文件，并写入 Herdr 用户配置。单独创建一个命名的 Herdr session 并不能隔离这些文件。请使用拥有独立 home、config 和 bin 目录的一次性环境（例如单独的开发用户或容器），或者明确选择在个人安装中测试；同时使用临时项目。在该环境的仓库根目录 link 本检出并调用 setup：
 
 ```sh
 herdr plugin link .
@@ -55,7 +57,7 @@ link 只注册插件；install action 会运行 setup 入口。测试后按[中�
 - 文档可使用中文或英文。公开行为改变时同步英文和中文入口。
 - 保留用户提供的标题、描述、角色提示、摘要及其他 Unicode 数据。
 - `.herdr/` 任务卡是工作流记录。使用 CLI 修改任务元数据并领取/交付任务。
-- 除非产品需求变更，不引入运行时依赖或系统服务。
+- 终端 UI 复用 OpenTUI；其他依赖应有明确产品用途。Console 不引入独立服务。
 - 不要提交凭证、个人绝对路径、真实 delivery ID 或私有任务内容。
 
 ## 提交 Issue 或 Pull Request

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { loadProject } from "../scripts/lib/config.ts";
-import type { Problem } from "../scripts/lib/types.ts";
-import { validateProject } from "../scripts/lib/validate.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import type { Problem } from "../scripts/lib/shared/types.ts";
+import { validateProject } from "../scripts/lib/team/validate.ts";
 import { makeProject, roleMeta, taskMeta, twoRoles, writeRaw, writeRole, writeTask } from "./helpers.ts";
 
 /** 建一个项目 → 跑校验 → 收掉目录。 */

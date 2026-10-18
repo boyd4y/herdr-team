@@ -12,7 +12,7 @@ description: 用项目内 .herdr/ 的身份、角色卡和任务卡驱动 Herdr 
 - Skill 决定流程、角色分工、任务拆分、验收范围及下一步；项目流程约定放在 `.herdr/workflow.md`。
 - CLI 标准化输入输出、保存任务/delivery 并执行明确操作，负责引用校验、去重、SHA 一致性和并发锁。
 - 任务元数据和历史由 CLI 写；不要手算 ID、手改任务卡或绕过队列发消息。
-- 任务已有 role/handoff 是执行依据；旧 workflow 快照继续原行为，不随项目文档变化迁移。
+- 任务已有 role/handoff 是执行依据；CLI 不解释旧 workflow 快照；活动旧格式应由 lead 明确处理，历史记录保留。
 
 ## 按当前工作读取
 
