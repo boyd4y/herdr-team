@@ -4,11 +4,14 @@ import { dirname, join } from "node:path";
 import { projectKey } from "../dispatch/team-scope.ts";
 import type { Project } from "../shared/types.ts";
 
-export function runtimePath(project: Pick<Project, "root">, name: string): string {
-  const state = process.env["HERDR_PLUGIN_STATE_DIR"] ?? join(
+export function runtimeDirectory(): string {
+  return process.env["HERDR_PLUGIN_STATE_DIR"] ?? join(
     process.env["XDG_STATE_HOME"] ?? join(homedir(), ".local", "state"), "herdr", "plugins", "herdr-team",
   );
-  return join(state, "teams", projectKey(project), name);
+}
+
+export function runtimePath(project: Pick<Project, "root">, name: string): string {
+  return join(runtimeDirectory(), "teams", projectKey(project), name);
 }
 
 export function processAlive(pid: number): boolean {

@@ -13,7 +13,8 @@ import { realHerdr, type Herdr } from "./lib/runtime/herdr.ts";
 import { refreshSidebar } from "./lib/ui/sidebar.ts";
 import { syncWorkspaceGit } from "./lib/ui/workspace-git.ts";
 import { acquireConsole } from "./lib/runtime/console.ts";
-import { claimTask, pumpQueue, queueRows, retryDelivery } from "./lib/dispatch/queue.ts";
+import { createConsoleEvents } from "./lib/runtime/console-events.ts";
+import { claimTask, needsQueuePass, nextQueueDeadline, pumpQueue, queueRows, retryDelivery } from "./lib/dispatch/queue.ts";
 import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/dispatch/launch.ts";
 import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
 import { createTask, editTask, findTask, TaskError } from "./lib/tasks/cards.ts";
@@ -385,7 +386,8 @@ function parseInterval(value: string | undefined): number {
 
 const CONSOLE_USAGE = `Usage: herdr-team console [--sample] [--all] [--interval SECONDS] [--once] [--root DIR]
 
-Team Console displays tasks, agents, and queues. It automatically delivers queued work every 2 seconds.
+Team Console displays tasks, agents, and queues. File changes and Herdr plugin events wake queued work.
+Startup and periodic reconciliation recover missed events; delivery timeouts use their own deadlines.
 Tasks are listed by ID, newest first. Search ranks matches, then breaks ties by newest ID.
 
 Keys:
@@ -406,7 +408,7 @@ Use dispatch to enqueue tasks and handoff to release the current assignment.
 For non-interactive agent use, run herdr-team status [--json].
 
 Options:
-  --interval <seconds>  Refresh interval (default 2; 0 with --observe or --sample)
+  --interval <seconds>  Fallback reconciliation (default 60; sample animation steps default 2)
   --all                 Include terminal tasks
   --once                Render one read-only frame and exit
   --observe             Show a live read-only Console without scheduling
@@ -465,7 +467,7 @@ async function cmdConsole(args: string[]): Promise<number> {
   }
 
   const root = resolveRoot(parsed.values.get("root"));
-  const seconds = parseInterval(parsed.values.get("interval"));
+  const seconds = parseInterval(parsed.values.get("interval") ?? "60");
   const observe = parsed.flags.has("observe");
   if (seconds <= 0 && !parsed.flags.has("once") && !observe) throw new UsageError("Console refresh interval must be greater than zero");
   // 容错加载（**不是** loadValidated）：看板恰恰是 .herdr/ 出问题时最想看的东西，
@@ -492,15 +494,27 @@ async function cmdConsole(args: string[]): Promise<number> {
   if (!observe && !herdr.envOk()) throw new LaunchError("Team Console requires a Herdr-managed pane");
   const { runConsole } = await import("./lib/ui/console-view.ts");
   const lease = observe ? undefined : acquireConsole(project);
+  const events = createConsoleEvents(project, seconds > 0 ? seconds * 1000 : 60_000);
+  let sidebarProject: Project | undefined;
   try { return await runConsole({
     initial: project,
-    load: () => loadProject(root),
+    load: events.load,
+    subscribe: events.subscribe,
     herdr,
     intervalMs: seconds * 1000,
     showAll,
-    tick: observe ? undefined : () => { pumpQueue(project, herdr, new Date(), () => lease!.stopped()); },
+    tick: observe ? undefined : () => {
+      const current = events.load();
+      if (needsQueuePass(current)) {
+        const outcomes = pumpQueue(current, herdr, new Date(), () => lease!.stopped());
+        events.invalidate();
+        if (outcomes.some(outcome => outcome.state === "submitted")) events.request();
+      } else if (current !== sidebarProject) refreshSidebar(current, herdr);
+      sidebarProject = current;
+    },
+    nextDeadline: observe ? undefined : nextQueueDeadline,
     shouldQuit: () => lease?.stopped() ?? false,
-  }); } finally { lease?.close(); }
+  }); } finally { events.close(); lease?.close(); }
 }
 
 function cmdHandoff(args: string[]): number {

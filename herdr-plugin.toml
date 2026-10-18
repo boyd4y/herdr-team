@@ -78,6 +78,18 @@ on = "pane.agent_status_changed"
 command = ["bun", "cli/scripts/refresh-sidebar.ts", "--sessions-only"]
 
 [[events]]
+on = "pane.exited"
+command = ["bun", "cli/scripts/refresh-sidebar.ts", "--notify-only"]
+
+[[events]]
+on = "pane.closed"
+command = ["bun", "cli/scripts/refresh-sidebar.ts", "--notify-only"]
+
+[[events]]
+on = "tab.closed"
+command = ["bun", "cli/scripts/refresh-sidebar.ts", "--notify-only"]
+
+[[events]]
 on = "pane.moved"
 command = ["bun", "cli/scripts/refresh-sidebar.ts"]
 

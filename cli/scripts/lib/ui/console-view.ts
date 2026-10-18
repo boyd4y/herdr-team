@@ -21,7 +21,9 @@ export type ConsoleOptions = {
   showAll: boolean;
   tick?: () => void;
   shouldQuit?: () => boolean;
-} & ({ sample: true } | { sample?: false; initial: Project; load: () => Project; herdr: Herdr });
+  subscribe?: (refresh: () => void) => () => void;
+  nextDeadline?: (project: Project) => number | undefined;
+} & ({ sample: true } | { sample?: false; initial: Project; load: (force?: boolean) => Project; herdr: Herdr });
 
 /** OpenTUI owns layout, input parsing, scrolling, drawing, animation and terminal restoration. */
 export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
@@ -37,6 +39,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
   let focused = true;
   let taskOptionsSignature = "";
   let detailBody = "";
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   const root = new BoxRenderable(renderer, { id: "team-console", width: "100%", height: "100%", flexDirection: "column",
     backgroundColor: c.background, paddingX: 1 });
   const heading = new TextRenderable(renderer, { id: "heading", height: 1, truncate: true });
@@ -138,7 +141,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     updateFooter();
   };
 
-  const refresh = (reload = true) => {
+  const refresh = (reload = true, force = false) => {
     if (stopped || renderer.isDestroyed) return;
     if (options.shouldQuit?.()) { renderer.destroy(); return; }
     if (sample) {
@@ -147,7 +150,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     } else if (!options.sample && reload) {
       const errors: string[] = [];
       project = liveProject!;
-      try { options.tick?.(); } catch (error) { errors.push(String(error instanceof Error ? error.message : error)); }
+      try { if (force) options.load(true); options.tick?.(); } catch (error) { errors.push(String(error instanceof Error ? error.message : error)); }
       try { project = options.load(); liveProject = project; } catch (error) { errors.push(String(error instanceof Error ? error.message : error)); }
       state.loadError = errors.join(" · ") || null;
       model = buildModel(project, options.herdr, state, new Date().toLocaleTimeString("en-GB"));
@@ -176,6 +179,12 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     roleTable.update(model.roles);
     layout();
     showDetail();
+    if (reload) {
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+      const deadline = !sample && options.nextDeadline?.(project);
+      // An expired deadline is handled by this pass. Failed records wait for an event or reconciliation.
+      if (deadline && deadline > Date.now()) deadlineTimer = setTimeout(refresh, Math.min(deadline - Date.now(), 2_147_483_647));
+    }
   };
   const resize = () => {
     layout();
@@ -205,7 +214,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
         break;
       case "/": consume(); search.visible = true; search.focus(); break;
       case "a": consume(); state.showAll = !state.showAll; refresh(false); break;
-      case "r": consume(); refresh(); break;
+      case "r": consume(); refresh(true, true); break;
       case "s":
         consume();
         if (options.sample) break;
@@ -214,7 +223,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
         state.showAll = sample ? true : liveShowAll;
         state.selectedId = null; state.selectedIndex = 0; state.query = ""; state.loadError = null;
         search.value = ""; search.visible = false;
-        refresh(); tasks.focus(); break;
+        syncTimer(); refresh(); tasks.focus(); break;
       case "pageup": consume(); scrollTarget.scrollBy(-Math.max(1, scrollTarget.height - 2)); break;
       case "pagedown": consume(); scrollTarget.scrollBy(Math.max(1, scrollTarget.height - 2)); break;
       case "tab": {
@@ -232,10 +241,18 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
   renderer.on(CliRenderEvents.FOCUS, focus);
   renderer.on(CliRenderEvents.BLUR, blur);
   let timer: ReturnType<typeof setInterval> | undefined;
+  const syncTimer = () => {
+    if (timer) clearInterval(timer);
+    const interval = sample && !options.sample ? 2000 : options.intervalMs;
+    if (!stopped && interval > 0) timer = setInterval(refresh, interval);
+  };
+  const unsubscribe = options.subscribe?.(() => refresh());
   const dispose = () => {
     if (stopped) return;
     stopped = true;
     if (timer) clearInterval(timer);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    unsubscribe?.();
     flow.dispose();
     tasks.off(SelectRenderableEvents.SELECTION_CHANGED, select);
     search.off(InputRenderableEvents.INPUT, input);
@@ -247,7 +264,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
   };
   renderer.on(CliRenderEvents.DESTROY, dispose);
   resize(); tasks.focus(); refresh();
-  if (!stopped && options.intervalMs > 0) timer = setInterval(refresh, options.intervalMs);
+  syncTimer();
   return { refresh, dispose, get model() { return model; } };
 }
 

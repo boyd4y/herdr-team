@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadProject } from "../team/project.ts";
 import { assignmentPrompt } from "./assignment.ts";
-import { deliveryFor, newDelivery, type Delivery } from "./delivery.ts";
+import { deliveryFor, deliveryState, newDelivery, type Delivery } from "./delivery.ts";
 import { HerdrError, type Herdr } from "../runtime/herdr.ts";
 import { appendRecord, stamp } from "../tasks/records.ts";
 import { withTeamLock } from "../runtime/state.ts";
@@ -13,6 +13,24 @@ import { TASK_BODY, TASK_META, isTerminal, type Project, type TaskCard } from ".
 import { formatProblems, validateProject } from "../team/validate.ts";
 
 export interface QueueOutcome { id: string; state: string; reason?: string }
+
+/** A cached preflight can skip an empty queue; every actual pass reloads under the lock. */
+export function needsQueuePass(project: Project): boolean {
+  return project.tasks.some(task => typeof task.meta.pending_history === "string" && task.meta.pending_history.length > 0 ||
+    !isTerminal(task.status) && ["queued", "sending", "submitted", "claimed", "invalid"].includes(deliveryState(task) ?? ""));
+}
+
+export function nextQueueDeadline(project: Project): number | undefined {
+  let next = Infinity;
+  for (const task of project.tasks) {
+    if (isTerminal(task.status)) continue;
+    try {
+      const d = deliveryFor(task);
+      if (d?.state === "submitted") next = Math.min(next, Date.parse(d.sent_at ?? d.queued_at) + 60_001);
+    } catch { /* Validation reports malformed records; do not spin a deadline timer. */ }
+  }
+  return Number.isFinite(next) ? next : undefined;
+}
 
 /** The task metadata is the outbox. A pending history write can be replayed after a crash. */
 export function flushTaskHistory(project: Project, task: TaskCard): void {
@@ -60,24 +78,30 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
     let fresh = loadProject(project.root);
     const problems = validateProject(fresh);
     if (problems.length) throw new TaskError(formatProblems(problems));
-    for (const task of fresh.tasks) flushTaskHistory(fresh, task);
-    fresh = loadProject(project.root);
+    // Start fresh on every pass, then reread only when recovery changes records.
+    if (fresh.tasks.some(task => typeof task.meta.pending_history === "string" && task.meta.pending_history.length > 0)) {
+      for (const task of fresh.tasks) flushTaskHistory(fresh, task);
+      fresh = loadProject(project.root);
+    }
     let agents: ReturnType<Herdr["agentList"]> | undefined;
+    let reconciled = false;
     for (const task of fresh.tasks) {
       const d = deliveryFor(task);
       if (!d || isTerminal(task.status)) continue;
       if (d.state === "sending" || d.state === "submitted" && now.getTime() - Date.parse(d.sent_at ?? d.queued_at) > 60_000) {
         save(fresh, task, { ...d, state: "uncertain", reason: "Delivery needs reconciliation; no automatic resend" });
+        reconciled = true;
       }
       if (d.state === "claimed" && d.pane_id) {
         agents ??= herdr.agentList();
         const agent = agents.find((a) => a.pane_id === d.pane_id);
         if (!agent || d.session_id && agent.agent_session?.value !== d.session_id) {
           save(fresh, task, { ...d, state: "uncertain", reason: "Claimed agent disappeared or changed session; verify before retrying" });
+          reconciled = true;
         }
       }
     }
-    fresh = loadProject(project.root);
+    if (reconciled) fresh = loadProject(project.root);
     const pending = fresh.tasks.filter((task) => !isTerminal(task.status) && deliveryFor(task)?.state === "queued")
       .sort((a, b) => a.priority.localeCompare(b.priority) || deliveryFor(a)!.queued_at.localeCompare(deliveryFor(b)!.queued_at) || a.id.localeCompare(b.id));
     const outcomes: QueueOutcome[] = [];
@@ -140,7 +164,7 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
       // Release promptly so the receiving agent can claim before other startups.
       break;
     }
-    refreshSidebar(loadProject(project.root), herdr);
+    refreshSidebar(fresh, herdr);
     return outcomes;
   });
 }

@@ -140,7 +140,7 @@ test("dependencies delay delivery, priority chooses the next eligible card", () 
 test("pending history survives a restart and replays exactly once", () => fixture((f) => {
   const pending = "- resumed history\n<!-- team-operation:recovery-test -->";
   writeTaskMeta(f.load(), f.task(), { pending_history: pending });
-  flushTaskHistory(f.load(), f.task());
+  pumpQueue(f.load(), f.herdr);
   writeTaskMeta(f.load(), f.task(), { pending_history: pending });
   flushTaskHistory(f.load(), f.task());
   expect(f.task().body.match(/resumed history/g)).toHaveLength(1);
