@@ -466,17 +466,18 @@ describe("OpenTUI Console", () => {
     const app = mountConsole(screen.renderer, { initial: frame.project, load: () => frame.project, herdr: h, intervalMs: 0, showAll: true });
     try {
       await screen.renderOnce();
-      const dot = screen.renderer.root.findDescendantById("flow-dot-1") as TextRenderable;
-      expect(dot).toBeDefined();
-      const before = dot.left;
+      const signal = screen.renderer.root.findDescendantById("flow-signal-1") as TextRenderable;
+      expect(signal).toBeDefined();
+      const before = JSON.stringify(signal.chunks);
       const count = polls;
       getTimelineEngine(screen.renderer).update(500);
       await screen.renderOnce();
-      expect(dot.left).not.toBe(before);
+      expect(JSON.stringify(signal.chunks)).not.toBe(before);
+      expect(signal.chunks.length).toBeGreaterThan(1);
       expect(polls).toBe(count);
       screen.mockInput.pressArrow("down"); // Blocked task has no continuously animated elements.
       await screen.renderOnce();
-      expect(dot.isDestroyed).toBe(true);
+      expect(signal.isDestroyed).toBe(true);
       const after = polls;
       getTimelineEngine(screen.renderer).update(500);
       expect(polls).toBe(after);
@@ -485,6 +486,37 @@ describe("OpenTUI Console", () => {
       app.refresh();
       expect(app.model).toBe(state);
     } finally { await screen.dispose(); }
+  });
+
+  test("flow and details share the right side equally while compact role rows fit the full team", async () => {
+    const names = ["dev", "dev-blog", "docs", "lead", "research", "review", "test-final"];
+    const ui = await setup(projectOf([task("0099", "layout", "Layout", "P1", "todo", "dev")], names.map(name => role(name))));
+    try {
+      ui.resize(150, 42); await ui.renderOnce();
+      const flow = ui.renderer.root.findDescendantById("flow")!;
+      const details = ui.renderer.root.findDescendantById("details")!;
+      const roles = ui.renderer.root.findDescendantById("roles")!;
+      expect(ui.renderer.root.findDescendantById("activity")).toBeUndefined();
+      expect(Math.abs(flow.height - details.height)).toBeLessThanOrEqual(1);
+      expect(flow.width).toBe(details.width);
+      expect(details.y).toBe(flow.y + flow.height);
+      for (const name of names) {
+        const row = ui.renderer.root.findDescendantById(`role-${name}`)!;
+        expect(row.height).toBe(1);
+        expect(row.y).toBeGreaterThan(roles.y);
+        expect(row.y).toBeLessThan(roles.y + roles.height - 1);
+      }
+      ui.resize(130, 26); await ui.renderOnce();
+      expect(Math.abs(flow.height - details.height)).toBeLessThanOrEqual(1);
+      expect(ui.captureCharFrame()).toContain("test-final");
+      ui.resize(62, 26); await ui.renderOnce();
+      expect(roles.visible).toBe(true);
+      expect(Math.abs(flow.height - details.height)).toBeLessThanOrEqual(1);
+      ui.mockInput.pressKey("\t");
+      expect(roles.focused).toBe(true);
+      ui.mockInput.pressKey("\x1b[6~"); await ui.renderOnce();
+      expect(ui.captureCharFrame()).toContain("test-final");
+    } finally { await ui.dispose(); }
   });
 
   test("empty projects can preview samples without scheduling, then recover the real project even on a failed reload", async () => {
@@ -530,6 +562,9 @@ describe("OpenTUI Console", () => {
       mountConsole(screen.renderer, { sample: true, intervalMs: 0, showAll: false, tick: () => { throw new Error("Sample must never schedule"); } });
       await screen.renderOnce();
       expect(screen.captureCharFrame()).toContain("SAMPLE");
+      const active = screen.renderer.root.findDescendantById("flow-node-0")!;
+      getTimelineEngine(screen.renderer).update(1200);
+      expect(active.opacity).toBe(1); // Breathing the border must not dim task text.
       screen.mockInput.pressKey("q"); await screen.renderer.closed;
       expect(screen.renderer.isDestroyed).toBe(true);
     } finally { await screen.dispose(); }

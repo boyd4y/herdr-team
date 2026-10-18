@@ -392,7 +392,7 @@ Keys:
   PgUp / PgDn     Scroll the focused panel (details by default)
   r               Refresh now
   s               Toggle sample preview (scheduling pauses during preview)
-  Tab             Focus tasks, flow, activity, or details
+  Tab             Focus tasks, roles, flow, or details
   a               Toggle terminal tasks
   /               Search IDs, titles, and roles (Unicode supported)
   Enter           Keep the filter and leave search input

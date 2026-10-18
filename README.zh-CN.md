@@ -71,7 +71,7 @@ herdr-team status
 
 Console 是自动调度器，在项目的 Team Console tab 中运行。关闭它会暂停自动投递，队列记录仍保存在磁盘；运行 `herdr-team up` 或 `herdr-team console` 可恢复。`console --observe`、`console --once` 和 `console --line` 是只读视图，不调度任务。`uncertain` 表示消息可能已经送达：lead 应先检查 agent 与任务产物，再运行 `herdr-team queue retry <id>`。重试会分配新的 delivery ID。队列用于避免盲目重复发送，但无法保证底层终端或 agent 恰好执行一次。
 
-Console 默认按任务 ID 倒序排列，展示所选任务的交接路径、投递动画、当前执行节点与活动记录。运行 `herdr-team console --sample` 可直接体验循环演示，无需项目或 Herdr 连接；演示数据只在内存中，不调度任务、不写团队文件。真实 Console 中按 `s` 可进入演示，再按一次返回；演示期间暂停真实调度。
+Console 默认按任务 ID 倒序排列，右侧流程图与详情上下各占一半。投递采用渐变光迹，执行节点用轻微边框呼吸；角色区每行一个角色，按团队规模分配高度，小终端仍可滚动。运行 `herdr-team console --sample` 可直接体验循环演示，无需项目或 Herdr 连接；演示数据只在内存中，不调度任务、不写团队文件。真实 Console 中按 `s` 可进入演示，再按一次返回；演示期间暂停真实调度。
 
 如果 Herdr 官方 integration 上报了 session ID，常驻角色可以恢复之前的原生会话。请安装或更新对应的 Herdr integration（例如 `herdr integration install codex`），并确保它在关闭前上报 session。`herdr-team up --fresh` 会忽略待启动角色的已保存记录；正在运行的 agent 仍会复用。限制和排查方式见 [CLI 会话恢复说明](cli/README.md#快速开始)。
 

@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import { sanitize } from "../shared/text.ts";
 import { reviewFor, taskScoped } from "../tasks/verification.ts";
 import { roleAgents, projectAgents } from "../dispatch/team-scope.ts";
-import { deliveryFor, deliveryState } from "../dispatch/delivery.ts";
+import { deliveryState } from "../dispatch/delivery.ts";
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
 import { findInconsistencies, roleStatusesFrom, integrationStatus, formatReport, formatTaskDetail, type Inconsistency, type RoleStatus } from "./status.ts";
 import { isTerminal, type Project, type TaskCard } from "../shared/types.ts";
@@ -161,23 +161,6 @@ export function taskFlow(task: TaskCard, project: Project, model: ConsoleModel):
     const state = i < current || task.status === "done" ? "done" : i === current ? active : "waiting";
     return { role: name, state, label: i > current ? "Next" : labels[state], model: role ? `${role.kind} · ${role.model ?? "default"}` : "serial integration" };
   }) };
-}
-
-export function taskActivity(task: TaskCard): string {
-  const lines: string[] = [];
-  const time = (value: string) => new Date(value).toLocaleTimeString("en-GB");
-  try {
-    const delivery = deliveryFor(task);
-    if (delivery) {
-      lines.push(`${time(delivery.queued_at)}  Queued for ${delivery.role}`);
-      if (delivery.sent_at) lines.push(`${time(delivery.sent_at)}  Submitted to agent`);
-      lines.push(`${delivery.state} · ${delivery.id.slice(0, 8)}`);
-      if (delivery.reason) lines.push(delivery.reason);
-    }
-  } catch { lines.push("Invalid delivery record"); }
-  const history = task.body.split(/^##\s*(?:History|\u6d41\u8f6c\u8bb0\u5f55)\s*$/m)[1];
-  if (history) lines.push(...history.split("\n").filter(line => line.startsWith("- ")).slice(-6).map(line => line.slice(2)));
-  return lines.join("\n\n") || "No recorded handoffs yet.";
 }
 
 export function selectTasks(project: Project, state: ConsoleState) {

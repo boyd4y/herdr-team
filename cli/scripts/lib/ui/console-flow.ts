@@ -1,4 +1,4 @@
-import { BoxRenderable, ScrollBoxRenderable, TextRenderable, createTimeline, getTimelineEngine,
+import { BoxRenderable, RGBA, ScrollBoxRenderable, StyledText, TextRenderable, createTimeline, fg, getTimelineEngine,
   type CliRenderer, type Timeline } from "@opentui/core";
 import { sanitize } from "../shared/text.ts";
 import type { FlowState, TaskFlow } from "./console-model.ts";
@@ -8,12 +8,17 @@ export const consoleColors = { background: "#111719", panel: "#151d20", border: 
 const colors: Record<FlowState, string> = { done: consoleColors.green, running: consoleColors.blue,
   sending: consoleColors.yellow, blocked: consoleColors.red, waiting: consoleColors.border, idle: consoleColors.purple, cancelled: consoleColors.muted };
 
+const mix = (from: RGBA, to: RGBA, amount: number) => RGBA.fromValues(
+  from.r + (to.r - from.r) * amount, from.g + (to.g - from.g) * amount, from.b + (to.b - from.b) * amount, 1);
+
 /** Thin component assembly: native boxes/text/scrolling and renderer-owned timelines. */
 export function createFlowView(renderer: CliRenderer) {
   const engine = getTimelineEngine(renderer);
   const view = new ScrollBoxRenderable(renderer, { id: "flow", title: "FLOW", border: true,
-    borderColor: consoleColors.border, titleColor: consoleColors.blue, height: 9, flexShrink: 0,
-    scrollX: true, scrollY: true, contentOptions: { flexDirection: "row", alignItems: "center", padding: 1 } });
+    borderColor: consoleColors.border, focusedBorderColor: consoleColors.blue, titleColor: consoleColors.blue,
+    flexGrow: 1, flexBasis: 0, minHeight: 4,
+    scrollX: true, scrollY: true, contentOptions: { flexDirection: "row", alignItems: "center", justifyContent: "center",
+      minWidth: "100%", minHeight: "100%", paddingX: 1 } });
   let previous: { id: string; flow: TaskFlow } | undefined;
   let signature = "";
   let vertical = false;
@@ -29,7 +34,7 @@ export function createFlowView(renderer: CliRenderer) {
     for (const child of view.getChildren()) { view.remove(child); child.destroyRecursively(); }
     vertical = narrow;
     view.content.flexDirection = vertical ? "column" : "row";
-    view.content.alignItems = vertical ? "flex-start" : "center";
+    view.content.alignItems = "center";
     const before = previous?.id === id ? previous.flow : undefined;
     const from = before ? flow.nodes.findIndex(node => node.role === before.nodes[before.current]?.role) : -1;
     const changedOwner = before && before.nodes[before.current]?.role !== flow.nodes[flow.current]?.role;
@@ -44,24 +49,25 @@ export function createFlowView(renderer: CliRenderer) {
         const backwards = returning && crossed;
         const animate = crossed || inFlight && index === flow.current;
         const color = animate ? consoleColors.yellow : index <= flow.current ? consoleColors.green : consoleColors.border;
-        const arrow = new TextRenderable(renderer, { content: vertical ? backwards ? "↑" : "↓" : backwards ? "◀──────" : "──────▶",
+        const arrow = new TextRenderable(renderer, { id: `flow-signal-${index}`, content: vertical ? backwards ? "↑" : "↓" : backwards ? "◀──────" : "──────▶",
           width: vertical ? 1 : 7, height: 1, position: "absolute", top: vertical ? 0 : 2, left: vertical ? 2 : 0, fg: color });
         line.add(arrow);
         if (animate) {
-          const dot = new TextRenderable(renderer, { id: `flow-dot-${index}`, content: "●", width: 1, height: 1,
-            position: "absolute", top: vertical ? 0 : 2, left: vertical ? 2 : backwards ? 5 : 0,
-            fg: consoleColors.text });
-          line.add(dot);
-          const progress = { position: backwards ? 1 : 0 };
-          const timeline = createTimeline({ duration: 1000, autoplay: false, loop: inFlight,
+          const base = RGBA.fromHex(consoleColors.border), light = RGBA.fromHex(consoleColors.yellow);
+          const length = vertical ? 1 : 7;
+          const progress = { position: backwards ? length + 2 : -2 };
+          const timeline = createTimeline({ duration: 1600, autoplay: false, loop: inFlight,
             onComplete: () => {
-              dot.visible = false;
               arrow.content = vertical ? "↓" : "──────▶";
               arrow.fg = index <= flow.current ? consoleColors.green : consoleColors.border;
             } }, renderer);
-          timeline.add(progress, { position: backwards ? 0 : 1, duration: 900, ease: "inOutSine", onUpdate: () => {
-            if (vertical) dot.opacity = 0.4 + progress.position * 0.6;
-            else dot.left = Math.round(progress.position * 5);
+          timeline.add(progress, { position: backwards ? -2 : length + 2, duration: 1600, ease: "linear", onUpdate: () => {
+            // Cross-fade adjacent character cells instead of rounding a moving dot to whole columns.
+            arrow.content = new StyledText(Array.from({ length }, (_, cell) => {
+              const intensity = Math.max(0, 1 - Math.abs(cell - progress.position) / 2);
+              const head = vertical ? backwards ? "↑" : "↓" : cell === (backwards ? 0 : length - 1) ? backwards ? "◀" : "▶" : undefined;
+              return fg(mix(base, light, intensity))(head ?? (intensity > 0.75 ? "●" : intensity > 0.3 ? "•" : "─"));
+            }));
           } });
           timelines.push(timeline); timeline.play();
         }
@@ -72,18 +78,29 @@ export function createFlowView(renderer: CliRenderer) {
         borderColor: vertical ? undefined : colors[node.state], backgroundColor: consoleColors.panel,
         width: vertical ? 32 : 18, height: vertical ? 1 : 5, paddingX: 1, flexShrink: 0 });
       const mark = node.state === "done" ? "✓" : node.state === "blocked" ? "!" : node.state === "running" ? "●" : "○";
-      box.add(new TextRenderable(renderer, { content: `${mark} ${vertical ? `${node.role.toUpperCase()} · ` : ""}${node.label}`, height: 1, truncate: true,
-        fg: node.state === "waiting" ? consoleColors.muted : colors[node.state] }));
+      const status = new TextRenderable(renderer, { content: `${mark} ${vertical ? `${node.role.toUpperCase()} · ` : ""}${node.label}`, height: 1, truncate: true,
+        fg: node.state === "waiting" ? consoleColors.muted : colors[node.state] });
+      box.add(status);
       if (!vertical) box.add(new TextRenderable(renderer, { content: sanitize(node.model.replace(" · ", "\n"), true), height: 2, truncate: true, fg: consoleColors.muted }));
       view.add(box);
+      const accent = RGBA.fromHex(colors[node.state]);
+      const highlight = RGBA.fromHex(consoleColors.text);
+      const glow = (amount: number) => {
+        const color = mix(accent, highlight, amount);
+        if (vertical) status.fg = color;
+        else box.borderColor = color;
+      };
       if (index === flow.current && pulseNode) {
-        const timeline = createTimeline({ duration: 1800, loop: true, autoplay: false }, renderer);
-        timeline.add(box, { opacity: 0.72, duration: 900, ease: "inOutSine", alternate: true, loop: 1 });
+        const pulse = { amount: 0 };
+        const timeline = createTimeline({ duration: 2800, loop: true, autoplay: false }, renderer);
+        timeline.add(pulse, { amount: 0.3, duration: 1400, ease: "inOutSine", alternate: true, loop: 1,
+          onUpdate: () => glow(pulse.amount) });
         timelines.push(timeline); timeline.play();
       } else if (node.state === "done" && before?.nodes.some(previous => previous.role === node.role && previous.state !== "done")) {
-        box.opacity = 0.6;
-        const timeline = createTimeline({ duration: 450, autoplay: false }, renderer);
-        timeline.add(box, { opacity: 1, duration: 450, ease: "outQuad" });
+        const pulse = { amount: 0.5 };
+        glow(pulse.amount);
+        const timeline = createTimeline({ duration: 650, autoplay: false }, renderer);
+        timeline.add(pulse, { amount: 0, duration: 650, ease: "outQuad", onUpdate: () => glow(pulse.amount) });
         timelines.push(timeline); timeline.play();
       }
     });

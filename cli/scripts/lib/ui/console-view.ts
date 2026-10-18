@@ -10,7 +10,7 @@ import { deliveryFor, deliveryState } from "../dispatch/delivery.ts";
 import { reviewFor } from "../tasks/verification.ts";
 import { integrationStatus } from "./status.ts";
 import { sanitize } from "../shared/text.ts";
-import { buildModel, formatStatusLine, initialState, selectTasks, taskActivity, taskFlow, type ConsoleModel } from "./console-model.ts";
+import { buildModel, formatStatusLine, initialState, selectTasks, taskFlow, type ConsoleModel } from "./console-model.ts";
 import { consoleColors as c, createFlowView } from "./console-flow.ts";
 import { sampleConsole } from "./console-sample.ts";
 
@@ -41,30 +41,27 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
   const main = new BoxRenderable(renderer, { id: "panels", flexGrow: 1, minHeight: 0, flexDirection: "row", gap: 1 });
   const left = new BoxRenderable(renderer, { id: "overview", width: "28%", minWidth: 24, flexDirection: "column", flexShrink: 0 });
   const taskPanel = new BoxRenderable(renderer, { id: "tasks-panel", title: "TASKS", border: true,
-    borderColor: c.border, titleColor: c.green, flexGrow: 1, minHeight: 4 });
+    borderColor: c.border, titleColor: c.green, flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 4 });
   const tasks = new SelectRenderable(renderer, { id: "tasks", width: "100%", height: "100%", showDescription: true,
     showScrollIndicator: true, wrapSelection: false, selectedBackgroundColor: "#223638", selectedTextColor: c.green,
     textColor: c.text, descriptionColor: c.muted, selectedDescriptionColor: c.text,
     keyBindings: [{ name: "j", action: "move-down" }, { name: "k", action: "move-up" }] });
   const empty = new TextRenderable(renderer, { id: "empty", visible: false, width: "100%", fg: c.muted, wrapMode: "word",
     content: "No tasks yet.\n\nPress s to explore the sample team.\n\nOr use the herdr-team skill to create your first task." });
-  const roles = new ScrollBoxRenderable(renderer, { id: "roles", title: "TEAM", border: true,
-    borderColor: c.border, titleColor: c.purple, height: 9, flexShrink: 0, scrollY: true });
-  const roleText = new TextRenderable(renderer, { id: "role-text", width: "100%", wrapMode: "word", fg: c.muted });
+  const roles = new ScrollBoxRenderable(renderer, { id: "roles", title: "ROLES", border: true,
+    borderColor: c.border, focusedBorderColor: c.purple, titleColor: c.purple, flexShrink: 0, scrollY: true });
+  let roleSignature = "";
   const workspace = new BoxRenderable(renderer, { id: "workspace", flexGrow: 1, minWidth: 0, flexDirection: "column" });
   const selectedTitle = new TextRenderable(renderer, { id: "selected-title", height: 1, truncate: true, fg: c.text });
   const flow = createFlowView(renderer);
-  const lower = new BoxRenderable(renderer, { id: "lower", flexGrow: 1, minHeight: 4, flexDirection: "row", gap: 1 });
-  const activity = new ScrollBoxRenderable(renderer, { id: "activity", title: "ACTIVITY", border: true,
-    borderColor: c.border, titleColor: c.yellow, width: "34%", minWidth: 20, scrollY: true });
-  const activityText = new TextRenderable(renderer, { id: "activity-text", width: "100%", wrapMode: "word", fg: c.muted });
   const details = new ScrollBoxRenderable(renderer, { id: "details", title: "DETAIL", border: true,
-    borderColor: c.border, focusedBorderColor: c.blue, titleColor: c.blue, flexGrow: 1, minWidth: 0, scrollY: true, minHeight: 4 });
+    borderColor: c.border, focusedBorderColor: c.blue, titleColor: c.blue,
+    flexGrow: 1, flexBasis: 0, minWidth: 0, scrollY: true, minHeight: 4 });
   const detailText = new TextRenderable(renderer, { id: "detail-text", width: "100%", wrapMode: "word", fg: c.text });
   const footer = new TextRenderable(renderer, { id: "footer", height: 1, truncate: true, fg: c.muted });
-  taskPanel.add(tasks); taskPanel.add(empty); roles.add(roleText); left.add(taskPanel); left.add(roles);
-  activity.add(activityText); details.add(detailText); lower.add(activity); lower.add(details);
-  workspace.add(selectedTitle); workspace.add(flow.view); workspace.add(lower);
+  taskPanel.add(tasks); taskPanel.add(empty); left.add(taskPanel); left.add(roles);
+  details.add(detailText);
+  workspace.add(selectedTitle); workspace.add(flow.view); workspace.add(details);
   main.add(left); main.add(workspace); root.add(heading); root.add(pending); root.add(health); root.add(search); root.add(main); root.add(footer);
   renderer.root.add(root);
 
@@ -101,9 +98,47 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
       `Next: ${task.handoff.join(" → ") || "none"}`, `Dependencies: ${task.dependsOn.join(", ") || "none"}`,
       "", task.body,
     ].join("\n"), true) : project.tasks.length ? "No matching tasks." : "Your team is ready. Create a task with the herdr-team skill, or press s for a sample.";
-    activityText.content = task ? sanitize(taskActivity(task), true) : "Recorded deliveries and handoffs appear here.";
     flow.update(task?.id ?? "", task ? taskFlow(task, project, model) : { nodes: [], current: -1 }, renderer.width < 90);
-    if (changed) { details.scrollTo(0); activity.scrollTo(0); }
+    if (changed) details.scrollTo(0);
+  };
+
+  const renderRoles = () => {
+    const signature = JSON.stringify(model.roles);
+    if (roleSignature === signature) return;
+    roleSignature = signature;
+    for (const child of roles.getChildren()) { roles.remove(child); child.destroyRecursively(); }
+    roles.title = `ROLES ${model.roles.length}`;
+    const nameWidth = Math.max(5, ...model.roles.map(role => Bun.stringWidth(role.role))) + 1;
+    const row = (id: string, name: string, status: string, current: string, queued: string, color: string) => {
+      const line = new BoxRenderable(renderer, { id, height: 1, width: "100%", flexDirection: "row", flexShrink: 0 });
+      for (const [content, width, maxWidth, fg] of [[name, nameWidth, "50%", color], [status, "25%", undefined, c.muted],
+        [current, undefined, undefined, c.text], [queued, 2, undefined, c.muted]] as const) {
+        line.add(new TextRenderable(renderer, { content: sanitize(content), width, flexGrow: width === undefined ? 1 : 0,
+          flexBasis: width === undefined ? 0 : undefined, maxWidth, minWidth: 0, height: 1, truncate: true, fg }));
+      }
+      roles.add(line);
+    };
+    row("roles-heading", "ROLE", "STATE", "TASKS", "Q", c.muted);
+    for (const role of model.roles) {
+      const color = role.herdrStatus === "blocked" || role.herdrStatus === "ambiguous" ? c.red : role.current?.length ? c.green : c.text;
+      row(`role-${role.role}`, role.role, role.herdrStatus === "per-task" ? "task" : role.herdrStatus,
+        role.current?.map(id => `#${id}`).join(", ") || "—", String(role.queued ?? 0), color);
+    }
+  };
+
+  const layout = () => {
+    const narrow = renderer.width < 90;
+    const available = renderer.height - 3 - Number(health.visible) - Number(search.visible);
+    const roleHeight = project.roles.length + 3;
+    main.flexDirection = narrow ? "column" : "row";
+    left.width = narrow ? "100%" : "28%";
+    left.flexDirection = narrow ? "row" : "column";
+    left.gap = narrow ? 1 : 0;
+    left.height = narrow ? Math.min(Math.max(5, roleHeight), Math.max(4, Math.floor(available * 0.35))) : "100%";
+    roles.width = narrow ? "48%" : "100%";
+    roles.height = narrow ? "100%" : Math.min(Math.max(4, roleHeight), Math.max(4, available - 4));
+    roles.visible = true;
+    updateFooter();
   };
 
   const refresh = (reload = true) => {
@@ -139,23 +174,12 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
         description: sanitize(`${task.priority} · ${task.status} · ${task.role}`), value: task.id }));
       tasks.setSelectedIndex(model.selectedIndex);
     } finally { updating = false; }
-    roleText.content = sanitize(model.roles.map((role) =>
-      `${role.role} · ${role.herdrStatus}\n  active ${role.current?.join(", ") || "—"} · queued ${role.queued ?? 0}`).join("\n"), true);
-    updateFooter();
+    renderRoles();
+    layout();
     showDetail();
   };
   const resize = () => {
-    const narrow = renderer.width < 90;
-    const short = renderer.height < 30;
-    main.flexDirection = narrow ? "column" : "row";
-    left.width = narrow ? "100%" : "28%";
-    left.height = narrow ? renderer.height < 24 ? 4 : short ? 6 : 10 : "100%";
-    roles.visible = !narrow;
-    roles.height = short ? 6 : 9;
-    flow.view.height = narrow ? renderer.height < 24 ? 5 : 9 : short ? 8 : 9;
-    lower.flexDirection = narrow ? "column" : "row";
-    activity.visible = !narrow;
-    updateFooter();
+    layout();
     if (model) showDetail();
   };
   const select = () => { if (!updating) showDetail(); };
@@ -170,7 +194,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
       }
       return;
     }
-    const scrollTarget = flow.view.focused ? flow.view : activity.focused ? activity : details;
+    const scrollTarget = flow.view.focused ? flow.view : roles.focused ? roles : details;
     switch (key.name) {
       case "q": consume(); renderer.destroy(); break;
       case "escape":
@@ -194,7 +218,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
       case "pagedown": consume(); scrollTarget.scrollBy(Math.max(1, scrollTarget.height - 2)); break;
       case "tab": {
         consume();
-        const panes = [tasks, flow.view, ...(activity.visible ? [activity] : []), details];
+        const panes = [tasks, roles, flow.view, details];
         panes[(panes.findIndex(pane => pane.focused) + 1) % panes.length]!.focus();
         break;
       }
@@ -222,7 +246,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
 
 export async function runConsole(options: ConsoleOptions): Promise<number> {
   const renderer = await createCliRenderer({ screenMode: "alternate-screen", exitOnCtrlC: true,
-    exitSignals: ["SIGTERM", "SIGHUP"], consoleMode: "disabled", targetFps: 20, maxFps: 30 });
+    exitSignals: ["SIGTERM", "SIGHUP"], consoleMode: "disabled", targetFps: 60, maxFps: 60 });
   let app: ReturnType<typeof mountConsole> | undefined;
   try { app = mountConsole(renderer, options); await renderer.closed; return 0; }
   finally { app?.dispose(); renderer.destroy(); await renderer.closed; }
