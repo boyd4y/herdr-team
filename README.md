@@ -24,7 +24,7 @@ herdr-team --help
 
 ## Start a project team
 
-Choose a workflow first, then assign responsibilities, roles, and models. `dev-test-review` is a recommendation: develop and test in the same local task worktree, publish a PR after testing, and let an independent reviewer approve automatic merge or reject it back to development and testing. `dev-test`, `direct`, and custom workflows are also supported. Confirm responsibilities before accepting a model preset, or supply them with `--roles-file`; see the [CLI guide (Chinese)](cli/README.md) and [team setup reference (Chinese)](skill/references/team-setup.md).
+Choose a workflow first, then configure each role’s responsibilities, harness, model, and launch mode together in one table. `dev-test-review` is a recommendation: develop and test in the same local task worktree, publish a PR after testing, and let an independent reviewer approve automatic merge or reject it back to development and testing. `dev-test`, `direct`, and custom workflows are also supported. Confirm responsibilities before accepting a model preset, or supply them with `--roles-file`; see the [CLI guide (Chinese)](cli/README.md) and [team setup reference (Chinese)](skill/references/team-setup.md).
 
 ```sh
 herdr-team onboard --workflow dev-test-review --plan balanced

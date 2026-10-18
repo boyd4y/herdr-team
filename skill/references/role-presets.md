@@ -104,7 +104,7 @@ Lead keeps task-card handoff chains accurate and is the fallback owner when the 
 
 ## Team
 
-Onboard in this order: inspect the project and existing team, select the workflow, confirm role responsibilities and boundaries, choose harnesses/models, save the confirmed setup, validate it, start the team when requested, and explicitly dispatch real work. Reuse choices already confirmed in this conversation. Add research/search or docs roles only when needed; the model preset does not determine extra roles.
+Onboard in this order: inspect the project and existing team, select the workflow, configure each role with its responsibilities, boundaries, harness, model, and launch mode together in one table, save the confirmed setup, validate it, start the team when requested, and explicitly dispatch real work. Choose models to suit each role; do not split responsibilities and models into separate confirmation rounds. Reuse choices already confirmed in this conversation. Add research/search or docs roles only when needed; the model preset does not determine extra roles.
 
 Use workflow list/show before onboard --workflow NAME --roles-file F, or --plan P when the full preset is accepted. Existing role models and prompts are preserved by default. Read onboarding.state and the effective roles before claiming setup is complete; needs-roles requires further configuration. Review identity.md, validate configuration and selected tools/auth, then use up inside Herdr. Creating configuration does not start agents or dispatch tasks.
 

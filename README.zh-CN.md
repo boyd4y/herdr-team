@@ -24,7 +24,7 @@ herdr-team --help
 
 ## 为项目启动团队
 
-先选择工作流，再确定职责、角色和模型。推荐 `dev-test-review`：dev/test 在同一本地任务 worktree 完成开发和测试，通过后发布 PR，独立 review 决定批准自动合并或退回开发和测试。也可以选择 `dev-test`、`direct` 或自定义流程。模型预设只决定模型，不能代替职责确认；自定义职责用 `--roles-file`。详见 [CLI 指南](cli/README.md) 和[团队设置参考](skill/references/team-setup.md)。
+先选择工作流，再用一张表一起配置各角色的职责、harness、模型和启动方式。推荐 `dev-test-review`：dev/test 在同一本地任务 worktree 完成开发和测试，通过后发布 PR，独立 review 决定批准自动合并或退回开发和测试。也可以选择 `dev-test`、`direct` 或自定义流程。模型预设只决定模型，不能代替职责确认；自定义职责用 `--roles-file`。详见 [CLI 指南](cli/README.md) 和[团队设置参考](skill/references/team-setup.md)。
 
 ```sh
 herdr-team onboard --workflow dev-test-review --plan balanced
