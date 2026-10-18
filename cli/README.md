@@ -29,28 +29,28 @@ onboard 时先选择工作流，再用一张表一起配置各角色的职责、
 预设是分工的起点；需要定制职责时，把确认过的正文放入每个角色定义的 `body`，
 使用 `init --roles-file F`。只有连职责正文也原样接受预设时才直接 `init --plan`。
 完整引导见插件内置的 `herdr-team` skill 中的 `references/team-setup.md`。
+默认帮助展示 init、up、status、console、down；`--help --all` 列出 Skill 和维护接口，具体参数用 `<command> --help` 查询。
+`sidebar` 供插件事件 hook 自动调用，日常使用无需手动执行。
 
 完整顺序：读取项目与已有团队 → 选择流程 → 配置角色（职责与模型一起定） → 保存确认后的配置 → 校验 → 启动 → 明确派活。
 Skill 负责对话引导，CLI 负责确定性落盘；不会自行替用户完成选择。
-`onboard` 不带流程时先给出候选；已保存的流程可以直接复用。它要求先选流程再使用模型预设，
-并只派生 lead 与流程步骤需要的角色；search/research、docs 等辅助角色由用户按需添加。
-`onboard --json` 的 `onboarding.state` 区分 `choose-workflow`、`needs-roles`、`configured`，
-同时列出缺失角色和实际生效的 harness、model、mode。
-configured 表示所需角色配置齐全，之后仍需填写 identity、运行 validate、核对选定工具和登录。
+onboard 是 Skill 的对话流程，不是 CLI 命令。Skill 提供工作流候选、确认角色和模型，再用 `init` 保存配置。
+用 `workflow show`、`role list --json` 核对实际角色、harness、模型及启动配置，补齐缺失职责并运行 `validate`。
+初始化成功只表示文件已保存；Skill 还需核对 identity、工具和登录，再决定是否启动与派活。
 已有角色默认保留，因此重新选择模型方案后要检查实际输出，不把保留的角色误报为已换模型或重写职责。
 启动用 `up`，业务任务用 `add` / `dispatch`，分别明确执行。
 
 在项目根目录创建团队配置，再填写 `.herdr/identity.md`（以下以原样接受 balanced 为例）：
 
 ```sh
-herdr-team onboard --workflow dev-test-review --plan balanced
+herdr-team init --workflow dev-test-review --plan balanced
 herdr-team validate
 herdr-team add "Implement login" --role dev
 herdr-team tasks
 ```
 
 默认共享 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选 `workflow.json`，不整体忽略 `.herdr/`。
-`init` / `onboard` 创建内部 `.gitignore`，忽略 tasks、reports、.retired-ids、projects、worktrees；
+`init` 创建内部 `.gitignore`，忽略 tasks、reports、.retired-ids、projects、worktrees；
 已有忽略文件原样保留，包括 `--force`。CLI 不改项目根 `.gitignore`，旧整目录忽略规则由 Skill 按项目约定调整。
 已跟踪的本机文件用 `git rm --cached` 取消跟踪，保留磁盘内容；任务和会话不随配置跨机器恢复。
 
@@ -68,7 +68,7 @@ herdr-team tasks
 herdr-team workflow list
 herdr-team workflow set dev-test-review
 # 确认职责后选择模型；也可传 --roles-file F 提供确认后的角色卡。
-herdr-team onboard --plan balanced
+herdr-team init --plan balanced
 herdr-team workflow show
 ```
 
@@ -88,7 +88,7 @@ herdr-team workflow show
 }
 ```
 
-使用 `workflow set --file F`，或 `onboard --workflow-file F --roles-file R`。
+使用 `workflow set --file F`，或 `init --workflow-file F --roles-file R`。
 PR 模板目前支持依次开发、测试、审查三个步骤；角色名可调整。本地流程支持自定义的有序职责链，
 可使用 `work` 步骤。lead 始终是流程外的唯一常驻编排角色。
 

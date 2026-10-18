@@ -1,6 +1,6 @@
 # Team onboard —— 从项目到可运行团队
 
-对话引导由 herdr-team Skill 完成，CLI `onboard` 保存已确认的配置并报告下一步。
+onboard 完全由 herdr-team Skill 对话引导，CLI 不提供同名命令；`init` 只保存已确认的配置。
 它不是自动替用户选择的交互向导。完整顺序是：了解项目 → 选流程 → 配置角色（职责与模型一起定） → 汇总确认与落盘 → 校验环境与配置 → 启动团队 → 明确派发任务。
 复用用户在本会话已确认的选择，只问缺失信息，不要求逐个重复确认。
 
@@ -22,7 +22,7 @@
 | 自定义 | JSON 指定有序步骤的 kind/role、local/pull-request、manual/auto；角色名可以调整 |
 
 推荐不等于默认强制，不先建角色再反推流程。确认选项与手动/自动合并策略后，用
-`workflow set NAME` 或 `workflow set --file F` 保存，或在最终 `onboard` 命令同时传入。
+`workflow set NAME` 或 `workflow set --file F` 保存，或在最终 `init` 命令同时传入。
 lead 始终只有一个常驻编排会话；独立 review 的职责由审查阶段决定，不是多开一个 lead。
 
 ## 第三步：配置角色（职责、harness 和模型一起定）
@@ -62,13 +62,13 @@ test 独立验证并把缺陷反馈给 dev。明确各自不负责的工作，�
 保留所选预设的运行配置，用 `--roles-file F`（或 `--roles '<json>'`）交给 CLI：
 
 ```bash
-herdr-team onboard --workflow dev-test-review --roles-file roles.json
+herdr-team init --workflow dev-test-review --roles-file roles.json
 ```
 
 `roles.json` 是确认后的定义输入（形状见下），使用临时文件或用户指定的位置，不往项目中额外创建业务文件。
 **只有用户也原样接受预设职责和模型**时，才用
-`herdr-team onboard --workflow dev-test-review --plan balanced`。自定义流程使用 `--workflow-file F`。
-`init` 是兼容旧项目的底层初始化入口；`onboard` 要求先明确选择或保存工作流。
+`herdr-team init --workflow dev-test-review --plan balanced`。自定义流程使用 `--workflow-file F`。
+工作流和角色选择由 Skill 完成；`init` 只执行确认后的文件写入，不代替对话引导。
 
 已有角色默认跳过；`init --force` 只重写 `.role.yaml`，已有 `prompt.md` 始终保留，缺失时才补齐。
 它不会把输入中的新 `body` 应用到已有正文；改已有角色职责走下方的 `role add --force --body`。
@@ -129,8 +129,8 @@ PR 方案中 test 通过后才发布 PR；review 的通过/拒绝决定是否允
 ## 第五步：核对落盘结果和运行条件
 
 检查 `.herdr/workflow.json`、`identity.md` 和每个角色的元数据、prompt.md。
-`onboard --json` 的 `onboarding.state` 为 `needs-roles` 时继续补齐；`configured` 只表示所需角色齐全，
-还需按项目事实填写 identity，运行 `validate`，核对实际保留的模型和职责。
+用 `workflow show` 和 `role list --json` 对照已确认的工作流与角色定义，补齐缺失职责；
+按项目事实填写 identity，运行 `validate`，核对实际保留的模型和职责。写入成功不等于团队已运行。
 重新 onboard 默认保留已有角色，即使传入了另一套模型方案；修改职责用 `role add NAME --force --body-file F`，
 修改模型也要显式更新启动参数或环境。现有任务使用自己的工作流，不随默认配置改变。
 
@@ -186,7 +186,7 @@ herdr-team role add dev --force --body "你负责实现功能和同步接口文�
 ## 跨机器共享团队配置
 
 默认将 `.herdr/.gitignore`、`identity.md`、`roles/` 和可选的 `workflow.json` 纳入 Git，另一台机器 clone 后即可复用团队定义。
-`init` / `onboard` 会创建以下 `.herdr/.gitignore`；已有文件原样保留，`--force` 也不覆盖：
+`init` 会创建以下 `.herdr/.gitignore`；已有文件原样保留，`--force` 也不覆盖：
 
 ```gitignore
 /tasks/

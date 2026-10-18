@@ -27,13 +27,13 @@ herdr-team --help
 Choose a workflow first, then configure each role’s responsibilities, harness, model, and launch mode together in one table. `dev-test-review` is a recommendation: develop and test in the same local task worktree, publish a PR after testing, and let an independent reviewer approve automatic merge or reject it back to development and testing. `dev-test`, `direct`, and custom workflows are also supported. Confirm responsibilities before accepting a model preset, or supply them with `--roles-file`; see the [CLI guide (Chinese)](cli/README.md) and [team setup reference (Chinese)](skill/references/team-setup.md).
 
 ```sh
-herdr-team onboard --workflow dev-test-review --plan balanced
+herdr-team init --workflow dev-test-review --plan balanced
 herdr-team validate
 ```
 
-Use `workflow list`, `workflow show`, or `workflow set NAME` to inspect or change the optional project defaults in `.herdr/workflow.json`. Custom JSON via `--workflow-file` / `workflow set --file` maps step kinds to your own role names and selects manual or automatic PR merge. Each new task saves its workflow; changing defaults leaves existing tasks intact. `workflow apply ID` explicitly updates an unstarted todo task, which must then be dispatched again. Legacy `init` without a workflow remains available.
+Use `workflow list`, `workflow show`, or `workflow set NAME` to inspect or change the optional project defaults in `.herdr/workflow.json`. Custom JSON via `--workflow-file` / `workflow set --file` maps step kinds to your own role names and selects manual or automatic PR merge. Each new task saves its workflow; changing defaults leaves existing tasks intact. `workflow apply ID` explicitly updates an unstarted todo task, which must then be dispatched again. `init` can also save roles without selecting a workflow; explicit handoff chains remain supported.
 
-The skill guides the conversation; `onboard` saves confirmed choices and reports `choose-workflow`, `needs-roles`, or `configured` in its JSON output. Configured means the required roles exist. Review identity and instructions, run validation, check the selected tools/authentication, then start and dispatch explicitly. Workflow presets add only their step roles and lead; research and docs are optional. Re-onboarding preserves existing roles by default and reports their effective models and modes.
+Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onboard` command; `init` saves confirmed configuration. The skill checks the effective roles with `role list --json`, reads the workflow, and runs validation before starting or dispatching. Existing roles are preserved by default; research and docs are optional. Default help shows five everyday commands; `herdr-team --help --all` lists Skill and maintenance operations. `sidebar` is an internal plugin-hook entry point.
 
 Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project.
 

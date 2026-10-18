@@ -21,7 +21,7 @@ herdr-team <命令>
 安装 Herdr Team 插件后直接运行 `herdr-team`。
 
 团队配置默认纳入 Git，以便跨机器共享 `.herdr/identity.md`、`roles/` 和 `workflow.json`。
-`init` / `onboard` 创建 `.herdr/.gitignore`，忽略 tasks、reports、已删除任务 ID 与 Herdr 本机目录；已有忽略文件原样保留。
+`init` 创建 `.herdr/.gitignore`，忽略 tasks、reports、已删除任务 ID 与 Herdr 本机目录；已有忽略文件原样保留。
 不要整体忽略 `.herdr/`。已有整目录忽略规则由 Skill 按用户约定调整；已跟踪的本机记录只取消 Git 跟踪，保留磁盘文件。
 凭证通过各机器的登录或本机环境提供，不写入共享角色卡。
 
@@ -45,7 +45,7 @@ session ID，没有记录时新建；恢复失败先读错误，不盲目重派�
 
 ## 命令归属
 
-默认只有 `lead` 有权运行编排命令：`onboard`、`workflow set/apply`、`init`、`add`、`edit`、`up`、`dispatch`、`clean`、`down`、`role add`、`role rm`；也可运行 `claim`、`handoff` 和只读查询；队列重试 `queue retry`、手动投递 `queue drain` 同样归 lead。Git 生命周期由 lead/CLI 管理；选定 PR 自动合并时，review 通过 handoff 批准，由 CLI 执行合并，不由角色直接运行 Git merge。这些是提示词约定，CLI 不做角色权限拦截。
+默认只有 `lead` 有权运行编排命令：`workflow set/apply`、`init`、`add`、`edit`、`up`、`dispatch`、`clean`、`down`、`role add`、`role rm`；也可运行 `claim`、`handoff` 和只读查询；队列重试 `queue retry`、手动投递 `queue drain` 同样归 lead。Git 生命周期由 lead/CLI 管理；选定 PR 自动合并时，review 通过 handoff 批准，由 CLI 执行合并，不由角色直接运行 Git merge。这些是提示词约定，CLI 不做角色权限拦截。
 
 非 lead 角色：在 herdr-team 命令中，你只能跑 `claim <id> --delivery ID`、`handoff <id> --delivery ID` 和只读查询（`tasks`、`status`、`validate`、`role list`）。建卡、改卡、派活、起 worktree、起停 agent、增删角色、清理都交给 `lead`。
 
@@ -76,10 +76,10 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 明确 PR 手动/自动合并策略后，用一张表一起列出角色名、职责、边界、交付与交棒方式、harness、模型和是否隔离，不拆成两轮确认。
 按角色职责选择模型，以 `cheap` / `balanced` / `strong` 为起点（**拿不准用 balanced**）。
 需要确认的边界要问清，例如 lead 的编排范围、dev 是否同步文档、test 只验证还是也改代码。
-等用户确认流程与整份分工后，把职责写进每个角色的 `body`，用 `onboard --workflow NAME --roles-file F` 落盘；
-自定义流程用 `--workflow-file W`。只有用户连预设职责正文也原样接受时才用 `onboard --workflow NAME --plan P`。
-`onboard --json` 会报告 choose-workflow、needs-roles 或 configured，以及实际保留的角色、模型和启动方式。
-configured 仅表示角色配置齐全；先检查 identity、validate 和所需工具/登录，再按用户意图启动与派活。onboard 自身不启动或发送任务。
+等用户确认流程与整份分工后，把职责写进每个角色的 `body`，用 `init --workflow NAME --roles-file F` 落盘；
+自定义流程用 `--workflow-file W`。只有用户连预设职责正文也原样接受时才用 `init --workflow NAME --plan P`。
+onboard 是本 Skill 的对话流程，CLI 没有同名命令。用 `role list --json`、`workflow show` 核对实际角色、模型、启动配置和流程，缺什么补什么。
+再检查 identity、validate 和所需工具/登录，按用户意图启动与派活；`init` 只保存配置。
 随时可用 `workflow set NAME` 或 `--file F` 调整默认流程；旧任务保留创建时的流程副本。
 只有未开始的 todo 卡可 `workflow apply ID`，之后重新 dispatch。已投递任务先核对与收回，不自动迁移。
 
@@ -91,11 +91,13 @@ configured 仅表示角色配置齐全；先检查 identity、validate 和所需
 
 ## 命令表
 
+默认 CLI 帮助只展示日常入口；本 Skill 的操作接口可用 `herdr-team --help --all` 查询。
+`sidebar` 由插件 hook 自动调用，作为内部维护入口保留，不要求用户手动执行。
+
 | 命令 | 作用 |
 | --- | --- |
-| `onboard --workflow W --plan P` | 先选流程，再按流程确定角色和模型；也支持 `--workflow-file` / `--roles-file` |
 | `workflow list/show/set/apply` | 查询、调整可选工作流；set 影响新任务，apply 只改未开始任务 |
-| `init --plan P` | 建 `.herdr/` 骨架并写角色卡。方案：`cheap` / `balanced` / `strong` |
+| `init --roles-file F` | 保存确认后的角色定义，可附带 workflow；原样接受预设时可用 `--plan P` |
 | `validate` | 校验 `.herdr/`：角色卡、任务卡、引用完整性、依赖环 |
 | `add <title>` | 建一张任务卡（算 id、译 slug、校验引用、写卡） |
 | `edit <id>` | 改一张卡；已派出的要 `--force`，终态的不许改 |

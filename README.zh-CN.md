@@ -27,18 +27,18 @@ herdr-team --help
 先选择工作流，再用一张表一起配置各角色的职责、harness、模型和启动方式。推荐 `dev-test-review`：dev/test 在同一本地任务 worktree 完成开发和测试，通过后发布 PR，独立 review 决定批准自动合并或退回开发和测试。也可以选择 `dev-test`、`direct` 或自定义流程。模型预设只决定模型，不能代替职责确认；自定义职责用 `--roles-file`。详见 [CLI 指南](cli/README.md) 和[团队设置参考](skill/references/team-setup.md)。
 
 ```sh
-herdr-team onboard --workflow dev-test-review --plan balanced
+herdr-team init --workflow dev-test-review --plan balanced
 herdr-team validate
 ```
 
 使用 `workflow list/show/set NAME` 查询或调整 `.herdr/workflow.json` 中的默认流程。
 `--workflow-file` / `workflow set --file` 支持自定义步骤职责对应的角色名，以及 PR 手动或自动合并。
 每张任务保存创建时的流程副本，更改默认值不移动已有任务。`workflow apply ID` 可显式调整未开始的 todo 卡，之后重新 dispatch。
-未选择工作流时，仍可使用原有 `init` 和显式 handoff 链。
+未选择工作流时，也可用 `init` 保存角色，并通过显式 handoff 链交接。
 
-Skill 负责对话引导，`onboard` 保存已确认的选择；JSON 中用 `choose-workflow`、`needs-roles`、`configured` 区分进度。
-configured 只表示角色齐全，之后仍需核对 identity 和职责、运行校验、检查所需工具与登录，再明确启动和派活。
-流程预设只添加 lead 和步骤角色，研究与文档角色按需选择。重新 onboard 默认保留已有角色，并报告实际生效的模型和启动方式。
+onboard 由 herdr-team Skill 对话引导，CLI 不提供 `onboard` 命令；`init` 只保存已确认的配置。
+Skill 用 `role list --json`、`workflow show` 和 `validate` 核对实际配置，再检查所需工具与登录，明确启动和派活。
+已有角色默认保留，研究与文档角色按需选择。默认帮助只列五个日常命令，`herdr-team --help --all` 列出 Skill 与维护接口；`sidebar` 属于插件 hook 内部入口。
 
 检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
