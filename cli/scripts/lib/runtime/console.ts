@@ -33,6 +33,8 @@ export function acquireConsole(project: Project): { stopped(): boolean; close():
     const current = owner(project);
     if (current && processAlive(current.pid)) throw new Error("Team Console is already running for this project");
     writeRecord(file, record);
+    const ticket = runtimePath(project, "console-launch.json");
+    if (existsSync(ticket)) unlinkSync(ticket);
   });
   return {
     stopped: () => existsSync(stop) && readFileSync(stop, "utf8") === record.nonce,

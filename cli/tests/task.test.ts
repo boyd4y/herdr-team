@@ -10,7 +10,7 @@ import {
   TaskError,
 } from "../scripts/lib/tasks/cards.ts";
 import { TASK_BODY, TASK_META, type Project } from "../scripts/lib/shared/types.ts";
-import { emitYaml, parseYaml, scalar } from "../scripts/lib/shared/yaml.ts";
+import { emitYaml, parseYaml } from "../scripts/lib/shared/yaml.ts";
 import { makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 function withProject(build: (root: string) => void, run: (p: Project) => void): void {
@@ -84,11 +84,9 @@ describe("createTask —— 写出的东西", () => {
       expect(existsSync(join(created.path, TASK_BODY))).toBe(true);
 
       const meta = readFileSync(join(created.path, TASK_META), "utf8");
-      expect(meta).toContain("title: Fix login timeout");
-      expect(meta).toContain("priority: P1");
-      expect(meta).toContain("status: todo");
-      expect(meta).toContain("role: dev");
-      expect(meta).toContain("handoff: [docs]");
+      expect(parseYaml(meta)).toMatchObject({
+        title: "Fix login timeout", priority: "P1", status: "todo", role: "dev", handoff: ["docs"],
+      });
       // id 不在元数据里 —— 身份来自目录名，不重复存
       expect(meta).not.toContain("id:");
 
@@ -173,32 +171,28 @@ describe("editTask", () => {
   });
 });
 
-describe("YAML 输出器", () => {
-  test("数字开头的值加引号", () => {
-    expect(scalar("0001")).toBe('"0001"');
+describe("metadata YAML round trips", () => {
+  test("preserves strings, nested delivery records, environment keys and scalar types", () => {
+    const data = {
+      title: "一个任务: Unicode 𠮷",
+      handoff: ["docs"], depends_on: ["0001"], args: ["-m", "gpt-6.1-sol"],
+      env: { "key: value": "#value", "trailing:": "a: b", "true": "no" },
+      strings: ["true", "false", "null", "no", "y", "0001", "1e3", "", "a\nb\n", " trailing "],
+      enabled: true, count: 42, empty: null, missing: undefined,
+      delivery: { id: "0001", state: "claimed", reason: "Ready\nProceed", extra: { attempts: [1, 2] } },
+    };
+    const saved = emitYaml(data, ["title", "handoff", "args"]);
+    const parsed = parseYaml(saved);
+    const { missing, ...expected } = data;
+    expect(parsed).toEqual(expected);
+    expect(Object.keys(parsed!).slice(0, 3)).toEqual(["title", "handoff", "args"]);
+    expect(parseYaml(emitYaml({ handoff: [], env: {} }))).toEqual({ handoff: [], env: {} });
   });
 
-  test("YAML 关键字加引号", () => {
-    expect(scalar("true")).toBe('"true"');
-    expect(scalar("no")).toBe('"no"');
-    expect(scalar("y")).toBe('"y"');
-  });
-
-  test("含冒号的值加引号", () => {
-    expect(scalar("a: b")).toBe('"a: b"');
-  });
-
-  test("空数组和列表", () => {
-    expect(emitYaml({ handoff: [], depends_on: [] })).toBe("handoff: []\ndepends_on: []\n");
-    expect(emitYaml({ handoff: ["docs"] })).toBe("handoff: [docs]\n");
-  });
-
-  test("嵌套映射写成块", () => {
-    expect(emitYaml({ env: { ANTHROPIC_MODEL: "ds-flash" } })).toBe("env:\n  ANTHROPIC_MODEL: ds-flash\n");
-  });
-
-  test("能被解析回来", () => {
-    const data = { title: "一个任务", handoff: ["docs"], args: ["-m", "gpt-6.1-sol"] };
-    expect(parseYaml(emitYaml(data, ["title", "handoff", "args"]))).toEqual(data);
+  test("rejects malformed and non-mapping metadata documents", () => {
+    for (const text of ["invalid: yaml: content:", "[dev, test]", "scalar", "---\na: 1\n---\nb: 2"]) {
+      expect(parseYaml(text)).toBeNull();
+    }
+    expect(parseYaml("")).toEqual({});
   });
 });

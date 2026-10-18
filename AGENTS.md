@@ -31,7 +31,8 @@ and summaries in their original language; Unicode input remains supported.
 # Role prompts and shared context
 
 - Maintain reusable role prompts in `skill/assets/roles/<role>/prompt.md` and model
-  plans in `skill/assets/plans.json`; do not embed these texts or catalogs in code.
+  plans in `skill/assets/plans.json`, and the shared identity template in
+  `skill/assets/identity.md`; do not embed these texts or catalogs in code.
 - Role `prompt.md`: define the role's responsibilities, allowed scope, boundaries,
   and expected deliverables. Direct agents to the herdr-team skill for procedures;
   do not copy command catalogs, workflow rules, or handoff/PR/merge recipes here.
@@ -70,3 +71,9 @@ and terminal lifecycle. Keep application code to data models, component assembly
 and business key bindings. Do not add a custom ANSI renderer, escape-sequence
 parser, raw-mode loop, or replacement widget toolkit. Use OpenTUI's test renderer
 for interaction tests; keep plain `--once` and `--line` output independent of it.
+
+Use runtime or established library APIs for generic serialization and formatting.
+YAML syntax and quoting belong to `Bun.YAML`; the metadata adapter only orders
+fields and checks the document shape. Do not add a custom YAML writer. Use
+`Bun.stringWidth` and `Intl.Segmenter` for plain table text instead of hand-maintained
+Unicode width ranges; interactive text layout stays with OpenTUI.

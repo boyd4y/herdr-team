@@ -69,7 +69,6 @@ function projectOf(tasks: TaskCard[], roles: RoleCard[] = [DEV, TEST]): Project 
 const freshState = (over: Partial<ConsoleState> = {}): ConsoleState => ({
   showAll: false,
   query: "",
-  searching: false,
   selectedId: null,
   selectedIndex: 0,
   loadError: null,
@@ -134,13 +133,11 @@ describe("buildModel", () => {
   test("搜索沿用 showAll 范围，保持全局计数和健康检查，空结果取消选中", () => {
     const project = projectOf([DOING, TODO, DONE]);
     const build = (over: Partial<ConsoleState>) =>
-      buildModel(project, fakeHerdr(), freshState(over), "", 2);
+      buildModel(project, fakeHerdr(), freshState(over), "");
     const filtered = build({ query: "test", selectedId: DOING.id, selectedIndex: 0 });
     expect(filtered.tasks).toEqual([TODO]);
     expect(filtered.selectedIndex).toBe(0);
     expect(filtered.candidateCount).toBe(2);
-    expect(filtered.openCount).toBe(2);
-    expect(filtered.totalCount).toBe(3);
     expect(filtered.roles).toHaveLength(2);
     expect(filtered.inconsistencies.map((i) => i.id)).toContain(DOING.id);
     const all = build({ query: "test", showAll: true });
@@ -159,7 +156,7 @@ describe("buildModel", () => {
     dead.agentList = () => {
       throw new Error("herdr 没了");
     };
-    const m = buildModel(projectOf([DOING]), dead, freshState(), "00:00:00", 2);
+    const m = buildModel(projectOf([DOING]), dead, freshState(), "00:00:00");
 
     expect(m.herdrOk).toBe(false);
     expect(m.inconsistencies).toEqual([]);
@@ -167,7 +164,7 @@ describe("buildModel", () => {
 
   test("herdr 活着但没有 agent 时，照常报 agent-missing", () => {
     // 和上一条对照：证明上面那个闸门确实在做事情，而不是把报告全关了。
-    const m = buildModel(projectOf([DOING]), fakeHerdr(), freshState(), "00:00:00", 2);
+    const m = buildModel(projectOf([DOING]), fakeHerdr(), freshState(), "00:00:00");
 
     expect(m.herdrOk).toBe(true);
     expect(m.inconsistencies.map((i) => i.kind)).toContain("agent-missing");
@@ -180,7 +177,7 @@ describe("formatStatusLine", () => {
 
   const line = (tasks: TaskCard[], herdr: FakeHerdr = fakeHerdr(), roles = RESIDENT): string =>
     formatStatusLine(
-      buildModel(projectOf(tasks, roles), herdr, freshState(), "", 0),
+      buildModel(projectOf(tasks, roles), herdr, freshState(), ""),
     );
 
   /** 一个"正在干活"的常驻 agent —— 让 doing 卡不再产出不一致。 */
@@ -291,9 +288,11 @@ describe("formatStatusLine", () => {
 describe("OpenTUI Console", () => {
   async function setup(project = projectOf([DOING, TODO, DONE])) {
     const screen = await createTestRenderer({ width: 110, height: 32 });
-    const app = mountConsole(screen.renderer, { initial: project, load: () => project, herdr: fakeHerdr(),
-      intervalMs: 0, intervalSeconds: 2, showAll: false });
-    return { ...screen, app, project };
+    let polls = 0;
+    const h = fakeHerdr(); h.agentList = () => { polls++; return h.state.agents; };
+    const app = mountConsole(screen.renderer, { initial: project, load: () => project, herdr: h,
+      intervalMs: 0, showAll: false });
+    return { ...screen, app, project, polls: () => polls };
   }
 
   test("renders task details, native selection, responsive layout and scrolling", async () => {
@@ -322,15 +321,27 @@ describe("OpenTUI Console", () => {
     const card = task("0001", "unicode", "中文𠮷qj", "P1", "todo", "dev");
     const ui = await setup(projectOf([card, TODO]));
     try {
+      const polls = ui.polls();
       ui.mockInput.pressKey("/");
       await ui.mockInput.pasteBracketedText("中文𠮷qj");
       await ui.renderOnce();
       expect(ui.renderer.isDestroyed).toBe(false);
       expect(ui.app.model.query).toBe("中文𠮷qj");
       expect(ui.app.model.tasks.map((t) => t.id)).toEqual([card.id]);
+      expect(ui.polls()).toBe(polls);
+      expect(ui.captureCharFrame()).toContain("team: 2 todo");
+      ui.mockInput.pressEnter();
+      await ui.renderOnce();
+      const search = ui.renderer.root.findDescendantById("search")!;
+      await ui.mockMouse.click(search.x + 1, search.y);
+      ui.mockInput.pressKey("END");
+      ui.mockInput.pressKey("q");
+      expect(ui.renderer.isDestroyed).toBe(false);
+      expect(ui.app.model.query).toBe("中文𠮷qjq");
       await ui.mockInput.typeText("z");
       await ui.renderOnce();
       expect(ui.captureCharFrame()).toContain("No matching tasks");
+      expect(ui.app.model.selectedIndex).toBe(-1);
       ui.mockInput.pressEscape();
       await Bun.sleep(50); // Bare ESC waits for the native parser to rule out an escape sequence.
       await ui.waitFor(() => ui.app.model.query === "");
@@ -358,12 +369,12 @@ describe("OpenTUI Console", () => {
 
   test("refresh failure preserves data, reports error, recovers, and stop closes the renderer", async () => {
     const screen = await createTestRenderer({ width: 110, height: 32 });
-    let fail = false, stop = false, ticks = 0;
-    const project = projectOf([TODO]);
+    let fail = false, stop = false, ticks = 0, tickFail = false;
+    let project = projectOf([TODO]);
     const app = mountConsole(screen.renderer, { initial: project, herdr: fakeHerdr(),
       load: () => { if (fail) throw new Error("Could not read project"); return project; },
-      tick: () => { ticks++; }, shouldQuit: () => stop,
-      intervalMs: 0, intervalSeconds: 2, showAll: false });
+      tick: () => { ticks++; if (tickFail) throw new Error("Queue paused"); }, shouldQuit: () => stop,
+      intervalMs: 0, showAll: false });
     try {
       expect(ticks).toBe(1);
       fail = true; app.refresh();
@@ -371,6 +382,12 @@ describe("OpenTUI Console", () => {
       expect(screen.captureCharFrame()).toContain("Could not read project");
       expect(app.model.tasks).toEqual([TODO]);
       fail = false; app.refresh();
+      expect(app.model.loadError).toBeNull();
+      tickFail = true; project = projectOf([DOING, TODO]); app.refresh();
+      expect(app.model.tasks).toEqual([DOING, TODO]);
+      await screen.renderOnce();
+      expect(screen.captureCharFrame()).toContain("Queue paused");
+      tickFail = false; app.refresh();
       expect(app.model.loadError).toBeNull();
       const before = ticks;
       stop = true; app.refresh();
@@ -380,11 +397,34 @@ describe("OpenTUI Console", () => {
     } finally { await screen.dispose(); }
   });
 
+  test("malformed task records and ambiguous agents stay visible and recover without exiting", async () => {
+    const screen = await createTestRenderer({ width: 110, height: 32 });
+    const broken = deliveryTask("0001", "invalid");
+    const project = projectOf([broken, TODO], [role("dev"), TEST]);
+    broken.meta.integration = "corrupt";
+    const h = fakeHerdr();
+    h.live("dev"); h.live("dev");
+    for (const agent of h.state.agents) agent.tokens = { team_project: projectKey(project), team_role: "dev" };
+    try {
+      const app = mountConsole(screen.renderer, { initial: project, load: () => project, herdr: h,
+        intervalMs: 0, showAll: false });
+      await screen.renderOnce();
+      expect(screen.renderer.isDestroyed).toBe(false);
+      expect(screen.captureCharFrame()).toContain("NEEDS YOU");
+      expect(renderOnce(project, h, { showAll: false })).toContain("integration: invalid");
+      expect(renderOnce(project, h, { showAll: false })).toContain("ambiguous");
+      delete broken.meta.integration; delete broken.meta.delivery;
+      h.state.agents.pop(); app.refresh();
+      expect(app.model.problems).toEqual([]);
+      expect(app.model.taskAgents.get(broken.id)?.name).toBe("dev");
+    } finally { await screen.dispose(); }
+  });
+
   test("plain output remains read-only, complete and free of terminal controls", () => {
     const project = projectOf([{ ...TODO, body: "Safe body\x1b[31m" }, DONE]);
     const h = fakeHerdr();
-    expect(renderOnce(project, h, { showAll: false, intervalSeconds: 2 })).not.toContain(DONE.title);
-    const all = renderOnce(project, h, { showAll: true, intervalSeconds: 2 });
+    expect(renderOnce(project, h, { showAll: false })).not.toContain(DONE.title);
+    const all = renderOnce(project, h, { showAll: true });
     expect(all).toContain(DONE.title);
     expect(all).toContain("TASKS");
     expect(all).not.toContain("\x1b");

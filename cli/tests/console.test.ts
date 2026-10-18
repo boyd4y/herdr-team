@@ -49,6 +49,16 @@ test("a live Console owner is reused, without sending more terminal input", () =
   }
 }));
 
+test("Console can restart immediately after its registered owner exits", () => fixture((root, h) => {
+  const p = loadProject(root);
+  expect(ensureConsole(p, h, "w1").action).toBe("started");
+  const lease = acquireConsole(p);
+  lease.close();
+  expect(ensureConsole(p, h, "w1").action).toBe("started");
+  expect(h.calls.filter((call) => call.startsWith("pane run"))).toHaveLength(2);
+  expect(h.calls.filter((call) => call.startsWith("tab create Team Console"))).toHaveLength(1);
+}));
+
 test("a busy Console pane is never overwritten", () => fixture((root, h) => {
   const p = loadProject(root);
   ensureConsole(p, h, "w1");
@@ -98,7 +108,7 @@ test("Console drives queued delivery and restores the terminal when quitting", a
     const screen = await createTestRenderer({ width: 120, height: 45 });
     try {
       mountConsole(screen.renderer, { initial: p, load: () => loadProject(f.root), herdr: h,
-        intervalMs: 0, intervalSeconds: 2, showAll: false,
+        intervalMs: 0, showAll: false,
         tick: () => { pumpQueue(loadProject(f.root), h); } });
       await screen.renderOnce();
       expect(screen.captureCharFrame()).toContain("Team Console");

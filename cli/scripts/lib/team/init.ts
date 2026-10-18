@@ -1,4 +1,4 @@
-import { rolePrompt } from "./templates.ts";
+import { readAsset, rolePrompt } from "./templates.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { KINDS, NAME_RE, ROLE_BODY, ROLE_META, type Project } from "../shared/types.ts";
@@ -6,19 +6,6 @@ import { emitYaml } from "../shared/yaml.ts";
 
 /** 角色元数据里键的顺序。**不含 `name`** —— 角色名就是目录名，不重复存。 */
 export const ROLE_FIELD_ORDER = ["kind", "model", "worktree", "cwd", "args", "env"];
-
-const IDENTITY_TEMPLATE = `# Identity
-
-<Describe who you are and what you work on.>
-
-## Code conventions
-
-- <Validation commands and commit conventions.>
-
-## Preferences
-
-- <Shared preferences for the team.>
-`;
 
 const GITIGNORE_TEMPLATE = `# Share team configuration; keep local execution records out of Git.
 /tasks/
@@ -146,7 +133,7 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
   if (existsSync(identityPath)) {
     skipped.push("identity.md");
   } else {
-    writeFileSync(identityPath, IDENTITY_TEMPLATE);
+    writeFileSync(identityPath, readAsset("identity.md"));
     created.push("identity.md");
   }
 

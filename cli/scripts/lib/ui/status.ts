@@ -1,5 +1,5 @@
 import { integrationFor, taskScoped } from "../tasks/verification.ts";
-import { findRoleAgent, projectAgents } from "../dispatch/team-scope.ts";
+import { roleAgents, projectAgents } from "../dispatch/team-scope.ts";
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
 import { padTo, truncate } from "../shared/text.ts";
 import { deliveryState, waitingDelivery } from "../dispatch/delivery.ts";
@@ -37,6 +37,12 @@ export interface StatusReport {
   inconsistencies: Inconsistency[];
 }
 
+/** Read-only views expose malformed records; mutation paths retain strict validation. */
+export function integrationStatus(task: TaskCard) {
+  try { return integrationFor(task); }
+  catch { return { state: "invalid" as const }; }
+}
+
 function loadAgents(project: Project, herdr: Herdr): AgentInfo[] {
   try {
     return projectAgents(project, herdr);
@@ -56,18 +62,19 @@ export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleSta
   return project.roles.map((role) => {
     const owned = project.tasks.filter((t) => t.role === role.name && !isTerminal(t.status));
     const queue = owned.some((t) => deliveryState(t)) ? {
-      current: owned.filter((t) => !integrationFor(t) && !waitingDelivery(t) && (deliveryState(t) || t.status !== "todo")).map((t) => t.id),
+      current: owned.filter((t) => !integrationStatus(t) && !waitingDelivery(t) && (deliveryState(t) || t.status !== "todo")).map((t) => t.id),
       queued: owned.filter(waitingDelivery).length,
     } : {};
     if (role.name !== "lead" && (role.worktree || owned.some((t) => taskScoped(t)))) {
       // 隔离角色的 agent 跟着任务走，没有常驻的那个。
       return { role: role.name, agent: null, herdrStatus: "per-task", paneId: null, worktree: true, ...queue };
     }
-    const live = findRoleAgent(project, agents, role);
+    const matches = roleAgents(project, agents, role);
+    const live = matches.length === 1 ? matches[0] : undefined;
     return {
       role: role.name,
       agent: live?.name ?? null,
-      herdrStatus: live?.agent_status ?? "absent",
+      herdrStatus: matches.length > 1 ? "ambiguous" : live?.agent_status ?? "absent",
       paneId: live?.pane_id ?? null,
       worktree: false,
       ...queue,
@@ -88,7 +95,7 @@ export function findInconsistencies(
 
   for (const task of project.tasks) {
     if (isTerminal(task.status)) continue;
-    const integration = integrationFor(task);
+    const integration = integrationStatus(task);
     if (integration) {
       if (integration.state === "blocked") out.push({ kind: "integration-blocked", id: task.id, message: `${task.id}: integration blocked; inspect merge list before retrying` });
       continue;
@@ -107,7 +114,12 @@ export function findInconsistencies(
     if (role === undefined) continue;
 
     const agentName = taskScoped(task, role) ? isolatedAgentName(role.name, task.id) : task.role;
-    const live = findRoleAgent(project, agents, role, taskScoped(task, role) ? task.id : undefined);
+    const matches = roleAgents(project, agents, role, taskScoped(task, role) ? task.id : undefined);
+    if (matches.length > 1) {
+      out.push({ kind: "agent-ambiguous", id: task.id, message: `${task.id}: multiple agents match ${agentName}; resolve the assignment before dispatch` });
+      continue;
+    }
+    const live = matches[0];
     const status = live?.agent_status ?? "absent";
 
     if (task.status === "doing") {
@@ -171,6 +183,7 @@ export function formatTasks(tasks: TaskCard[], roles: RoleCard[]): string {
 
 /** 单张任务详情不截断标题，正文按原文附在元数据之后。 */
 export function formatTaskDetail(task: TaskCard): string {
+  const integration = integrationStatus(task);
   return [
     `id: ${task.id}`,
     `title: ${task.title}`,
@@ -181,7 +194,7 @@ export function formatTaskDetail(task: TaskCard): string {
     `dependsOn: [${task.dependsOn.join(", ")}]`,
     `repo: ${task.repo}`,
     `dir: ${task.dir}`,
-    ...(integrationFor(task) ? [`integration: ${integrationFor(task)!.state} ${integrationFor(task)!.commit}`] : []),
+    ...(integration ? [`integration: ${integration.state}${"commit" in integration ? ` ${integration.commit}` : ""}`] : []),
     ...(deliveryState(task) ? [`delivery: ${deliveryState(task)}`] : []),
     "",
     task.body,
@@ -198,7 +211,7 @@ export function formatReport(report: StatusReport): string {
   } else {
     lines.push(`  ${pad("id", 6)}${pad("title", 28)}${pad("priority", 10)}${pad("status", 10)}${pad("role", 16)}delivery`);
     for (const t of report.tasks) {
-      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(t.status, 10)}${pad(t.role, 16)}${integrationFor(t) ? `merge-${integrationFor(t)!.state}` : deliveryState(t) ?? "—"}`);
+      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(t.status, 10)}${pad(t.role, 16)}${integrationStatus(t) ? `merge-${integrationStatus(t)!.state}` : deliveryState(t) ?? "—"}`);
     }
   }
 

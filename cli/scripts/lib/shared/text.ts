@@ -1,19 +1,8 @@
 /** Formatting helpers for plain status tables; interactive layout belongs to OpenTUI. */
 
-/**
- * 宽字符（东亚）判定。
- *
- * **不要加 `g` 标志** —— 带 `g` 的正则 `.test()` 会记住 `lastIndex`，连续调用时
- * 结果随机跳，这种 bug 极难查。
- */
-const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠]/;
-
-/** 这段字符串在终端里占几列。 */
-export function displayWidth(s: string): number {
-  let w = 0;
-  for (const ch of s) w += WIDE.test(ch) ? 2 : 1;
-  return w;
-}
+/** Bun owns Unicode terminal width; Intl segments complete grapheme clusters. */
+export function displayWidth(s: string): number { return Bun.stringWidth(s); }
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /** 补空格到指定显示宽度。已经超过就不动（本函数不截断）。 */
 export function padTo(s: string, width: number): string {
@@ -34,8 +23,8 @@ export function truncate(s: string, width: number): string {
   const budget = width - 1; // 留一格给省略号
   let out = "";
   let w = 0;
-  for (const ch of s) {
-    const cw = WIDE.test(ch) ? 2 : 1;
+  for (const { segment: ch } of graphemes.segment(s)) {
+    const cw = displayWidth(ch);
     if (w + cw > budget) break;
     out += ch;
     w += cw;

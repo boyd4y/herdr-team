@@ -459,7 +459,6 @@ async function cmdConsole(args: string[]): Promise<number> {
     process.stdout.write(
       renderOnce(project, herdrClient(), {
         showAll,
-        intervalSeconds: seconds,
       }),
     );
     if (!interactive && !parsed.flags.has("once")) {
@@ -479,7 +478,6 @@ async function cmdConsole(args: string[]): Promise<number> {
     load: () => loadProject(root),
     herdr,
     intervalMs: seconds * 1000,
-    intervalSeconds: seconds,
     showAll,
     tick: observe ? undefined : () => { pumpQueue(loadValidated(root), herdr, new Date(), () => lease!.stopped()); },
     shouldQuit: () => lease?.stopped() ?? false,

@@ -107,12 +107,17 @@ export function roleAssignment(project: Project, agent: AgentInfo): { role: Role
   return null;
 }
 
-/** Input must already be project-filtered; more than one match must not choose arbitrarily. */
-export function findRoleAgent(project: Project, agents: AgentInfo[], role: RoleCard, taskId?: string): AgentInfo | undefined {
-  const matches = agents.filter((agent) => {
+/** Input must already be project-filtered; observation may show ambiguous matches. */
+export function roleAgents(project: Project, agents: AgentInfo[], role: RoleCard, taskId?: string): AgentInfo[] {
+  return agents.filter((agent) => {
     const assignment = roleAssignment(project, agent);
     return assignment?.role.name === role.name && assignment.taskId === taskId;
   });
+}
+
+/** Mutations require exactly one target and never choose an ambiguous match. */
+export function findRoleAgent(project: Project, agents: AgentInfo[], role: RoleCard, taskId?: string): AgentInfo | undefined {
+  const matches = roleAgents(project, agents, role, taskId);
   if (matches.length > 1) throw new TeamScopeError(`Role ${role.name}${taskId ? `/${taskId}` : ""} matches multiple project agents; refusing to guess`);
   return matches[0];
 }

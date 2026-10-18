@@ -19,6 +19,8 @@ Skill 把用户确认的流程写入 `.herdr/workflow.md`；格式和变更规�
 可复用职责模板按角色保存在 [assets/roles](../assets/roles)：lead、dev、test、search、docs、review；
 每个目录只有 `prompt.md`，通用职责放在 default。按当前职责选择、阅读并调整所需模板，不整套加载。
 模型方案是 [assets/plans.json](../assets/plans.json)，与职责正文分开维护。
+项目背景模板是 [assets/identity.md](../assets/identity.md)；CLI 仅在项目缺失 identity 时复制，
+Skill 结合项目事实填写背景、约定引用与偏好，不放角色指令或工作流步骤，已有内容保留。
 CLI 对未提供 body 的新角色按同名模板初始化，未知角色用 default；已有正文不随模板更新自动改写。
 例如临时 `roles.json` 的输入形状：
 

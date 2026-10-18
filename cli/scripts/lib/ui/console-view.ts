@@ -6,16 +6,15 @@ import {
 import type { Project } from "../shared/types.ts";
 import type { Herdr } from "../runtime/herdr.ts";
 import { deliveryFor, deliveryState } from "../dispatch/delivery.ts";
-import { integrationFor } from "../tasks/verification.ts";
+import { integrationStatus } from "./status.ts";
 import { sanitize } from "../shared/text.ts";
-import { buildModel, formatStatusLine, initialState } from "./console-model.ts";
+import { buildModel, formatStatusLine, initialState, selectTasks, type ConsoleModel } from "./console-model.ts";
 
 export interface ConsoleOptions {
   initial: Project;
   load: () => Project;
   herdr: Herdr;
   intervalMs: number;
-  intervalSeconds: number;
   showAll: boolean;
   tick?: () => void;
   shouldQuit?: () => boolean;
@@ -25,7 +24,7 @@ export interface ConsoleOptions {
 export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
   const state = initialState(options.showAll);
   let project = options.initial;
-  let model = buildModel(project, options.herdr, state, "", options.intervalSeconds);
+  let model: ConsoleModel;
   let updating = false;
   let stopped = false;
   const root = new BoxRenderable(renderer, { id: "team-console", width: "100%", height: "100%", flexDirection: "column" });
@@ -53,11 +52,11 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     const task = model.tasks[tasks.getSelectedIndex()];
     const changed = state.selectedId !== (task?.id ?? null);
     state.selectedId = task?.id ?? null;
-    state.selectedIndex = tasks.getSelectedIndex();
+    state.selectedIndex = task ? tasks.getSelectedIndex() : -1;
     model.selectedIndex = state.selectedIndex;
     const live = task && model.taskAgents.get(task.id);
-    const flow = task && (integrationFor(task)?.state ?? deliveryState(task) ?? "not queued");
-    const delivery = task && deliveryFor(task);
+    const flow = task && (integrationStatus(task)?.state ?? deliveryState(task) ?? "not queued");
+    const delivery = task && deliveryState(task) !== "invalid" ? deliveryFor(task) : undefined;
     detailText.content = task ? sanitize([
       `#${task.id} ${task.title}`, `${task.priority} · ${task.status} · ${task.role}`,
       `Delivery: ${flow}${delivery ? ` · ${delivery.id.slice(0, 8)} · ${delivery.reason ?? ""}` : ""}`,
@@ -72,11 +71,13 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     if (stopped || renderer.isDestroyed) return;
     if (options.shouldQuit?.()) { renderer.destroy(); return; }
     if (reload) {
-      try { options.tick?.(); project = options.load(); state.loadError = null; }
-      catch (error) { state.loadError = error instanceof Error ? error.message : String(error); }
-    }
-    model = buildModel(project, options.herdr, state, new Date().toLocaleTimeString("en-GB"), options.intervalSeconds);
-    heading.content = sanitize(`Team Console · ${model.projectName} · ${formatStatusLine(model)} · ${model.now}`);
+      const errors: string[] = [];
+      try { options.tick?.(); } catch (error) { errors.push(String(error instanceof Error ? error.message : error)); }
+      try { project = options.load(); } catch (error) { errors.push(String(error instanceof Error ? error.message : error)); }
+      state.loadError = errors.join(" · ") || null;
+      model = buildModel(project, options.herdr, state, new Date().toLocaleTimeString("en-GB"));
+    } else model = { ...model, ...selectTasks(project, state) };
+    heading.content = sanitize(`Team Console · ${model.projectName} · ${formatStatusLine(model, project.tasks)} · ${model.now}`);
     const counts = model.pending;
     const pendingParts = [["waiting", counts.waiting], ["delivering", counts.delivering], ["claimed", counts.claimed],
       ["needs you", counts.needsYou], ["integration", counts.integration]] as const;
@@ -108,9 +109,9 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
   const input = () => { state.query = search.value; refresh(false); };
   const keypress = (key: KeyEvent) => {
     const consume = () => { key.preventDefault(); key.stopPropagation(); };
-    if (state.searching) {
+    if (search.focused) {
       if (key.name === "escape" || key.name === "return" || key.name === "enter") {
-        consume(); state.searching = false;
+        consume();
         if (key.name === "escape") { search.value = ""; state.query = ""; search.visible = false; refresh(false); }
         tasks.focus();
       }
@@ -123,7 +124,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
         if (state.query) { state.query = ""; search.value = ""; search.visible = false; refresh(false); }
         else renderer.destroy();
         break;
-      case "/": consume(); state.searching = true; search.visible = true; search.focus(); break;
+      case "/": consume(); search.visible = true; search.focus(); break;
       case "a": consume(); state.showAll = !state.showAll; refresh(false); break;
       case "r": consume(); refresh(); break;
       case "pageup": consume(); details.scrollBy(-Math.max(1, renderer.height - 8)); break;

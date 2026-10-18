@@ -9,6 +9,13 @@ describe("displayWidth", () => {
     expect(displayWidth("0015 中文 ok")).toBe(12); // 4 + 1 + 4 + 1 + 2
   });
 
+  test("handles non-BMP characters, emoji clusters and combining marks", () => {
+    expect(displayWidth("𠮷😀e\u0301")).toBe(5);
+    expect(displayWidth("👨‍👩‍👧‍👦")).toBe(2);
+    expect(truncate("👨‍👩‍👧‍👦abc", 3)).toBe("👨‍👩‍👧‍👦…");
+    expect(truncate("e\u0301abc", 2)).toBe("e\u0301…");
+  });
+
   test("全角标点算两列，省略号算一列", () => {
     expect(displayWidth("（）")).toBe(4);
     expect(displayWidth("…")).toBe(1);
@@ -33,7 +40,7 @@ describe("truncate", () => {
   });
 
   test("任何情况下结果都不超过给定宽度", () => {
-    const samples = ["", "a", "中", "中文中文", "ab 中文 cd", "a…b"];
+    const samples = ["", "a", "中", "中文中文", "ab 中文 cd", "a…b", "𠮷😀e\u0301", "👨‍👩‍👧‍👦abc"];
     for (let width = 0; width <= 12; width++) {
       for (const s of samples) {
         expect(displayWidth(truncate(s, width))).toBeLessThanOrEqual(width);
