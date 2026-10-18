@@ -33,6 +33,8 @@ herdr-team validate
 
 Use `workflow list`, `workflow show`, or `workflow set NAME` to inspect or change the optional project defaults in `.herdr/workflow.json`. Custom JSON via `--workflow-file` / `workflow set --file` maps step kinds to your own role names and selects manual or automatic PR merge. Each new task saves its workflow; changing defaults leaves existing tasks intact. `workflow apply ID` explicitly updates an unstarted todo task, which must then be dispatched again. Legacy `init` without a workflow remains available.
 
+The skill guides the conversation; `onboard` saves confirmed choices and reports `choose-workflow`, `needs-roles`, or `configured` in its JSON output. Configured means the required roles exist. Review identity and instructions, run validation, check the selected tools/authentication, then start and dispatch explicitly. Workflow presets add only their step roles and lead; research and docs are optional. Re-onboarding preserves existing roles by default and reports their effective models and modes.
+
 Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project.
 
 To inspect roles, run `herdr-team role list`. Add a role with `herdr-team role add <name> --kind <kind>`; update an existing role's responsibilities with `herdr-team role add <name> --force --body <text>` or `--body-file <file>`; remove a role with `herdr-team role rm <name>`. Run `herdr-team up` after adding roles so they are started and reported.

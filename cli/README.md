@@ -30,6 +30,16 @@ onboard 时先选择工作流，再按流程确认角色的职责、边界、交
 使用 `init --roles-file F`。只有连职责正文也原样接受预设时才直接 `init --plan`。
 完整引导见插件内置的 `herdr-team` skill 中的 `references/team-setup.md`。
 
+完整顺序：读取项目与已有团队 → 选择流程 → 确定职责和角色 → 选择模型 → 保存确认后的配置 → 校验 → 启动 → 明确派活。
+Skill 负责对话引导，CLI 负责确定性落盘；不会自行替用户完成选择。
+`onboard` 不带流程时先给出候选；已保存的流程可以直接复用。它要求先选流程再使用模型预设，
+并只派生 lead 与流程步骤需要的角色；search/research、docs 等辅助角色由用户按需添加。
+`onboard --json` 的 `onboarding.state` 区分 `choose-workflow`、`needs-roles`、`configured`，
+同时列出缺失角色和实际生效的 harness、model、mode。
+configured 表示所需角色配置齐全，之后仍需填写 identity、运行 validate、核对选定工具和登录。
+已有角色默认保留，因此重新选择模型方案后要检查实际输出，不把保留的角色误报为已换模型或重写职责。
+启动用 `up`，业务任务用 `add` / `dispatch`，分别明确执行。
+
 在项目根目录创建团队配置，再填写 `.herdr/identity.md`（以下以原样接受 balanced 为例）：
 
 ```sh

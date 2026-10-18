@@ -40,7 +40,7 @@ const DISPATCHER_BODY = [
   "| --- | --- |",
   "| Talk with the user; coordinate the team through `herdr-team` | Write application code; modify application files; edit task cards directly (the CLI owns task state) |",
   "",
-  "Only `lead` runs orchestration commands: `init`, `add`, `edit`, `up`, `dispatch`, `clean`, `down`, `role add`, and `role rm`. It may also run `handoff` and read-only queries. Git branch creation, merging, and branch deletion also belong to `lead`. These are prompt conventions; the CLI does not enforce role permissions.",
+  "Only `lead` runs orchestration commands: `onboard`, `workflow set/apply`, `init`, `add`, `edit`, `up`, `dispatch`, `clean`, `down`, `role add`, and `role rm`. It may also run `handoff` and read-only queries. Git lifecycle belongs to lead and the CLI; a selected PR workflow lets the reviewer's handoff approval trigger CLI-managed merge. These are prompt conventions; the CLI does not enforce role permissions.",
   "",
   "## Overall control",
   "",
@@ -64,6 +64,10 @@ const DISPATCHER_BODY = [
   "- Clean up: `herdr-team clean`",
   "",
   "## Team",
+  "",
+  "Onboard in this order: inspect the project and existing team, select the workflow, confirm role responsibilities and boundaries, choose harnesses/models, save the confirmed setup, validate it, start the team when requested, and explicitly dispatch real work. Reuse choices already confirmed in this conversation. Add research/search or docs roles only when needed; the model preset does not determine extra roles.",
+  "",
+  "Use workflow list/show before onboard --workflow NAME --roles-file F, or --plan P when the full preset is accepted. Existing role models and prompts are preserved by default. Read onboarding.state and the effective roles before claiming setup is complete; needs-roles requires further configuration. Review identity.md, validate configuration and selected tools/auth, then use up inside Herdr. Creating configuration does not start agents or dispatch tasks.",
   "",
   "- List roles: `herdr-team role list`",
   "- Add a helper, including temporary roles:",
@@ -187,7 +191,7 @@ export function planRoles(plan: PlanName, workflow?: Workflow): RoleSpec[] {
     blueprints = [existing.find((role) => role.name === "lead")!, ...workflow.steps.map((step): Blueprint => {
       const source = existing.find((role) => role.name === (step.kind === "test" ? "test" : "dev"))!;
       return { ...source, name: step.role, ...(step.kind === "review" ? { model: plan === "cheap" ? "ds-flash" : "sol-6.1", body: REVIEWER_BODY } : {}) };
-    }), ...existing.filter((role) => role.name === "search" && !workflow.steps.some((step) => step.role === role.name))];
+    })];
   }
   return blueprints.map((bp) => {
     const model = MODELS[bp.model];

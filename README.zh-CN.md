@@ -36,6 +36,10 @@ herdr-team validate
 每张任务保存创建时的流程副本，更改默认值不移动已有任务。`workflow apply ID` 可显式调整未开始的 todo 卡，之后重新 dispatch。
 未选择工作流时，仍可使用原有 `init` 和显式 handoff 链。
 
+Skill 负责对话引导，`onboard` 保存已确认的选择；JSON 中用 `choose-workflow`、`needs-roles`、`configured` 区分进度。
+configured 只表示角色齐全，之后仍需核对 identity 和职责、运行校验、检查所需工具与登录，再明确启动和派活。
+流程预设只添加 lead 和步骤角色，研究与文档角色按需选择。重新 onboard 默认保留已有角色，并报告实际生效的模型和启动方式。
+
 检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
 运行 `herdr-team role list` 查看角色；用 `herdr-team role add <name> --kind <kind>` 添加角色；用 `herdr-team role add <name> --force --body <text>` 或 `--body-file <file>` 更新现有角色职责；用 `herdr-team role rm <name>` 移除角色。添加角色后运行 `herdr-team up`，让新角色启动并上报信息。

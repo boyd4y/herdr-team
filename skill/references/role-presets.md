@@ -6,9 +6,9 @@
 **不要钉死一个方案。** 下面是候选，默认用「均衡」。
 
 先按 [team-setup.md](team-setup.md) 选择可调整的工作流，再确定所需角色，最后参考下面的模型方案。
-这些旧表的 dev/test/search 不是固定角色名单。选择 `dev-test-review` 时，CLI 会增加独立 review，
+这些旧表的 dev/test/search 不是固定角色名单。选择 `dev-test-review` 时，onboard 只生成 lead、dev、test、review，
 省钱档用 ds-flash，均衡/全强档的代码审查候选用 sol-6.1；模型和职责仍需用户确认。
-自定义流程可以把职责映射到 builder/qa/auditor 等角色名；lead 始终是唯一常驻编排者。
+自定义流程可以把职责映射到 builder/qa/auditor 等角色名；lead 始终是唯一常驻编排者。search/research、docs 根据项目需要另行确认并添加。
 
 ## 三个方案
 
@@ -23,10 +23,10 @@
 **这三个方案已经内置在 CLI 里**（见 `scripts/lib/plans.ts`），直接：
 
 ```bash
-herdr-team init --plan balanced
+herdr-team onboard --workflow dev-test-review --plan balanced
 ```
 
-`init --help` 会列出每个方案的角色和模型。**下面是给人读的说明**，和 CLI 是同一套东西。
+`onboard --help` 说明流程和模型参数。下面保留兼容旧 `init` 预设的角色定义，作为模型与职责的候选。
 
 需要文档等额外角色时，先用 `--plan` 起步，再按需添加角色；见下方角色清单和配置说明。
 
@@ -51,7 +51,7 @@ herdr-team init --plan balanced
 | `docs`（可选） | 否 | 维护 README、Skill 和参考文档；实现与文档不一致时报告，不擅自改变行为 |
 
 执行始终按任务隔离，角色只定义职责与模型。`worktree: true` 表示 `up` 不预起该角色的常驻对话 tab。
-所有角色均可有多个任务会话；dev/test 默认共用本任务 checkout，验收中 dev 暂停修改。
+lead 始终复用唯一常驻会话；其他角色可有多个任务会话。dev/test 共用本任务 checkout，验收中 dev 暂停修改。
 详见 [herdr-format.md](herdr-format.md#隔离与常驻)。
 
 ## 各角色的定义
@@ -79,7 +79,7 @@ You are the dispatcher (`lead`). Talk with the user and coordinate work through 
 | --- | --- |
 | Talk with the user; coordinate the team through `herdr-team` | Write application code; modify application files; edit task cards directly (the CLI owns task state) |
 
-Only `lead` runs orchestration commands: `init`, `add`, `edit`, `up`, `dispatch`, `clean`, `down`, `role add`, and `role rm`. It may also run `handoff` and read-only queries. Git branch creation, merging, and branch deletion also belong to `lead`. These are prompt conventions; the CLI does not enforce role permissions.
+Only `lead` runs orchestration commands: `onboard`, `workflow set/apply`, `init`, `add`, `edit`, `up`, `dispatch`, `clean`, `down`, `role add`, and `role rm`. It may also run `handoff` and read-only queries. Git lifecycle belongs to lead and the CLI; a selected PR workflow lets the reviewer's handoff approval trigger CLI-managed merge. These are prompt conventions; the CLI does not enforce role permissions.
 
 ## Overall control
 
@@ -103,6 +103,10 @@ Lead keeps task-card handoff chains accurate and is the fallback owner when the 
 - Clean up: `herdr-team clean`
 
 ## Team
+
+Onboard in this order: inspect the project and existing team, select the workflow, confirm role responsibilities and boundaries, choose harnesses/models, save the confirmed setup, validate it, start the team when requested, and explicitly dispatch real work. Reuse choices already confirmed in this conversation. Add research/search or docs roles only when needed; the model preset does not determine extra roles.
+
+Use workflow list/show before onboard --workflow NAME --roles-file F, or --plan P when the full preset is accepted. Existing role models and prompts are preserved by default. Read onboarding.state and the effective roles before claiming setup is complete; needs-roles requires further configuration. Review identity.md, validate configuration and selected tools/auth, then use up inside Herdr. Creating configuration does not start agents or dispatch tasks.
 
 - List roles: `herdr-team role list`
 - Add a helper, including temporary roles:

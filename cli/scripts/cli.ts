@@ -323,12 +323,12 @@ function resolveInitRoot(explicit?: string): string {
   return findRoot(process.cwd()) ?? resolve(process.cwd());
 }
 
-function cmdInit(args: string[]): number {
+function cmdInit(args: string[], onboarding = false): number {
   const parsed = parseArgs(args, ["root", "roles", "roles-file", "plan", "workflow", "workflow-file"]);
   if (parsed.flags.has("help")) {
     process.stdout.write(
-      `Usage: herdr-team init [--plan ${PLAN_NAMES.join("|")} | --roles-file F | --roles JSON] [--force] [--root DIR]\n\n` +
-        PLAN_NAMES.map((p) => `  --plan ${p.padEnd(10)}${describePlan(p)}`).join("\n") +
+      `Usage: herdr-team ${onboarding ? "onboard" : "init"} [--plan ${PLAN_NAMES.join("|")} | --roles-file F | --roles JSON] [--force] [--root DIR]\n\n` +
+        PLAN_NAMES.map((p) => `  --plan ${p.padEnd(10)}${onboarding ? "Assign models to the selected workflow's roles" : describePlan(p)}`).join("\n") +
         "\nChoose --workflow dev-test-review|dev-test|direct or --workflow-file F before choosing roles/models.\nWorkflows are optional recommendations and can be changed later with workflow set.\n--force rewrites role metadata and preserves existing prompt.md; use role add <name> --force --body T to update responsibilities.\n",
     );
     return 0;
@@ -346,6 +346,13 @@ function cmdInit(args: string[]): number {
   if (given.length > 1) {
     throw new UsageError("Use only one of --plan, --roles, and --roles-file");
   }
+  if (onboarding && !workflow) {
+    if (given.length) throw new UsageError("Choose a workflow before roles/models: workflow list, then onboard --workflow NAME --plan P or --roles-file F");
+    return out(parsed, { root, onboarding: { state: "choose-workflow", choices: WORKFLOW_NAMES.map(workflowPreset) } },
+      "Choose a workflow first, then responsibilities, roles, and models.\n" +
+      WORKFLOW_NAMES.map((name) => `  ${name}${name === "dev-test-review" ? " (recommended)" : ""}`).join("\n") +
+      "\nConfirm the complete setup with the herdr-team skill, then save it using onboard --workflow NAME --roles-file F.\nUse --plan P only when accepting its responsibilities and model defaults. Custom workflows use --workflow-file F.");
+  }
 
   let specs: ReturnType<typeof parseRoleSpecs> = [];
   if (plan !== undefined) {
@@ -358,7 +365,9 @@ function cmdInit(args: string[]): number {
 
   if (workflow && specs.length) {
     const configured = new Set([...project.roles.map((role) => role.name), ...specs.map((role) => role.name)]);
-    for (const step of workflow.steps) if (!configured.has(step.role)) throw new UsageError(`Selected workflow requires role ${step.role}; confirm all workflow responsibilities before onboarding`);
+    for (const name of [...(onboarding ? ["lead"] : []), ...workflow.steps.map((step) => step.role)]) {
+      if (!configured.has(name)) throw new UsageError(`Selected workflow requires role ${name}; confirm all workflow responsibilities before onboarding`);
+    }
   }
 
   const result = init(project, specs, parsed.flags.has("force"));
@@ -384,6 +393,22 @@ function cmdInit(args: string[]): number {
     }
   }
 
+  if (onboarding) {
+    const actual = loadProject(root), requiredRoles = ["lead", ...workflow!.steps.map((step) => step.role)];
+    const missingRoles = requiredRoles.filter((name) => !actual.roles.some((role) => role.name === name));
+    const roles = actual.roles.map((role) => ({ name: role.name, kind: role.kind, model: role.model ?? "default",
+      mode: role.name === "lead" ? "resident" : role.worktree ? "task" : "resident+task" }));
+    const state = missingRoles.length ? "needs-roles" : "configured";
+    if (missingRoles.length) lines.push(`\nOnboarding needs roles: ${missingRoles.join(", ")}. Confirm their responsibilities and models, then run onboard --roles-file F.`);
+    else {
+      lines.push("\nConfigured roles:", ...roles.map((role) => `  ${role.name}: ${role.kind} / ${role.model} / ${role.mode}`));
+      lines.push("Next: review identity.md and role instructions, run herdr-team validate, then run herdr-team up inside Herdr when ready. Add and dispatch the first task explicitly.");
+    }
+    if (actual.roles.some((role) => project.roles.some((previous) => previous.name === role.name)) && !parsed.flags.has("force")) {
+      lines.push("Existing roles retain their models and instructions. Use role add NAME --force to apply confirmed changes.");
+    }
+    return out(parsed, { root, ...result, onboarding: { state, workflow: workflow!.name, requiredRoles, missingRoles, roles } }, lines.join("\n"));
+  }
   return out(parsed, { root, ...result }, lines.join("\n"));
 }
 
@@ -929,11 +954,7 @@ async function main(argv: string[]): Promise<number> {
 
   switch (command) {
     case "onboard":
-      if (!rest.length) {
-        process.stdout.write("Choose a workflow first, then roles and models.\nRecommended: herdr-team onboard --workflow dev-test-review --plan balanced\nAlternatives: herdr-team workflow list\nCustom roles: onboard --workflow-file F --roles-file R\n");
-        return 0;
-      }
-      return cmdInit(rest);
+      return cmdInit(rest, true);
     case "init":
       return cmdInit(rest);
     case "workflow":

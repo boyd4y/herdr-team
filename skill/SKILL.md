@@ -61,6 +61,8 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 字段缺什么就问什么，**不要编**。尤其 `role`：猜错了整张卡就派错人。
 
 **② 先选工作流，再确认角色，最后选模型** —— 见 [team-setup.md](references/team-setup.md)。
+完整 onboard 顺序：读项目和已有团队 → 选流程 → 定职责/角色 → 选 harness/模型 → 汇总确认与落盘 → 校验 → 按需 up → 明确 add/dispatch。
+复用用户已确认的选择，只问缺失信息；docs、research/search 等辅助角色按需要提出，不随模型方案自动附加。
 先读项目约定，向用户提供 `dev-test-review`（推荐：本地开发/测试 → PR 审查 → 批准后自动合并）、
 `dev-test`（本地验收、手动合入）、`direct` 或自定义流程。推荐不能代替选择；不要强制所有项目采用它。
 明确 PR 手动/自动合并策略后，再按所需职责确认角色名、边界和交付。最后以 `cheap` / `balanced` / `strong` 为模型起点（**拿不准用 balanced**），
@@ -68,6 +70,8 @@ Git 生命周期也归 `lead`：你可以在当前任务允许的范围内 `git 
 需要确认的边界要问清，例如 lead 的编排范围、dev 是否同步文档、test 只验证还是也改代码。
 等用户确认流程与整份分工后，把职责写进每个角色的 `body`，用 `onboard --workflow NAME --roles-file F` 落盘；
 自定义流程用 `--workflow-file W`。只有用户连预设职责正文也原样接受时才用 `onboard --workflow NAME --plan P`。
+`onboard --json` 会报告 choose-workflow、needs-roles 或 configured，以及实际保留的角色、模型和启动方式。
+configured 仅表示角色配置齐全；先检查 identity、validate 和所需工具/登录，再按用户意图启动与派活。onboard 自身不启动或发送任务。
 随时可用 `workflow set NAME` 或 `--file F` 调整默认流程；旧任务保留创建时的流程副本。
 只有未开始的 todo 卡可 `workflow apply ID`，之后重新 dispatch。已投递任务先核对与收回，不自动迁移。
 

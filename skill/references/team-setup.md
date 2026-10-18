@@ -1,6 +1,14 @@
-# `init` —— 建骨架并写角色卡
+# Team onboard —— 从项目到可运行团队
 
-`init` 分两半：**提议角色**需要判断，归你；**写文件**是机械的，归 CLI。
+对话引导由 herdr-team Skill 完成，CLI `onboard` 保存已确认的配置并报告下一步。
+它不是自动替用户选择的交互向导。完整顺序是：了解项目 → 选流程 → 定职责和角色 → 选模型 → 汇总确认与落盘 → 校验环境与配置 → 启动团队 → 明确派发任务。
+复用用户在本会话已确认的选择，只问缺失信息，不要求逐个重复确认。
+
+## 第零步：了解项目和已有团队
+
+先读 README、AGENTS.md、目录结构、Git 状态和已有 `.herdr/`。已有团队同时检查
+`workflow show`、`role list`、任务和队列，区分新建团队与调整团队。
+总结项目目标、验收命令和已知偏好；未知的身份或业务要求不编造。
 
 ## 第一步：先选择工作流（你和用户）
 
@@ -17,25 +25,20 @@
 `workflow set NAME` 或 `workflow set --file F` 保存，或在最终 `onboard` 命令同时传入。
 lead 始终只有一个常驻编排会话；独立 review 的职责由审查阶段决定，不是多开一个 lead。
 
-## 第二步：逐个确认职责与模型（你和用户）
+## 第二步：确认职责与角色（你和用户）
 
-读 `README` / `AGENTS.md` / 目录结构，判断项目是什么、大概需要哪些工种。
-
-从 [role-presets.md](role-presets.md) 的**三个方案**里选一个起点（省钱 / 均衡 / 全强），
-结合项目规模推荐给用户。模型与角色名单只是起点，还要逐个给出本项目的分工草案：
+按已选工作流列出本项目的分工草案。流程中没有的 research/search、docs 等角色按需要提出，不自动附加：
 
 | 每个角色要确认的内容 | 说明 |
 | --- | --- |
 | 负责什么 | 具体工作、交付物、验收要求；职责从用户意图和项目约定提炼，不能照抄预设了事 |
 | 边界在哪里 | 哪些事由其他角色处理，和相邻角色如何衔接 |
 | 怎么交棒 | 交付前检查什么、用 `handoff <id>` 交接；后续角色由任务卡的 handoff 队列决定 |
-| 怎么运行 | 角色 id、agent 类型、模型、常驻或隔离，与职责一起让用户审阅 |
+| 怎么运行 | 角色 id、常驻或按任务启动；lead 始终只有一个常驻会话 |
 
 把不明确的边界问清：lead 管哪些编排与 Git 生命周期？dev 改接口后是否同步文档？
 test 是验证并反馈，还是允许修复代码？遵守已有项目约定，有冲突就请用户明确调整。
-逐个让用户增删改职责，确认整份分工后才落盘。不要只问「选哪个模型方案」。
-
-**总原则：只有写代码和搞架构才上 `sol` 最强模型，其余用便宜档；拿不准就用均衡。**
+让用户增删改职责，已有明确选择直接复用。不要用模型方案代替职责确认。
 
 例如可以提议：lead 负责澄清需求、建卡与派活；dev 负责实现、接口文档和自测；
 test 独立验证并把缺陷反馈给 dev。明确各自不负责的工作，再由用户确认这些边界是否适合本项目。
@@ -44,7 +47,16 @@ test 独立验证并把缺陷反馈给 dev。明确各自不负责的工作，�
 也不要用「主力开发」这类描述 —— 那些是属性，不是身份。详见
 [herdr-format.md](herdr-format.md#名字即身份)。
 
-## 第三步：落盘（CLI）
+## 第三步：选择 harness 和模型
+
+职责确定后，再从 [role-presets.md](role-presets.md) 的 cheap / balanced / strong 中选择模型起点，
+或逐个指定。编码和架构审查可考虑强模型，文档、调度和常规验证优先便宜档。
+核对对应 CLI 与登录可用；不要把模型方案当作固定角色名单。保留用户已指定的模型偏好。
+
+## 第四步：汇总确认，然后落盘（CLI）
+
+用一份简表汇总流程顺序、PR/本地交付、自动/手动合并，以及各角色职责、边界、harness、模型和启动方式。
+用户明确授权整份配置后执行；已有授权无需再问。自定义流程和角色名必须相互对应。
 
 把确认过的分工逐个写进角色定义的 `body`，包含职责、边界、交付要求和交棒说明。
 保留所选预设的运行配置，用 `--roles-file F`（或 `--roles '<json>'`）交给 CLI：
@@ -54,8 +66,9 @@ herdr-team onboard --workflow dev-test-review --roles-file roles.json
 ```
 
 `roles.json` 是确认后的定义输入（形状见下），使用临时文件或用户指定的位置，不往项目中额外创建业务文件。
-`init --help` 会列出每个方案的角色和模型；**只有用户也原样接受预设职责正文**时，才直接运行
-`herdr-team init --plan balanced`，或选择另外两个方案。
+**只有用户也原样接受预设职责和模型**时，才用
+`herdr-team onboard --workflow dev-test-review --plan balanced`。自定义流程使用 `--workflow-file F`。
+`init` 是兼容旧项目的底层初始化入口；`onboard` 要求先明确选择或保存工作流。
 
 已有角色默认跳过；`init --force` 只重写 `.role.yaml`，已有 `prompt.md` 始终保留，缺失时才补齐。
 它不会把输入中的新 `body` 应用到已有正文；改已有角色职责走下方的 `role add --force --body`。
@@ -76,8 +89,24 @@ JSON 形状 —— 一个数组，每项一张角色卡：
     "kind": "codex",
     "model": "sol-6.1",
     "worktree": true,
-    "args": ["-m", "gpt-6.1-sol"],
+    "args": ["--no-daemon", "-m", "gpt-6.1-sol"],
     "body": "你负责在当前工作树实现功能、同步接口文档、自测并提交；编排和 Git 分支生命周期交给 lead。完成后运行 herdr-team handoff <id> 交棒，不要自己改任务卡。"
+  },
+  {
+    "name": "test",
+    "kind": "claude",
+    "model": "ds-flash",
+    "worktree": true,
+    "env": { "ANTHROPIC_MODEL": "deepseek-flash" },
+    "body": "你在同一任务 worktree 测试被提交的 SHA；claim 后验证，通过用 handoff --accept SHA --summary TEXT 交给 PR review，失败用 --reject --summary TEXT 退原开发者，不改实现或直接合并。"
+  },
+  {
+    "name": "review",
+    "kind": "codex",
+    "model": "sol-6.1",
+    "worktree": true,
+    "args": ["--no-daemon", "-m", "gpt-6.1-sol"],
+    "body": "你独立审查被测 SHA 的 PR、验收标准和测试证据。claim 后用 handoff --accept SHA --summary TEXT 批准，或 --reject --summary TEXT 退回开发和测试；由 CLI 按已选策略合并，不直接修改代码、主分支或任务卡。"
   }
 ]
 ```
@@ -96,6 +125,26 @@ PR 方案中 test 通过后才发布 PR；review 的通过/拒绝决定是否允
 
 **你自己不拼元数据。** CLI 负责写 —— 保证字段顺序稳定、缩进正确、该加引号的加引号。
 手写 YAML 是这类工具最容易出错的地方，不要碰。
+
+## 第五步：核对落盘结果和运行条件
+
+检查 `.herdr/workflow.json`、`identity.md` 和每个角色的元数据、prompt.md。
+`onboard --json` 的 `onboarding.state` 为 `needs-roles` 时继续补齐；`configured` 只表示所需角色齐全，
+还需按项目事实填写 identity，运行 `validate`，核对实际保留的模型和职责。
+重新 onboard 默认保留已有角色，即使传入了另一套模型方案；修改职责用 `role add NAME --force --body-file F`，
+修改模型也要显式更新启动参数或环境。现有任务使用自己的工作流，不随默认配置改变。
+
+启动前确认 Herdr、Bun、选定的 agent CLI 与登录状态可用。PR 流程再核对 Git origin、GitHub.com 仓库、
+已登录的 gh、base 分支和独立测试资源配置。同一 GitHub 账号的审查结论是 PR 评论中的 Team 门禁，
+不替代分支保护要求的他人 Approve。只核对选定流程需要的条件，不主动替用户登录、改权限或改数据库。
+
+## 第六步：启动团队，再明确派发任务
+
+需要启动时，在 Herdr pane 中执行 `herdr-team up`，检查角色启动/恢复与 Team Console 的结果。
+它不自动派活。用户已有具体任务和验收要求时，再用 `add`、`dispatch ID` 派发；不要编造一张业务任务试运行。
+选定的 PR 流程通过一次真实任务确认 dev → test → PR → review → 合并；缺失条件记录清楚，不把写配置成功当作运行已验证。
+
+用户关于 `.herdr/` 是否纳入 Git 的偏好按本会话或项目约定处理；无约定时说明选择，不自动改 ignore 或提交业务仓库。
 
 ## init 不覆盖已有文件
 

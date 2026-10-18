@@ -23,7 +23,8 @@ test("onboarding selects workflow before deriving its required roles and models"
     expect(existsSync(join(p.root, ".herdr/identity.md"))).toBe(false);
     const result = run(p.root, ["onboard", "--plan", "cheap"]);
     expect(result.stderr.toString()).toBe(""); expect(result.exitCode).toBe(0);
-    expect(loadProject(p.root).roles.map((role) => role.name)).toEqual(["dev", "lead", "review", "search", "test"]);
+    expect(loadProject(p.root).roles.map((role) => role.name)).toEqual(["dev", "lead", "review", "test"]);
+    expect(result.stdout.toString()).toContain("Configured roles:");
     expect(readWorkflow(loadProject(p.root))?.merge).toBe("auto");
     expect(loadProject(p.root).roles.find((role) => role.name === "review")!.body).toContain("PR reviewer");
   } finally { p.cleanup(); }
@@ -38,9 +39,66 @@ test("custom workflow names roles by responsibility instead of hard-coding dev/t
     const result = run(p.root, ["onboard", "--workflow-file", file, "--plan", "balanced"]);
     expect(result.exitCode).toBe(0);
     const project = loadProject(p.root);
-    expect(project.roles.map((role) => role.name)).toEqual(["auditor", "builder", "lead", "qa", "search"]);
+    expect(project.roles.map((role) => role.name)).toEqual(["auditor", "builder", "lead", "qa"]);
     expect(project.roles.find((role) => role.name === "auditor")!.body).toContain("merge policy: manual");
     expect(planRoles("balanced").some((role) => role.name === "review")).toBe(false); // No implicit migration of legacy projects.
+  } finally { p.cleanup(); }
+});
+
+test("onboard requires workflow selection before applying a role or model plan", () => {
+  const p = makeBareProject();
+  try {
+    rmSync(join(p.root, ".herdr"), { recursive: true });
+    const prompt = run(p.root, ["onboard", "--json"]);
+    expect(prompt.exitCode).toBe(0);
+    expect(JSON.parse(prompt.stdout.toString()).onboarding).toMatchObject({ state: "choose-workflow" });
+    expect(existsSync(join(p.root, ".herdr"))).toBe(false);
+    const skipped = run(p.root, ["onboard", "--plan", "balanced"]);
+    expect(skipped.exitCode).toBe(2); expect(skipped.stderr.toString()).toContain("Choose a workflow before");
+    expect(existsSync(join(p.root, ".herdr"))).toBe(false);
+    // The lower-level legacy initializer remains available without a workflow.
+    expect(run(p.root, ["init", "--plan", "cheap"]).exitCode).toBe(0);
+  } finally { p.cleanup(); }
+});
+
+test("workflow-only onboarding reports the missing roles and does not claim setup is complete", () => {
+  const p = makeBareProject();
+  try {
+    const result = run(p.root, ["onboard", "--workflow", "dev-test-review", "--json"]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout.toString()).onboarding).toMatchObject({ state: "needs-roles", missingRoles: ["lead", "dev", "test", "review"] });
+    expect(loadProject(p.root).roles).toHaveLength(0);
+  } finally { p.cleanup(); }
+});
+
+test("incomplete or duplicate role definitions fail before onboarding writes files", () => {
+  const p = makeBareProject();
+  try {
+    rmSync(join(p.root, ".herdr"), { recursive: true });
+    const missing = run(p.root, ["onboard", "--workflow", "direct", "--roles", JSON.stringify([{ name: "dev", kind: "codex" }])]);
+    expect(missing.exitCode).toBe(2); expect(missing.stderr.toString()).toContain("requires role lead");
+    expect(existsSync(join(p.root, ".herdr"))).toBe(false);
+    const duplicate = run(p.root, ["onboard", "--workflow", "direct", "--roles", JSON.stringify([{ name: "lead", kind: "codex" }, { name: "lead", kind: "claude" }, { name: "dev", kind: "codex" }])]);
+    expect(duplicate.exitCode).toBe(2); expect(duplicate.stderr.toString()).toContain("Duplicate role definition");
+    expect(existsSync(join(p.root, ".herdr"))).toBe(false);
+  } finally { p.cleanup(); }
+});
+
+test("re-onboarding reports effective preserved roles and keeps existing task workflow snapshots", () => {
+  const p = makeBareProject();
+  try {
+    expect(run(p.root, ["onboard", "--workflow", "dev-test-review", "--plan", "cheap"]).exitCode).toBe(0);
+    writeRole(p.root, "lead", roleMeta({ model: "custom-model" }), "Existing lead instructions");
+    const leadBody = loadProject(p.root).roles.find((role) => role.name === "lead")!.body;
+    createTask(loadProject(p.root), { title: "Existing work", role: "dev", handoff: [], priority: "P2", body: "Criteria" });
+    const result = run(p.root, ["onboard", "--workflow", "direct", "--plan", "balanced", "--json"]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout.toString()).onboarding).toMatchObject({ state: "configured", requiredRoles: ["lead", "dev"], missingRoles: [] });
+    expect(JSON.parse(result.stdout.toString()).onboarding.roles).toContainEqual({ name: "lead", kind: "codex", model: "custom-model", mode: "resident" });
+    const project = loadProject(p.root);
+    expect(project.roles.find((role) => role.name === "lead")!.body).toBe(leadBody);
+    expect(taskWorkflow(project.tasks[0]!)?.name).toBe("dev-test-review");
+    expect(project.tasks[0]!.handoff).toEqual(["test", "review"]);
   } finally { p.cleanup(); }
 });
 

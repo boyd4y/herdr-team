@@ -75,11 +75,14 @@ export function parseRoleSpecs(input: string): RoleSpec[] {
   const list = Array.isArray(parsed) ? parsed : (asRecord(parsed)["roles"] ?? null);
   if (!Array.isArray(list)) throw new InitError("Role definitions must be an array or an object containing a roles array");
 
+  const names = new Set<string>();
   return list.map((raw) => {
     const rec = asRecord(raw);
     const name = requireString(rec, "name");
     const kind = requireString(rec, "kind");
     if (!NAME_RE.test(name)) throw new InitError(`Role name "${name}" must match ${NAME_RE}`);
+    if (names.has(name)) throw new InitError(`Duplicate role definition: ${name}`);
+    names.add(name);
     if (!(KINDS as readonly string[]).includes(kind)) {
       throw new InitError(`Role "${name}" has unsupported kind "${kind}"`);
     }
