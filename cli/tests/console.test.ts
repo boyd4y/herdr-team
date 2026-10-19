@@ -266,11 +266,11 @@ test("the Console action follows invocation context, fixes its tab name, and reu
   expect(runPluginAction("open-console", h, context).action).toBe("reused");
   expect(h.calls.filter(call => call.startsWith("plugin pane open console"))).toHaveLength(1);
   expect(h.calls.some(call => call.startsWith("tab focus"))).toBe(true);
-  const consoleTab = h.state.tabs.find(tab => tab.label === "Console")!;
+  const consoleTab = h.state.tabs.find(tab => tab.label === "console")!;
   expect(consoleTab).toBeDefined();
   consoleTab.label = "Custom title";
   runPluginAction("open-console", h, context);
-  expect(consoleTab.label).toBe("Console");
+  expect(consoleTab.label).toBe("console");
   expect(h.calls.some(call => call.startsWith("agent prompt") || call.startsWith("pane run"))).toBe(false);
   const before = h.calls.length;
   expect(() => runPluginAction("open-console", h, undefined)).toThrow(/context/);

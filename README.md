@@ -92,7 +92,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Project initialization is not an upgrade step. Plugin and CLI versions are both `0.1.3` in this release.
+Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Project initialization is not an upgrade step. Plugin and CLI versions are both `0.1.4` in this release.
 
 Before removing the plugin, remove the plugin-managed skill, Herdr configuration, and CLI shim with the corresponding actions:
 

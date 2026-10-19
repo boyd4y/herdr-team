@@ -359,7 +359,7 @@ Detail 会显示合并阻塞的具体原因；已结束任务不计入待投递�
 
 `up` 使用 manifest 中的 `console` pane，在明确的项目 workspace 中直接启动 CLI；不检查 shell、不注入命令。每个项目的 Console 锁和启动票据仍负责避免重复调度。原有活跃 Console 会复用，失效的旧 pane 不会被覆盖。
 
-安装配置只提供一个 Console 入口：`prefix+t` 调用 `herdr-team.open-console`，打开或聚焦项目唯一的调度 Console。原生 tab 名称固定为 `Console`，创建和复用时都会检查并恢复该名称。
+安装配置只提供一个 Console 入口：`prefix+t` 调用 `herdr-team.open-console`，打开或聚焦项目唯一的调度 Console。原生 tab 名称固定为 `console`，创建和复用时都会检查并恢复该名称。
 
 已有用户快捷键优先保留。动作从 `HERDR_PLUGIN_CONTEXT_JSON` 的调用 pane/workspace 定位项目，不使用插件 cwd，也不重新跟随可能变化的 UI 焦点；任务 worktree 使用主检出的 `.herdr/`。缺少配置、pane 已关闭/移动、归属不符时停止并报错。
 

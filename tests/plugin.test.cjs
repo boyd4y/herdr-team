@@ -238,7 +238,7 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   assert(manifest.includes('id = "open-console"'));
   assert(!manifest.includes('id = "team-status"'));
   assert(!manifest.includes('id = "status"'));
-  assert(manifest.includes('title = "Console"'));
+  assert(manifest.includes('title = "console"'));
   assert(fs.existsSync(path.join(f.env.XDG_BIN_HOME, 'herdr-team')));
   for (const id of ['install', 'configure', 'install-skill', 'install-cli', 'unconfigure', 'uninstall-skill', 'uninstall-cli']) {
     const command = JSON.parse(actions.find((a) => a[1] === id)[2]);

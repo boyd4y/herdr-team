@@ -54,7 +54,7 @@ export function ensureConsole(project: Project, herdr: Herdr, workspaceId: strin
       const panes = herdr.paneList(workspaceId);
       const tabs = herdr.tabList(workspaceId);
       const nameTab = (tabId: string) => {
-        if (tabs.find(tab => tab.tab_id === tabId)?.label !== "Console") herdr.tabRename(tabId, "Console");
+        if (tabs.find(tab => tab.tab_id === tabId)?.label !== "console") herdr.tabRename(tabId, "console");
       };
       const current = owner(project);
       if (current && processAlive(current.pid)) {
@@ -81,7 +81,7 @@ export function ensureConsole(project: Project, herdr: Herdr, workspaceId: strin
       // clear this ticket until the native launch and ownership metadata are saved.
       writeRecord(ticket, { paneId, at: Date.now() });
       nameTab(tabId);
-      herdr.reportMetadata(paneId, "herdr-team-console", "Console", { team_console_project: projectKey(project) });
+      herdr.reportMetadata(paneId, "herdr-team-console", "console", { team_console_project: projectKey(project) });
       return { action: "started", paneId, tabId };
     });
   } catch (error) { return { action: "failed", failure: error instanceof Error ? error.message : String(error) }; }
