@@ -53,7 +53,7 @@ describe("CLI JSON card bodies", () => {
         expect(Buffer.byteLength(compact.stdout)).toBeLessThan(Buffer.byteLength(JSON.stringify(full, null, 2)) / 2);
         if (command[0] === "status") {
           expect(compact.value.roles).toEqual([
-            { role: "dev", agent: null, herdrStatus: "absent", paneId: null, worktree: false },
+            { role: "dev", kind: "codex", model: "default", agent: null, herdrStatus: "absent", paneId: null, worktree: false },
           ]);
           expect(compact.value.inconsistencies).toEqual([]);
         }

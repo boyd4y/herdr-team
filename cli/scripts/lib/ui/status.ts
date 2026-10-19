@@ -14,6 +14,8 @@ import {
 
 export interface RoleStatus {
   role: string;
+  kind: string;
+  model: string;
   /** 常驻角色是角色名；隔离角色每任务一个，这里为 null。 */
   agent: string | null;
   herdrStatus: string;
@@ -60,6 +62,7 @@ function loadAgents(project: Project, herdr: Herdr): AgentInfo[] {
  */
 export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleStatus[] {
   return project.roles.map((role) => {
+    const identity = { role: role.name, kind: role.kind, model: role.model ?? "default" };
     const owned = project.tasks.filter((t) => t.role === role.name && !isTerminal(t.status));
     const queue = owned.some((t) => deliveryState(t)) ? {
       current: owned.filter((t) => !integrationStatus(t) && !waitingDelivery(t) && (deliveryState(t) || t.status !== "todo")).map((t) => t.id),
@@ -67,12 +70,12 @@ export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleSta
     } : {};
     if (role.name !== "lead" && (role.worktree || owned.some((t) => taskScoped(t)))) {
       // 隔离角色的 agent 跟着任务走，没有常驻的那个。
-      return { role: role.name, agent: null, herdrStatus: "per-task", paneId: null, worktree: true, ...queue };
+      return { ...identity, agent: null, herdrStatus: "per-task", paneId: null, worktree: true, ...queue };
     }
     const matches = roleAgents(project, agents, role);
     const live = matches.length === 1 ? matches[0] : undefined;
     return {
-      role: role.name,
+      ...identity,
       agent: live?.name ?? null,
       herdrStatus: matches.length > 1 ? "ambiguous" : live?.agent_status ?? "absent",
       paneId: live?.pane_id ?? null,
@@ -216,10 +219,10 @@ export function formatReport(report: StatusReport): string {
   if (report.roles.length === 0) {
     lines.push("  (no roles)");
   } else {
-    lines.push(`  ${pad("role", 16)}${pad("agent", 16)}${pad("herdrStatus", 14)}paneId`);
+    lines.push(`  ${pad("role", 16)}${pad("agent", 16)}${pad("herdrStatus", 14)}${pad("paneId", 16)}harness · model`);
     for (const r of report.roles) {
       lines.push(
-        `  ${pad(r.role, 16)}${pad(r.agent ?? "—", 16)}${pad(r.herdrStatus, 14)}${r.paneId ?? "—"}${r.current ? `  active ${r.current.join(",") || "—"}  queued ${r.queued ?? 0}` : ""}`,
+        `  ${pad(r.role, 16)}${pad(r.agent ?? "—", 16)}${pad(r.herdrStatus, 14)}${pad(r.paneId ?? "—", 16)}${r.kind} · ${r.model}${r.current ? `  active ${r.current.join(",") || "—"}  queued ${r.queued ?? 0}` : ""}`,
       );
     }
   }

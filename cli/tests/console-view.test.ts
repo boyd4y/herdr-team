@@ -528,9 +528,8 @@ describe("OpenTUI Console", () => {
       expect(details.y).toBe(flow.y + flow.height);
       for (const name of names) {
         const row = ui.renderer.root.findDescendantById(`role-${name}`)!;
-        expect(row.height).toBe(1);
         expect(row.y).toBeGreaterThan(roles.y);
-        expect(row.y).toBeLessThan(roles.y + roles.height - 1);
+        expect(row.y + row.height).toBeLessThanOrEqual(roles.y + roles.height - 1);
       }
       ui.resize(130, 26); await ui.renderOnce();
       expect(Math.abs(flow.height - details.height)).toBeLessThanOrEqual(1);
@@ -540,6 +539,7 @@ describe("OpenTUI Console", () => {
       expect(Math.abs(flow.height - details.height)).toBeLessThanOrEqual(1);
       ui.mockInput.pressKey("\t");
       expect(roles.focused).toBe(true);
+      ui.mockInput.pressKey("\x1b[6~"); await ui.renderOnce();
       ui.mockInput.pressKey("\x1b[6~"); await ui.renderOnce();
       expect(ui.captureCharFrame()).toContain("test-final");
       ui.resize(34, 12); await ui.renderOnce();
@@ -566,7 +566,12 @@ describe("OpenTUI Console", () => {
       expect(ui.renderer.root.findDescendantById("role-dev")).toBe(dev);
       expect(ui.renderer.root.findDescendantById("role-test")).toBe(tester);
       expect(roles.getChildren().map(row => row.id)).toEqual(["roles-heading", "role-test", "role-dev"]);
-      expect(dev.getChildren().map(cell => (cell as TextRenderable).plainText).join(" ")).toContain("#0099");
+      expect(dev.getChildren()[0]!.getChildren().map(cell => (cell as TextRenderable).plainText).join(" ")).toContain("#0099");
+      expect((dev.getChildren()[1] as TextRenderable).plainText).toContain("codex · default");
+      ui.project.roles.find(role => role.name === "dev")!.model = "gpt-6.1-sol";
+      ui.app.refresh(); await ui.renderOnce();
+      expect(ui.renderer.root.findDescendantById("role-dev")).toBe(dev);
+      expect((dev.getChildren()[1] as TextRenderable).plainText).toContain("codex · gpt-6.1-sol");
       ui.project.roles = ui.project.roles.filter(role => role.name !== "test");
       ui.app.refresh(); await ui.renderOnce();
       expect(tester.isDestroyed).toBe(true);

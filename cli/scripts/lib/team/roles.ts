@@ -133,8 +133,7 @@ export function removeRole(project: Project, name: string, force = false): Remov
 
 /** 给人看的一行：角色名、类型、模型、是否隔离。 */
 export function describeRole(role: RoleCard): string {
-  const bits = [role.kind];
-  if (role.model !== undefined) bits.push(role.model);
+  const bits = [role.kind, role.model ?? "default"];
   if (role.worktree) bits.push("worktree");
   return `${role.name.padEnd(10)}${bits.join("  ")}`;
 }
