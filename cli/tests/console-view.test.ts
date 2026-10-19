@@ -566,12 +566,13 @@ describe("OpenTUI Console", () => {
       expect(ui.renderer.root.findDescendantById("role-dev")).toBe(dev);
       expect(ui.renderer.root.findDescendantById("role-test")).toBe(tester);
       expect(roles.getChildren().map(row => row.id)).toEqual(["roles-heading", "role-test", "role-dev"]);
-      expect(dev.getChildren()[0]!.getChildren().map(cell => (cell as TextRenderable).plainText).join(" ")).toContain("#0099");
-      expect((dev.getChildren()[1] as TextRenderable).plainText).toContain("codex · default");
+      const text = () => dev.getChildren().map(cell => (cell as TextRenderable).plainText).join(" ");
+      expect(text()).toContain("#0099");
+      expect(text()).toContain("codex default");
       ui.project.roles.find(role => role.name === "dev")!.model = "gpt-6.1-sol";
       ui.app.refresh(); await ui.renderOnce();
       expect(ui.renderer.root.findDescendantById("role-dev")).toBe(dev);
-      expect((dev.getChildren()[1] as TextRenderable).plainText).toContain("codex · gpt-6.1-sol");
+      expect(text()).toContain("codex gpt-6.1-sol");
       ui.project.roles = ui.project.roles.filter(role => role.name !== "test");
       ui.app.refresh(); await ui.renderOnce();
       expect(tester.isDestroyed).toBe(true);

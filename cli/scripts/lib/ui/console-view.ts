@@ -130,9 +130,11 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     sizeHint.visible = tooSmall;
     flow.setActive(focused && !tooSmall);
     const available = renderer.height - 3 - Number(health.visible) - Number(search.visible);
-    const roleHeight = project.roles.length * 2 + 3;
+    const leftWidth = Math.min(Math.floor(renderer.width * 0.48), Math.max(Math.floor(renderer.width * 0.28), roleTable.width + 3));
+    const roleWidth = narrow ? Math.floor((renderer.width - 2) * 0.48) : leftWidth;
+    const roleHeight = project.roles.length + 3 + Number(roleTable.width > roleWidth - 3);
     main.flexDirection = narrow ? "column" : "row";
-    left.width = narrow ? "100%" : "28%";
+    left.width = narrow ? "100%" : leftWidth;
     left.flexDirection = narrow ? "row" : "column";
     left.gap = narrow ? 1 : 0;
     left.height = narrow ? Math.min(Math.max(5, roleHeight), Math.max(4, Math.floor(available * 0.35))) : "100%";
