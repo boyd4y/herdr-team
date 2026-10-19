@@ -68,12 +68,7 @@ Console is the automatic scheduler and runs in a Herdr-managed plugin tab in the
 
 Console lists the newest task IDs first and splits the selected task's flow and details equally on the right. Delivery uses a fading light trail; the active node has a gentle border glow. Compact role rows show the full team when space allows and remain scrollable in small terminals. Try `herdr-team console --sample` for a looping demo without a project or Herdr connection. It uses in-memory data and never schedules work or writes team files. In a live Console, press `s` to preview the sample and return; scheduling pauses while the preview is open.
 
-Plugin actions use the invoking workspace/pane context to locate the project, including its main checkout when invoked from a task worktree:
-
-- `prefix+t`: **Team Status**, a read-only native plugin tab; it never schedules work.
-- `prefix+Shift+t`: **Open Console**, start or focus the project's single scheduler tab.
-
-The configured Herdr prefix precedes these keys. Existing user bindings take precedence. Actions are also available as `herdr plugin action invoke herdr-team.team-status` and `herdr plugin action invoke herdr-team.open-console`. A missing or stale project context reports an error instead of using the plugin checkout or a later UI focus. Herdr 0.9.3 hosts both views as tabs; quit with `q`.
+`prefix+t` invokes **Open Console**: it starts or focuses the project's single scheduler tab, named **Console**. The action uses the invoking workspace/pane context, including the main checkout when invoked from a task worktree. Existing user bindings take precedence. You can also invoke `herdr plugin action invoke herdr-team.open-console`. A missing or stale project context reports an error instead of using the plugin checkout or a later UI focus. Quit with `q`.
 
 The status strip summarizes nonzero task and delivery counts. The roles table shows current tasks and queue counts; `NEEDS YOU` collects warnings. Details include the task branch and reviewed commit. The read-only tab-bar line includes a nonzero `N queued` count after task counts. See the [Team Console guide](cli/README.md#team-console) for layout and controls.
 

@@ -7,7 +7,7 @@ import { isAbsolute } from "node:path";
 /** Actions use their invocation snapshot, never the plugin cwd or a later UI focus. */
 export function runPluginAction(action: string | undefined, herdr: Herdr, contextJson: string | undefined) {
   if (!herdr.envOk()) throw new Error("Team actions require a Herdr-managed context");
-  if (action !== "open-console" && action !== "team-status") throw new Error("Unknown team plugin action");
+  if (action !== "open-console") throw new Error("Unknown team plugin action");
   const context = JSON.parse(contextJson ?? "null") as {
     workspace_id?: string; focused_pane_id?: string; focused_pane_cwd?: string; workspace_cwd?: string;
   } | null;
@@ -21,9 +21,6 @@ export function runPluginAction(action: string | undefined, herdr: Herdr, contex
   const project = loadProject(root);
   assertProjectWorkspace(project, herdr, context.workspace_id);
   const workspaceId = resolveProjectWorkspace(project, herdr) ?? context.workspace_id;
-  if (action === "team-status") {
-    return { action: "opened", root, ...herdr.pluginPaneOpen("status", workspaceId, root, true) };
-  }
   const outcome = ensureConsole(project, herdr, workspaceId, true);
   if (outcome.action === "failed") throw new Error(outcome.failure);
   return { ...outcome, root };

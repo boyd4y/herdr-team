@@ -14,8 +14,7 @@ const BADGE_TOKENS = BADGE_COLORS.map((fg, slot) => `{ token = "$team_workspace_
 // Missing root-only metadata collapses the second row for every linked worktree.
 const SIDEBAR = `[ui.sidebar.agents]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label", "$team_harness"], ["$team_session", "$team_model", "$team_task"]]\n\n[ui.sidebar.spaces]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label"], ["$team_git_summary"]]`;
 const ACTION_KEYS = [
-  { key: 'prefix+t', action: 'herdr-team.team-status' },
-  { key: 'prefix+shift+t', action: 'herdr-team.open-console' },
+  { key: 'prefix+t', action: 'herdr-team.open-console' },
 ];
 
 function herdr(args, env = process.env) {

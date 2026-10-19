@@ -44,7 +44,7 @@ CLI 不依赖原始 checkout 或 agent 已安装的 Skill 路径；Skill 安装�
 
 Console 使用 [`@opentui/core`](https://github.com/anomalyco/opentui) 的 Box、Text、Select、Input 和 ScrollBox。
 布局、终端宽度与换行、按键解析、焦点、鼠标、滚动、备屏及终端恢复交给框架；项目代码只组装组件、绑定业务快捷键、刷新任务数据和调用调度。
-`herdr-plugin.toml` 声明 `console`/`status` pane 与 `open-console`/`team-status` Actions。`scripts/plugin-action.ts` 只是内部输入输出入口；`runtime/plugin.ts` 使用调用上下文和项目归属校验定位团队，不重新跟随 UI 焦点。原生 pane 启动时显式传 workspace 和项目 cwd，直接运行安装的 CLI；只读 status 不获取调度锁。Console 启动与子进程 lease 共用 console-launch 锁，启动票据防止 lease 建立前重复打开；不再检查 shell 或向旧 pane 注入命令。
+`herdr-plugin.toml` 声明 `console` pane 与 `open-console` Action。`scripts/plugin-action.ts` 只是内部输入输出入口；`runtime/plugin.ts` 使用调用上下文和项目归属校验定位团队，不重新跟随 UI 焦点。原生 pane 启动时显式传 workspace 和项目 cwd，直接运行安装的 CLI，tab 创建与复用时固定名称为 `Console`。Console 启动与子进程 lease 共用 console-launch 锁，启动票据防止 lease 建立前重复打开；不再检查 shell 或向旧 pane 注入命令。
 
 `console-model.ts` 将任务和会话事实投影为展示数据；`console-view.ts` 负责页面布局、详情和业务按键。
 `console-roles.ts` 按角色名复用原生表格行，派单和角色排序变化只更新已有组件，删除角色时销毁对应行。

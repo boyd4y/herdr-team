@@ -71,12 +71,7 @@ herdr-team status
 
 Console 是自动调度器，在项目 workspace 的 Herdr 托管插件 tab 中运行。`up` 保持当前焦点，不再往已有 pane 输入 shell 启动命令。任务文件变化和 Herdr 原生插件事件会唤醒它，投递超时使用独立定时器，默认每 60 秒兜底同步一次。关闭它会暂停自动投递，队列记录仍保存在磁盘；运行 `herdr-team up` 或 `herdr-team console` 可恢复。`console --observe`、`console --once` 和 `console --line` 是只读视图，不调度任务。`uncertain` 表示消息可能已经送达：lead 应先检查 agent 与任务产物，再运行 `herdr-team queue retry <id>`。重试会分配新的 delivery ID。队列用于避免盲目重复发送，但无法保证底层终端或 agent 恰好执行一次。
 
-插件 Actions 根据调用时的 workspace/pane 定位团队；从任务 worktree 调用时使用主检出的团队配置。
-
-- `prefix+t`：**Team Status**，打开只读插件 tab，不调度任务。
-- `prefix+Shift+t`：**Open Console**，打开或切到项目唯一的调度 Console tab。
-
-`prefix` 使用你的 Herdr 前缀配置；已有用户快捷键优先保留。也可运行 `herdr plugin action invoke herdr-team.team-status` 或 `herdr plugin action invoke herdr-team.open-console`。缺少团队或上下文已失效时明确报错，不退回插件源码目录或稍后变化的界面焦点。Herdr 0.9.3 中两个视图均使用原生 tab，按 `q` 退出。
+`prefix+t` 调用 **Open Console**：打开或切到项目唯一的调度 Console，tab 名称固定为 **Console**。动作根据调用时的 workspace/pane 定位团队；从任务 worktree 调用时使用主检出的配置。已有用户快捷键优先保留，也可运行 `herdr plugin action invoke herdr-team.open-console`。缺少团队或上下文已失效时明确报错，不退回插件源码目录或稍后变化的界面焦点。按 `q` 退出。
 
 Console 默认按任务 ID 倒序排列，右侧流程图与详情上下各占一半。投递采用渐变光迹，进入执行状态时边框短暂呼吸，随后停止连续绘制；角色区每行一个角色，按团队规模分配高度，小终端仍可滚动。运行 `herdr-team console --sample` 可直接体验循环演示，无需项目或 Herdr 连接；演示数据只在内存中，不调度任务、不写团队文件。真实 Console 中按 `s` 可进入演示，再按一次返回；演示期间暂停真实调度。
 

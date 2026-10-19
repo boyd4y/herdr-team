@@ -11,27 +11,15 @@ command = ["node", "bin/setup.js"]
 
 [[panes]]
 id = "console"
-title = "Team Console"
+title = "Console"
 placement = "tab"
 command = ["herdr-team", "console"]
-
-[[panes]]
-id = "status"
-title = "Team Status"
-placement = "tab"
-command = ["herdr-team", "console", "--observe"]
 
 [[actions]]
 id = "open-console"
 title = "Open Console"
 contexts = ["workspace", "tab", "pane"]
 command = ["bun", "cli/scripts/plugin-action.ts", "open-console"]
-
-[[actions]]
-id = "team-status"
-title = "Team Status"
-contexts = ["workspace", "tab", "pane"]
-command = ["bun", "cli/scripts/plugin-action.ts", "team-status"]
 
 [[actions]]
 id = "install"

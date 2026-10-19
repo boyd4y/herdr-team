@@ -357,21 +357,15 @@ Detail 会显示合并阻塞的具体原因；已结束任务不计入待投递�
 
 `up` 使用 manifest 中的 `console` pane，在明确的项目 workspace 中直接启动 CLI；不检查 shell、不注入命令。每个项目的 Console 锁和启动票据仍负责避免重复调度。原有活跃 Console 会复用，失效的旧 pane 不会被覆盖。
 
-安装配置提供两个带上下文的 Actions：
-
-| 快捷键 | Action | 行为 |
-| --- | --- | --- |
-| `prefix+t` | `herdr-team.team-status` | 在项目 workspace 打开只读 Team Status 插件 tab，不获取调度锁、不派活 |
-| `prefix+Shift+t` | `herdr-team.open-console` | 打开或聚焦项目唯一的 Team Console tab |
+安装配置只提供一个 Console 入口：`prefix+t` 调用 `herdr-team.open-console`，打开或聚焦项目唯一的调度 Console。原生 tab 名称固定为 `Console`，创建和复用时都会检查并恢复该名称。
 
 已有用户快捷键优先保留。动作从 `HERDR_PLUGIN_CONTEXT_JSON` 的调用 pane/workspace 定位项目，不使用插件 cwd，也不重新跟随可能变化的 UI 焦点；任务 worktree 使用主检出的 `.herdr/`。缺少配置、pane 已关闭/移动、归属不符时停止并报错。
 
 ```sh
-herdr plugin action invoke herdr-team.team-status
 herdr plugin action invoke herdr-team.open-console
 ```
 
-插件声明 `console` 和 `status` 两个原生 pane，后者使用 `console --observe`。本机最低支持 Herdr 0.9.3，两种入口均使用 tab，不依赖更新版本的 plugin popup。CLI 和 Bun 必须在 Herdr server 的 PATH 上；退出使用 `q`。
+插件只声明 `console` pane。本机最低支持 Herdr 0.9.3，使用原生 tab；CLI 和 Bun 必须在 Herdr server 的 PATH 上，退出使用 `q`。
 
 **标签栏一行** —— 永远可见、零布局成本：
 

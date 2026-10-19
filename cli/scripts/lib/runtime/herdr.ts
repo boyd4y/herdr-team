@@ -117,7 +117,7 @@ export interface Herdr {
   paneCurrent(): { paneId: string; cwd: string | null };
   paneClose(paneId: string): void;
   tabFocus(tabId: string): void;
-  pluginPaneOpen(entrypoint: "console" | "status", workspaceId: string, cwd: string, focus: boolean): { paneId: string; tabId: string };
+  pluginPaneOpen(workspaceId: string, cwd: string, focus: boolean): { paneId: string; tabId: string };
   paneRun(paneId: string, command: string): void;
   paneIsShell(paneId: string): boolean;
   workspaceCloseGroup(workspaceId: string): void;
@@ -266,8 +266,8 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
 
     paneClose: (paneId) => void run(["pane", "close", paneId]),
     tabFocus: (tabId) => void run(["tab", "focus", tabId]),
-    pluginPaneOpen: (entrypoint, workspaceId, cwd, focus) => {
-      const args = ["plugin", "pane", "open", "--plugin", "herdr-team", "--entrypoint", entrypoint,
+    pluginPaneOpen: (workspaceId, cwd, focus) => {
+      const args = ["plugin", "pane", "open", "--plugin", "herdr-team", "--entrypoint", "console",
         "--placement", "tab", "--workspace", workspaceId, "--cwd", cwd, focus ? "--focus" : "--no-focus"];
       const raw = (json(args) as RawResult).result ?? {};
       const pane = (raw["plugin_pane"] as { pane?: PaneInfo } | undefined)?.pane;

@@ -259,15 +259,18 @@ test("native launch failure is reported without injecting terminal input; the ne
   expect(h.calls.some(call => call.startsWith("pane run"))).toBe(false);
 }));
 
-test("plugin actions follow invocation context, open read-only status, and reuse the scheduler", () => fixture((root, h) => {
+test("the Console action follows invocation context, fixes its tab name, and reuses the scheduler", () => fixture((root, h) => {
   h.state.focusedCwd = "/unrelated";
   const context = JSON.stringify({ workspace_id: "w1", focused_pane_id: h.state.panes[0]!.pane_id });
   expect(runPluginAction("open-console", h, context)).toMatchObject({ action: "started", root: realpathSync(root) });
   expect(runPluginAction("open-console", h, context).action).toBe("reused");
   expect(h.calls.filter(call => call.startsWith("plugin pane open console"))).toHaveLength(1);
   expect(h.calls.some(call => call.startsWith("tab focus"))).toBe(true);
-  runPluginAction("team-status", h, context);
-  expect(h.calls.filter(call => call.startsWith("plugin pane open status"))).toHaveLength(1);
+  const consoleTab = h.state.tabs.find(tab => tab.label === "Console")!;
+  expect(consoleTab).toBeDefined();
+  consoleTab.label = "Custom title";
+  runPluginAction("open-console", h, context);
+  expect(consoleTab.label).toBe("Console");
   expect(h.calls.some(call => call.startsWith("agent prompt") || call.startsWith("pane run"))).toBe(false);
   const before = h.calls.length;
   expect(() => runPluginAction("open-console", h, undefined)).toThrow(/context/);

@@ -52,12 +52,17 @@ export function ensureConsole(project: Project, herdr: Herdr, workspaceId: strin
   try {
     return withTeamLock(project, "console-launch", () => {
       const panes = herdr.paneList(workspaceId);
+      const tabs = herdr.tabList(workspaceId);
+      const nameTab = (tabId: string) => {
+        if (tabs.find(tab => tab.tab_id === tabId)?.label !== "Console") herdr.tabRename(tabId, "Console");
+      };
       const current = owner(project);
       if (current && processAlive(current.pid)) {
         const stop = runtimePath(project, "console.stop");
         if (existsSync(stop) && readFileSync(stop, "utf8") === current.nonce) throw new Error("Team Console is stopping; run up again after it exits");
         const pane = panes.find((p) => p.pane_id === current.paneId);
         if (!pane) throw new Error("Team Console is running outside this workspace; stop it before starting another");
+        nameTab(pane.tab_id);
         if (focus) herdr.tabFocus(pane.tab_id);
         return { action: "reused", paneId: pane.pane_id, tabId: pane.tab_id };
       }
@@ -66,15 +71,17 @@ export function ensureConsole(project: Project, herdr: Herdr, workspaceId: strin
         const launching = JSON.parse(readFileSync(ticket, "utf8")) as { paneId?: string; at?: number };
         const pane = panes.find(pane => pane.pane_id === launching.paneId);
         if (pane && typeof launching.at === "number" && Date.now() - launching.at < 30_000) {
+          nameTab(pane.tab_id);
           if (focus) herdr.tabFocus(pane.tab_id);
           return { action: "reused", paneId: pane.pane_id, tabId: pane.tab_id };
         }
       }
-      const { paneId, tabId } = herdr.pluginPaneOpen("console", workspaceId, project.root, focus);
+      const { paneId, tabId } = herdr.pluginPaneOpen(workspaceId, project.root, focus);
       // The child acquires console-launch before claiming its lease, so it cannot
       // clear this ticket until the native launch and ownership metadata are saved.
       writeRecord(ticket, { paneId, at: Date.now() });
-      herdr.reportMetadata(paneId, "herdr-team-console", "Team Console", { team_console_project: projectKey(project) });
+      nameTab(tabId);
+      herdr.reportMetadata(paneId, "herdr-team-console", "Console", { team_console_project: projectKey(project) });
       return { action: "started", paneId, tabId };
     });
   } catch (error) { return { action: "failed", failure: error instanceof Error ? error.message : String(error) }; }

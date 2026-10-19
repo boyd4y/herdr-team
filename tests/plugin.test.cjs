@@ -104,7 +104,7 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     assert(applied.includes('{ token = "$team_workspace_c0", fg = "#89b4fa", bold = true, dim = false }'));
     assert(!applied.includes('$harness_logo'));
     assert(applied.includes('key = "prefix+t"'));
-    assert(applied.includes('command = "herdr-team.team-status"'));
+    assert(applied.includes('command = "herdr-team.open-console"'));
     assert(applied.includes('"$team_label", "$team_harness"'));
     assert(applied.includes('["$team_session", "$team_model", "$team_task"]'));
     assert(applied.includes('"$team_label"], ["$team_git_summary"]]'));
@@ -146,7 +146,8 @@ test('user action keys are preserved, not duplicated or removed', (t) => {
   f.ok('configure.js');
   const applied = fs.readFileSync(f.herdrConfig, 'utf8');
   assert.equal(applied.match(/key = "prefix\+t"/g).length, 1);
-  assert(applied.includes('herdr-team.open-console'));
+  assert(!applied.includes('herdr-team.open-console'));
+  assert(!applied.includes('prefix+shift+t'));
   assert(applied.startsWith(original));
   f.ok('configure.js', ['--uninstall']);
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
@@ -235,8 +236,9 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   const actions = [...manifest.matchAll(/\[\[actions\]\]\nid = "([^"]+)"\ntitle = "[^"]+"\ncommand = (\[[^\n]+\])/g)];
   assert.deepEqual(actions.map(([, id]) => id), ['install', 'configure', 'unconfigure', 'install-skill', 'uninstall-skill', 'install-cli', 'uninstall-cli']);
   assert(manifest.includes('id = "open-console"'));
-  assert(manifest.includes('id = "team-status"'));
-  assert(manifest.includes('command = ["herdr-team", "console", "--observe"]'));
+  assert(!manifest.includes('id = "team-status"'));
+  assert(!manifest.includes('id = "status"'));
+  assert(manifest.includes('title = "Console"'));
   assert(fs.existsSync(path.join(f.env.XDG_BIN_HOME, 'herdr-team')));
   for (const id of ['install', 'configure', 'install-skill', 'install-cli', 'unconfigure', 'uninstall-skill', 'uninstall-cli']) {
     const command = JSON.parse(actions.find((a) => a[1] === id)[2]);
