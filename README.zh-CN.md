@@ -75,7 +75,7 @@ Console 是自动调度器，在项目 workspace 的 Herdr 托管插件 tab 中�
 
 Console 默认按任务 ID 倒序排列，右侧流程图与详情上下各占一半。投递采用渐变光迹，进入执行状态时边框短暂呼吸，随后停止连续绘制；角色区每行一个角色，按团队规模分配高度，小终端仍可滚动。运行 `herdr-team console --sample` 可直接体验循环演示，无需项目或 Herdr 连接；演示数据只在内存中，不调度任务、不写团队文件。真实 Console 中按 `s` 可进入演示，再按一次返回；演示期间暂停真实调度。
 
-如果 Herdr 官方 integration 上报了 session ID，常驻角色可以恢复之前的原生会话。请安装或更新对应的 Herdr integration（例如 `herdr integration install codex`），并确保它在关闭前上报 session。`herdr-team up --fresh` 会忽略待启动角色的已保存记录；正在运行的 agent 仍会复用。限制和排查方式见 [CLI 会话恢复说明](cli/README.md#快速开始)。
+如果 Herdr 官方 integration 上报了 session ID，常驻角色可以恢复之前的原生会话。Claude、Codex 的 ID 只有在本地 transcript 出现真实 user/assistant 消息后才保存并确认；仅启动就上报的 ID 不保存、不自动恢复，也不覆盖已有的有效记录。确认使用角色 env 优先的 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`，同一已确认 ID 不在状态更新时重复读取 transcript；旧引用首次使用时也须确认。Grok 的空会话可以恢复，新版 Kimi 在首条消息时创建会话，两者保持原生行为。恢复失败保留引用，不自动切换新会话。仅有 ID 无法跨机器恢复对话。请安装或更新对应的 Herdr integration（例如 `herdr integration install codex`），并确保它在关闭前上报 session。`herdr-team up --fresh` 会忽略待启动角色的已保存记录；正在运行的 agent 仍会复用。限制和排查方式见 [CLI 会话恢复说明](cli/README.md#快速开始)。
 
 任务会话在队列启动它们时，按项目、任务号、角色和 worktree 目录分别恢复。Team 读取 Herdr 的 `agent_session`，无需额外安装 session hook。恢复会话不会重发任务或解除 uncertain 投递。
 
@@ -86,6 +86,16 @@ PR 方案需要已登录的 `gh` 和匹配的 GitHub.com `origin`，测试、审
 ## 升级、移除与故障排查
 
 GitHub 安装的插件请通过 Herdr 插件管理器更新或重新安装 `boyd4y/herdr-team`。更新本地 link 的检出时，请在仓库根目录运行 `herdr plugin link .`，刷新插件 manifest 和事件 hook；然后运行 `herdr plugin action invoke herdr-team.install`，更新内置 CLI、skill 并应用托管配置。`configure` action 只应用 Herdr Team 托管的布局与配置并 reload config；它不会注册已变更的事件 hook，也不会更新 CLI 和 skill。Herdr 的 `PATH` 中需保留用户 bin 目录和 Bun。
+
+GitHub 安装可用以下命令更新并检查版本：
+
+```sh
+herdr plugin install boyd4y/herdr-team --ref main
+herdr plugin list --plugin herdr-team
+herdr-team --version
+```
+
+安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。升级无需运行 `init --force`。本次插件与 CLI 版本均为 `0.1.3`。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 

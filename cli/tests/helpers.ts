@@ -19,6 +19,9 @@ import { badgeTokens, type AgentInfo, type Herdr, type PaneInfo, type TabInfo, t
 process.env["HERDR_TEAM_TRUST_HOME"] = mkdtempSync(join(tmpdir(), "herdr-team-trusthome-"));
 // Never write native session references into the user's real plugin state.
 process.env["HERDR_PLUGIN_STATE_DIR"] = mkdtempSync(join(tmpdir(), "herdr-team-state-"));
+// Recovery tests must never inspect the user's real conversation stores.
+process.env["CLAUDE_CONFIG_DIR"] = mkdtempSync(join(tmpdir(), "herdr-team-claude-"));
+process.env["CODEX_HOME"] = mkdtempSync(join(tmpdir(), "herdr-team-codex-"));
 
 let fixtureProjectRoot = "/tmp/myproj";
 
@@ -306,4 +309,13 @@ export function claimCurrent(root: string, id = "0001"): string {
   if (!delivery) throw new Error("Expected an active delivery");
   claimTask(project, id, delivery.id);
   return delivery.id;
+}
+
+/** A native report backed by a saved Codex user message. */
+export function persistedCodexSession(value = "session-123") {
+  const dir = join(process.env.CODEX_HOME!, "sessions", "2026", "10", "19");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `rollout-2026-10-19T10-00-00-${value}.jsonl`),
+    '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Hello"}]}}\n');
+  return { source: "herdr:codex", agent: "codex", kind: "id" as const, value };
 }

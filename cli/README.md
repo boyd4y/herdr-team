@@ -164,7 +164,9 @@ herdr-team up --fresh
 
 `--fresh` 只影响待启动的角色，启动成功后清除它的旧记录；不会重启正在工作的 agent。
 角色卡 `args` 显式指定的 resume/session 参数优先，不叠加自动恢复参数。
-恢复失败保留记录并输出原因，不自动改成新会话。没有记录时正常新建。
+Claude、Codex 只有在对应 transcript 中出现真实的 user/assistant 消息后，才保存 ID 并标记 `confirmed`；只有 SessionStart、空文件或元数据的 ID 不确认，也不覆盖已有的有效记录。确认时使用角色 env 优先的 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`（默认 `~/.claude` / `~/.codex`），已确认的同一 ID 不重复读取 transcript。旧记录首次使用时也须满足消息确认条件。Grok 的空会话可恢复；新版 Kimi 首条消息时才创建会话，两者不额外检查历史。
+恢复失败仍保留记录并输出原因，不自动改成新会话。没有已确认记录时正常新建；显式 `--resume` 参数不受自动确认逻辑改写。会话历史不随项目配置跨机器同步。
+
 
 自动记录依赖 Herdr 官方 integration 上报 `agent_session`。例如使用 Codex/Grok 时，
 分别运行 `herdr integration install codex` / `herdr integration install grok` 安装或更新集成，
@@ -175,7 +177,7 @@ herdr-team up --fresh
 任务会话按项目、任务号和角色分别保存，并校验对应 worktree 的 cwd；开发和测试即使共用
 一个 worktree，也各自恢复自己的原生会话。任务角色仍由队列实际投递时启动，不由 `up`
 预先拉起。恢复会话不会重放任务、改变 delivery 状态或绕过 `uncertain` 的人工核对。
-Team 只读取 Herdr 的 `agent_session`，无需另装 Team 专用的 CLI hook，也不解析会话文件。
+Team 从 Herdr 的 `agent_session` 取得 ID，无需另装 Team 专用 hook。Claude、Codex 的 transcript 只用于确认是否已有真实消息，不复制或同步对话内容。
 GitHub 安装请通过 Herdr 插件管理器更新或重新安装。更新本地 link 的检出时，在仓库根目录运行 `herdr plugin link .` 以加载更新后的 manifest 和事件钩子，再运行 `herdr plugin action invoke herdr-team.install` 更新内置 CLI、skill 并应用托管配置。`herdr-team.configure` 只应用托管布局/配置并 reload config，不会注册更新后的 hook，也不会更新 CLI 或 skill。
 
 `dispatch [<id>]` 将 todo 卡持久化入队，并尝试立即投递一条符合条件的任务。

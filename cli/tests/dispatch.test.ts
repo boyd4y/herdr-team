@@ -91,6 +91,9 @@ describe("CLI up / dispatch", () => {
     withCLI((cli, root, calls) => {
       const project = loadProject(root);
       const role = project.roles.find((r) => r.name === "docs")!;
+      const transcripts = join(process.env.CLAUDE_CONFIG_DIR!, "projects", "cli-recovery");
+      mkdirSync(transcripts, { recursive: true });
+      writeFileSync(join(transcripts, "saved-docs-session.jsonl"), '{"type":"user","message":{"content":"Hello"}}\n');
       rememberRoleSession(project, role, { agent_session: {
         source: "herdr:claude", agent: "claude", kind: "id", value: "saved-docs-session",
       } });

@@ -72,7 +72,7 @@ Console lists the newest task IDs first and splits the selected task's flow and 
 
 The status strip summarizes nonzero task and delivery counts. The roles table shows current tasks and queue counts; `NEEDS YOU` collects warnings. Details include the task branch and reviewed commit. The read-only tab-bar line includes a nonzero `N queued` count after task counts. See the [Team Console guide](cli/README.md#team-console) for layout and controls.
 
-Resident roles can resume a saved native session when Herdr's official integration reports its session ID. Install or update the matching Herdr integration (for example, `herdr integration install codex`) and let it report a session before shutdown. `herdr-team up --fresh` ignores saved session records for roles that need starting; already running agents are reused. See the [Chinese CLI guide](cli/README.md) for recovery limits and troubleshooting.
+Resident roles can resume a saved native session when Herdr's official integration reports its session ID. Claude and Codex IDs are saved and marked confirmed only after the local transcript contains a real user/assistant message; startup-only IDs are not saved or used for automatic resume. Confirmation respects role and inherited config paths (`CLAUDE_CONFIG_DIR` or `CODEX_HOME`). Grok can resume an empty session; current Kimi creates a session on its first message, so neither needs this extra gate. Already-confirmed IDs do not reread transcripts during status updates. Older references need the same confirmation before use. Resume failures preserve the reference and do not silently switch to a new session. Session IDs alone do not transfer history between machines. Install or update the matching Herdr integration (for example, `herdr integration install codex`) and let it report a session before shutdown. `herdr-team up --fresh` ignores saved session records for roles that need starting; already running agents are reused. See the [Chinese CLI guide](cli/README.md) for recovery limits and troubleshooting.
 
 Task sessions resume separately by project, task, role, and worktree directory when the queue starts them. Team reads Herdr's `agent_session`; it requires no additional session hook. Resuming does not replay assignments or resolve uncertain deliveries.
 
@@ -83,6 +83,16 @@ PR workflows require an authenticated GitHub CLI (`gh`) and a matching GitHub.co
 ## Upgrade, remove, and troubleshoot
 
 For a GitHub installation, upgrade by updating or reinstalling `boyd4y/herdr-team` through Herdr's plugin manager. For a locally linked checkout, run `herdr plugin link .` from the checkout root to refresh the plugin manifest and event hooks, then run `herdr plugin action invoke herdr-team.install` to refresh the bundled CLI, skill, and managed configuration. The `configure` action only applies Herdr Team's managed layout and configuration and reloads config; it does not register changed event hooks or refresh the CLI and skill. Keep the user bin directory and Bun on Herdr's `PATH`.
+
+To update a GitHub installation and check the installed versions:
+
+```sh
+herdr plugin install boyd4y/herdr-team --ref main
+herdr plugin list --plugin herdr-team
+herdr-team --version
+```
+
+Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Project initialization is not an upgrade step. Plugin and CLI versions are both `0.1.3` in this release.
 
 Before removing the plugin, remove the plugin-managed skill, Herdr configuration, and CLI shim with the corresponding actions:
 

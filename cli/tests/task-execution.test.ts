@@ -15,7 +15,7 @@ import { runtimePath } from "../scripts/lib/runtime/state.ts";
 import { roleStatusesFrom } from "../scripts/lib/ui/status.ts";
 import { createTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
 import { worktreeBranch } from "../scripts/lib/shared/types.ts";
-import { claimCurrent, fakeHerdr, makeProject, roleMeta, taskMeta, writeRole, writeTask } from "./helpers.ts";
+import { persistedCodexSession, claimCurrent, fakeHerdr, makeProject, roleMeta, taskMeta, writeRole, writeTask } from "./helpers.ts";
 
 function setup() {
   const project = makeProject();
@@ -89,7 +89,7 @@ test("lead always starts one resident session and queues its tasks without creat
   const first = claimCurrent(f.root);
   expect(prompts[0]).toContain("single resident lead session");
   const lead = f.herdr.state.agents.find((agent) => agent.name === "lead")!;
-  lead.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "lead-native" };
+  lead.agent_session = persistedCodexSession("lead-native");
   refreshSidebar(f.load(), f.herdr);
   const role = f.load().roles.find((role) => role.name === "lead")!;
   expect(savedResumeArgs(f.load(), role)).toEqual(["resume", "lead-native"]);
@@ -252,7 +252,7 @@ test("legacy unsent cards migrate to task sessions without changing already-issu
   expect(JSON.parse(original).pane_id).toBe((f.task().meta.delivery as any).pane_id);
 }));
 
-// Recovery consumes Herdr's native agent_session; no hooks or transcript parsing here.
+// Recovery uses native reports backed by persisted harness messages.
 test("task native IDs are saved independently by task and role, then Codex resumes exactly its own ID", () => fixture((f) => {
   writeRole(f.root, "dev", roleMeta({ worktree: true, args: ["-m", "gpt-6.1-sol"] }));
   f.add("First"); f.add("Second");
@@ -260,8 +260,8 @@ test("task native IDs are saved independently by task and role, then Codex resum
   pumpQueue(f.load(), f.herdr);
   const first = f.herdr.state.agents.find((a) => a.name === "dev-0001")!;
   const second = f.herdr.state.agents.find((a) => a.name === "dev-0002")!;
-  first.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "first-native-session" };
-  second.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "second-native-session" };
+  first.agent_session = persistedCodexSession("first-native-session");
+  second.agent_session = persistedCodexSession("second-native-session");
   expect(refreshSidebar(f.load(), f.herdr, true)).toEqual({ updated: 2, failed: 0 });
   const role = f.load().roles.find((r) => r.name === "dev")!;
   const a = scopeForTaskSession(f.load(), f.herdr, role, "0001"), b = scopeForTaskSession(f.load(), f.herdr, role, "0002");
@@ -280,8 +280,8 @@ test("task dev and test save different native sessions in the same worktree; dow
   f.add("First"); const { delivery } = f.submit();
   const dev = f.herdr.state.agents.find((a) => a.name === "dev-0001")!;
   const tester = f.herdr.state.agents.find((a) => a.name === "test-0001")!;
-  dev.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "dev-native" };
-  tester.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "test-native" };
+  dev.agent_session = persistedCodexSession("dev-native");
+  tester.agent_session = persistedCodexSession("test-native");
   const p = f.load(), devRole = p.roles.find((r) => r.name === "dev")!, testRole = p.roles.find((r) => r.name === "test")!;
   const devScope = scopeForTaskSession(p, f.herdr, devRole, "0001"), testScope = scopeForTaskSession(p, f.herdr, testRole, "0001");
   expect(devScope.cwd).toBe(testScope.cwd);
@@ -298,13 +298,13 @@ test("task late reports preserve existing IDs when absent and reject wrong check
   const role = f.load().roles.find((r) => r.name === "dev")!;
   const scope = scopeForTaskSession(f.load(), f.herdr, role, "0001");
   expect(savedResumeArgs(f.load(), role, scope)).toBeUndefined();
-  agent.agent_session = { source: "herdr:codex", agent: "codex", kind: "id", value: "correct-id" };
+  agent.agent_session = persistedCodexSession("correct-id");
   refreshSidebar(f.load(), f.herdr, true);
   agent.agent_session = undefined;
   refreshSidebar(f.load(), f.herdr, true);
   expect(savedResumeArgs(f.load(), role, scope)).toEqual(["resume", "correct-id"]);
   rememberRoleSession(f.load(), role, { ...agent, cwd: f.root,
-    agent_session: { source: "herdr:codex", agent: "codex", kind: "id", value: "wrong-cwd" } }, scope);
+    agent_session: persistedCodexSession("wrong-cwd") }, scope);
   expect(savedResumeArgs(f.load(), role, scope)).toEqual(["resume", "correct-id"]);
   expect(savedResumeArgs(f.load(), { ...role, kind: "grok" }, scope)).toBeUndefined();
   expect(savedResumeArgs(f.load(), role, { ...scope, cwd: f.root })).toBeUndefined();
@@ -319,7 +319,7 @@ test("failed task resume never falls back to a fresh session and keeps the origi
   const role = f.load().roles.find((r) => r.name === "dev")!;
   const scope = scopeForTaskSession(f.load(), f.herdr, role, "0001");
   rememberRoleSession(f.load(), role, { ...agent,
-    agent_session: { source: "herdr:codex", agent: "codex", kind: "id", value: "resume-me" } }, scope);
+    agent_session: persistedCodexSession("resume-me") }, scope);
   f.herdr.paneClose(agent.pane_id!);
   let attempts = 0;
   f.herdr.agentStart = () => { attempts++; throw new Error("session unavailable"); };
@@ -333,7 +333,7 @@ test("task records do not leak to other tasks or projects and malformed records 
   const role = f.load().roles.find((r) => r.name === "dev")!;
   const a = scopeForTaskSession(f.load(), f.herdr, role, "0001"), b = scopeForTaskSession(f.load(), f.herdr, role, "0002");
   rememberRoleSession(f.load(), role, {
-    agent_session: { source: "herdr:codex", agent: "codex", kind: "id", value: "only-first" } }, a);
+    agent_session: persistedCodexSession("only-first") }, a);
   expect(savedResumeArgs(f.load(), role, b)).toBeUndefined();
   const other = makeProject();
   try { expect(savedResumeArgs(loadProject(other.root), role, a)).toBeUndefined(); } finally { other.cleanup(); }

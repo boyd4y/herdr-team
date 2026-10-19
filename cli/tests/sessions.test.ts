@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { loadProject } from "../scripts/lib/team/project.ts";
 import type { AgentSessionInfo } from "../scripts/lib/runtime/herdr.ts";
 import { down, up } from "../scripts/lib/dispatch/launch.ts";
 import { refreshSessionSidebar } from "../scripts/lib/ui/sidebar.ts";
 import { rememberRoleSession, resumeArgs, roleSessionPath, savedResumeArgs } from "../scripts/lib/runtime/sessions.ts";
-import { fakeHerdr, makeProject, runningWorkspace, twoResidentRoles } from "./helpers.ts";
+import { fakeHerdr, makeProject, persistedCodexSession, runningWorkspace, twoResidentRoles } from "./helpers.ts";
 
 const session = (agent = "codex", value = "session-123"): AgentSessionInfo => ({
   source: `herdr:${agent}`, agent, kind: "id", value,
@@ -13,13 +14,16 @@ const session = (agent = "codex", value = "session-123"): AgentSessionInfo => ({
 
 function fixture(run: (project: ReturnType<typeof loadProject>, herdr: ReturnType<typeof runningWorkspace>) => void) {
   const { root, cleanup } = makeProject();
-  try { twoResidentRoles(root); run(loadProject(root), runningWorkspace()); }
+  try { twoResidentRoles(root); persistedCodexSession(); run(loadProject(root), runningWorkspace()); }
   finally { cleanup(); }
 }
 
 describe("up 的原生会话恢复", () => {
   test("关停前保存 ID；重建 Herdr 后按项目和角色恢复并保留模型参数", () => {
     fixture((p, h) => {
+      const transcripts = join(process.env.CLAUDE_CONFIG_DIR!, "projects", "saved-project");
+      mkdirSync(transcripts, { recursive: true });
+      writeFileSync(join(transcripts, "claude-456.jsonl"), '{"type":"user","message":{"content":"Hello"}}\n');
       h.state.agents[0]!.agent_session = session();
       h.state.agents[1]!.agent_session = session("claude", "claude-456");
       down(p, h);
@@ -37,7 +41,94 @@ describe("up 的原生会话恢复", () => {
     });
   });
 
-  test("新启动即上报的 ID 也保存，运行中复用更新 ID，不发送输入", () => {
+  test("Claude IDs are saved only after real messages, and a blank session cannot replace a confirmed one", () => {
+    fixture((p, h) => {
+      const role = p.roles.find(role => role.kind === "claude")!;
+      const agent = h.state.agents.find(agent => agent.name === role.name)!;
+      agent.agent_session = session("claude", "confirmed-after-message");
+      refreshSessionSidebar(h, true);
+      expect(existsSync(roleSessionPath(p, role))).toBe(false);
+      const dir = join(process.env.CLAUDE_CONFIG_DIR!, "projects", "message-confirmation");
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, "confirmed-after-message.jsonl");
+      writeFileSync(file, '{"type":"file-history-snapshot","snapshot":{}}\n');
+      refreshSessionSidebar(h, true);
+      expect(existsSync(roleSessionPath(p, role))).toBe(false);
+      writeFileSync(file, '{"type":"user","message":{"content":"Hello"}}\n');
+      refreshSessionSidebar(h, true);
+      expect(JSON.parse(readFileSync(roleSessionPath(p, role), "utf8")).confirmed).toBe(true);
+      expect(savedResumeArgs(p, role)).toEqual(["--resume", "confirmed-after-message"]);
+      const before = readFileSync(roleSessionPath(p, role), "utf8");
+      agent.agent_session = session("claude", "another-blank-session");
+      refreshSessionSidebar(h, true);
+      expect(readFileSync(roleSessionPath(p, role), "utf8")).toBe(before);
+    });
+  });
+
+  test("Claude confirmation respects its config profile and confirms old IDs only when messages exist", () => {
+    fixture((p) => {
+      const role = { ...p.roles.find(role => role.kind === "claude")!, env: { CLAUDE_CONFIG_DIR: join(p.root, "claude-profile") } };
+      const agent = { agent_session: session("claude", "profile-session") };
+      const other = join(process.env.CLAUDE_CONFIG_DIR!, "projects", "other-profile");
+      mkdirSync(other, { recursive: true });
+      writeFileSync(join(other, "profile-session.jsonl"), '{"type":"user","message":{"content":"Hello"}}\n');
+      expect(rememberRoleSession(p, role, agent)).toBe(false);
+      const dir = join(role.env.CLAUDE_CONFIG_DIR, "projects", "profile-project");
+      mkdirSync(dir, { recursive: true });
+      const transcript = join(dir, "profile-session.jsonl");
+      writeFileSync(transcript, "");
+      expect(rememberRoleSession(p, role, agent)).toBe(false);
+      writeFileSync(transcript, '{"type":"user","message":{"content":"Hello"}}\n');
+      expect(rememberRoleSession(p, role, agent)).toBe(true);
+      const old = JSON.parse(readFileSync(roleSessionPath(p, role), "utf8"));
+      delete old.confirmed;
+      writeFileSync(roleSessionPath(p, role), JSON.stringify(old));
+      expect(savedResumeArgs(p, role)).toEqual(["--resume", "profile-session"]);
+      expect(JSON.parse(readFileSync(roleSessionPath(p, role), "utf8")).confirmed).toBe(true);
+      writeFileSync(roleSessionPath(p, role), JSON.stringify({ ...old, session: session("claude", "old-blank-id") }));
+      expect(savedResumeArgs(p, role)).toBeUndefined();
+      expect(savedResumeArgs(p, { ...role, args: ["--resume", "explicit-id"] })).toBeUndefined();
+    });
+  });
+
+  test("Codex startup IDs need persisted messages in the selected profile; confirmed IDs avoid rereads", () => {
+    fixture((p) => {
+      const role = { ...p.roles[0]!, env: { CODEX_HOME: join(p.root, "codex-profile") } };
+      const agent = { agent_session: session("codex", "codex-confirmation") };
+      persistedCodexSession("codex-confirmation"); // A different profile must not confirm it.
+      expect(rememberRoleSession(p, role, agent)).toBe(false);
+      const dir = join(role.env.CODEX_HOME, "sessions", "2026", "10", "19");
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, "rollout-2026-10-19T10-00-00-codex-confirmation.jsonl");
+      writeFileSync(file, '{"type":"session_meta","payload":{"id":"codex-confirmation"}}\n{"type":');
+      expect(rememberRoleSession(p, role, agent)).toBe(false);
+      writeFileSync(file, '{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Hello"}]}}\n{"type":');
+      expect(rememberRoleSession(p, role, agent)).toBe(true);
+      const record = readFileSync(roleSessionPath(p, role), "utf8");
+      writeFileSync(file, "");
+      expect(rememberRoleSession(p, role, agent)).toBe(true);
+      expect(savedResumeArgs(p, role)).toEqual(["resume", "codex-confirmation"]);
+      expect(rememberRoleSession(p, role, { agent_session: session("codex", "blank-replacement") })).toBe(false);
+      expect(readFileSync(roleSessionPath(p, role), "utf8")).toBe(record);
+      const old = JSON.parse(record);
+      delete old.confirmed;
+      writeFileSync(roleSessionPath(p, role), JSON.stringify(old));
+      expect(savedResumeArgs(p, role)).toBeUndefined();
+      writeFileSync(file, '{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello"}]}}\n');
+      expect(savedResumeArgs(p, role)).toEqual(["resume", "codex-confirmation"]);
+      expect(JSON.parse(readFileSync(roleSessionPath(p, role), "utf8")).confirmed).toBe(true);
+    });
+  });
+
+  test.each(["grok", "kimi"])("%s keeps native session semantics without a message gate", (kind) => {
+    fixture((p) => {
+      const role = { ...p.roles[0]!, kind };
+      expect(rememberRoleSession(p, role, { agent_session: session(kind, "native-id") })).toBe(true);
+      expect(savedResumeArgs(p, role)).toEqual([kind === "grok" ? "--resume" : "--session", "native-id"]);
+    });
+  });
+
+  test("有消息的原生 ID 可保存，运行中复用更新 ID，不发送输入", () => {
     fixture((p) => {
       const h = fakeHerdr();
       const start = h.agentStart;
@@ -47,7 +138,7 @@ describe("up 的原生会话恢复", () => {
       };
       up(p, h);
       expect(savedResumeArgs(p, p.roles[0]!)).toEqual(["resume", "session-123"]);
-      h.state.agents[0]!.agent_session = session("codex", "new-session");
+      h.state.agents[0]!.agent_session = persistedCodexSession("new-session");
       h.calls.length = 0;
       expect(up(p, h).roles[0]!.action).toBe("reused");
       expect(savedResumeArgs(p, p.roles[0]!)).toEqual(["resume", "new-session"]);

@@ -13,6 +13,7 @@ interface SavedSession {
   cwd: string;
   taskId?: string;
   session: AgentSessionInfo;
+  confirmed?: true;
 }
 
 export interface TaskSessionScope { taskId: string; cwd: string }
@@ -79,6 +80,34 @@ export function hasSessionArgs(role: RoleCard): boolean {
     (role.kind === "codex" && ["resume", "fork"].includes(arg)));
 }
 
+const needsMessageConfirmation = (kind: string) => kind === "claude" || kind === "codex";
+
+/** Both harnesses can report a startup ID before a resumable conversation exists. */
+function hasMessages(role: RoleCard, id: string, cwd: string): boolean {
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) return false;
+  const claude = role.kind === "claude";
+  const key = claude ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
+  const config = resolve(cwd, role.env?.[key] ?? process.env[key] ?? join(homedir(), claude ? ".claude" : ".codex"));
+  const patterns = claude ? [`projects/*/${id}.jsonl`]
+    : [`sessions/*/*/*/*-${id}.jsonl`, `archived_sessions/*-${id}.jsonl`];
+  try {
+    for (const pattern of patterns) for (const file of new Bun.Glob(pattern).scanSync({ cwd: config, onlyFiles: true })) {
+      let content: string;
+      try { content = readFileSync(join(config, file), "utf8"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; }
+      if (content.split("\n").some(line => {
+        try {
+          const event = JSON.parse(line);
+          const message = claude ? event.message : event.type === "response_item" && event.payload?.type === "message" ? event.payload : undefined;
+          const role = claude ? event.type : message?.role;
+          return ["user", "assistant"].includes(role) && message?.content?.length > 0;
+        } catch { return false; } // A final JSONL record may still be being written.
+      })) return true;
+    }
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  return false;
+}
+
 export function savedResumeArgs(project: Project, role: RoleCard, scope?: TaskSessionScope): string[] | undefined {
   if ((!scope && role.worktree && role.name !== "lead") || hasSessionArgs(role)) return;
   let saved: SavedSession;
@@ -89,7 +118,11 @@ export function savedResumeArgs(project: Project, role: RoleCard, scope?: TaskSe
   }
   if (saved?.version !== 1 || saved.project !== projectKey(project) || saved.role !== role.name ||
     saved.taskId !== scope?.taskId || saved.cwd !== roleCwd(project, role, scope) || !saved.session) return;
-  return resumeArgs(role.kind, saved.session);
+  const args = resumeArgs(role.kind, saved.session);
+  // Older records need the same message confirmation as a new native report.
+  if (args && needsMessageConfirmation(role.kind) && saved.confirmed !== true &&
+      !rememberRoleSession(project, role, { agent_session: saved.session, cwd: saved.cwd }, scope)) return;
+  return args;
 }
 
 export function forgetRoleSession(project: Project, role: RoleCard, scope?: TaskSessionScope): void {
@@ -98,25 +131,30 @@ export function forgetRoleSession(project: Project, role: RoleCard, scope?: Task
 }
 
 /** Called only with a project-verified role/agent pair. Missing reports keep prior IDs. */
-export function rememberRoleSession(project: Project, role: RoleCard, agent: AgentInfo, scope?: TaskSessionScope): void {
+export function rememberRoleSession(project: Project, role: RoleCard, agent: AgentInfo, scope?: TaskSessionScope): boolean {
   if ((!scope && ((role.worktree && role.name !== "lead") || agent.tokens?.team_task_id)) ||
       (scope && agent.tokens?.team_task_id !== undefined && agent.tokens.team_task_id !== scope.taskId) ||
-      !agent.agent_session || !resumeArgs(role.kind, agent.agent_session)) return;
+      !agent.agent_session || !resumeArgs(role.kind, agent.agent_session)) return false;
   const actualCwd = agent.foreground_cwd ?? agent.cwd;
-  if (actualCwd !== undefined && canonicalCwd(actualCwd) !== roleCwd(project, role, scope)) return;
+  if (actualCwd !== undefined && canonicalCwd(actualCwd) !== roleCwd(project, role, scope)) return false;
   const record: SavedSession = {
     version: 1, project: projectKey(project), role: role.name,
     cwd: roleCwd(project, role, scope), ...(scope ? { taskId: scope.taskId } : {}), session: agent.agent_session,
+    ...(needsMessageConfirmation(role.kind) ? { confirmed: true as const } : {}),
   };
   const file = roleSessionPath(project, role, scope);
   const content = `${JSON.stringify(record, null, 2)}\n`;
-  try { if (readFileSync(file, "utf8") === content) return; }
+  try { if (readFileSync(file, "utf8") === content) return true; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  // Confirm each ID after messages persist. Confirmed IDs never reread transcripts
+  // during steady status updates, and an unconfirmed ID cannot replace a good one.
+  if (needsMessageConfirmation(role.kind) && !hasMessages(role, agent.agent_session.value, record.cwd)) return false;
   mkdirSync(dirname(file), { recursive: true });
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temporary, content, { mode: 0o600, flag: "wx" });
     renameSync(temporary, file);
+    return true;
   } finally {
     try { unlinkSync(temporary); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
