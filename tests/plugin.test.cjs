@@ -8,7 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { read, edit } = require('../bin/managed');
 const { locations } = require('../bin/paths');
-const { existingPopup, POPUP, SIDEBAR } = require('../bin/configure');
+const { existingKey, SIDEBAR } = require('../bin/configure');
 const { installNpxStub } = require('./skills-fixture.cjs');
 
 const root = path.resolve(__dirname, '..');
@@ -104,7 +104,7 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     assert(applied.includes('{ token = "$team_workspace_c0", fg = "#89b4fa", bold = true, dim = false }'));
     assert(!applied.includes('$harness_logo'));
     assert(applied.includes('key = "prefix+t"'));
-    assert(applied.includes('command = "herdr-team console --observe"'));
+    assert(applied.includes('command = "herdr-team.team-status"'));
     assert(applied.includes('"$team_label", "$team_harness"'));
     assert(applied.includes('["$team_session", "$team_model", "$team_task"]'));
     assert(applied.includes('"$team_label"], ["$team_git_summary"]]'));
@@ -136,15 +136,18 @@ test('managed space rows use only optional root Git metadata so linked rows coll
   assert(!SIDEBAR.includes('sidebar_width'));
 });
 
-test('an existing identical popup is reused, stays outside the fence and survives removal', (t) => {
+test('user action keys are preserved, not duplicated or removed', (t) => {
   const f = fixture(t);
-  const original = `${POPUP}\n\n[ui]\nsidebar_width=30\n`;
+  const original = '[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "my-status"\n\n[ui]\nsidebar_width=30\n';
   f.put(f.herdrConfig, original);
-  assert(existingPopup(original));
-  assert(!existingPopup(original.replace('herdr-team console --observe', 'other-command')));
+  assert(existingKey(original, 'prefix+t'));
+  assert(!existingKey(original, 'prefix+shift+t'));
   f.ok('configure.js');
   f.ok('configure.js');
-  assert.equal(fs.readFileSync(f.herdrConfig, 'utf8').match(/prefix\+t/g).length, 1);
+  const applied = fs.readFileSync(f.herdrConfig, 'utf8');
+  assert.equal(applied.match(/key = "prefix\+t"/g).length, 1);
+  assert(applied.includes('herdr-team.open-console'));
+  assert(applied.startsWith(original));
   f.ok('configure.js', ['--uninstall']);
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
 });
@@ -162,7 +165,7 @@ test('upgrade replaces the old sidebar and preserves user configuration', (t) =>
   const f = fixture(t);
   const original = '# my config\n[ui]\nsidebar_width=30\n';
   f.put(f.herdrConfig, edit({ text: original, exists: true }, 'config',
-    `${POPUP}\n\n[ui.sidebar.agents]\nrows=[["state_icon", "$harness_logo", "agent"]]\n\n[ui.sidebar.spaces]\nrows=[["workspace"], ["branch", "$team_git_files", "git_status"]]`).text);
+    `[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "herdr-team console --observe"\n\n[ui.sidebar.agents]\nrows=[["state_icon", "$harness_logo", "agent"]]\n\n[ui.sidebar.spaces]\nrows=[["workspace"], ["branch", "$team_git_files", "git_status"]]`).text);
   f.ok('configure.js');
   const config = fs.readFileSync(f.herdrConfig, 'utf8');
   assert(config.startsWith(original));
@@ -231,6 +234,9 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   const manifest = fs.readFileSync(path.join(standalone, 'herdr-plugin.toml'), 'utf8');
   const actions = [...manifest.matchAll(/\[\[actions\]\]\nid = "([^"]+)"\ntitle = "[^"]+"\ncommand = (\[[^\n]+\])/g)];
   assert.deepEqual(actions.map(([, id]) => id), ['install', 'configure', 'unconfigure', 'install-skill', 'uninstall-skill', 'install-cli', 'uninstall-cli']);
+  assert(manifest.includes('id = "open-console"'));
+  assert(manifest.includes('id = "team-status"'));
+  assert(manifest.includes('command = ["herdr-team", "console", "--observe"]'));
   assert(fs.existsSync(path.join(f.env.XDG_BIN_HOME, 'herdr-team')));
   for (const id of ['install', 'configure', 'install-skill', 'install-cli', 'unconfigure', 'uninstall-skill', 'uninstall-cli']) {
     const command = JSON.parse(actions.find((a) => a[1] === id)[2]);

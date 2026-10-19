@@ -57,7 +57,7 @@ add 只建卡，dispatch 才入队；handoff 保存结果并自动入队下一�
 三类状态分别看：卡片 status 是任务进度，delivery 是当前分配投递状态，Herdr agent state 是会话可用性。
 idle/done 才可发送输入，但不代替当前任务明确 handoff。
 
-up 在独立 tab 创建或复用 Team Console，不把未入队 todo 自动派发。
+up 在原生插件 tab 创建或复用 Team Console，不把未入队 todo 自动派发。
 Console 只轮询已入队 delivery；不要在 agent 自己的 pane 启动交互 console。agent 用 status/tasks/queue 查状态。
 关闭 Console 暂停轮询，队列保留；up 或 console 可恢复。observe/once/line 是只读视图。
 显式 dispatch、handoff、queue drain 即使无 Console 也可尝试投递。

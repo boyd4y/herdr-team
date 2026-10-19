@@ -14,6 +14,13 @@ function recordingSpawn(stdout: string, code = 0): { fn: SpawnFn; calls: string[
 const WRAP = (result: object) => JSON.stringify({ result });
 
 describe("herdr 客户端 —— 参数拼装", () => {
+  test("native plugin panes use explicit workspace/cwd/focus and validate returned scope", () => {
+    const { fn, calls } = recordingSpawn(WRAP({ plugin_pane: { pane: { pane_id: "w1:p3", tab_id: "w1:t3", workspace_id: "w1" } } }));
+    expect(realHerdr(fn).pluginPaneOpen("console", "w1", "/tmp/a project", false)).toEqual({ paneId: "w1:p3", tabId: "w1:t3" });
+    expect(calls[0]).toContain("--no-focus");
+    expect(calls[0]).toContain("/tmp/a project");
+    expect(() => realHerdr(fn).pluginPaneOpen("console", "another", "/tmp", true)).toThrow(/mismatched/);
+  });
   test("tab create 把 env 展开成 --env K=V", () => {
     const { fn, calls } = recordingSpawn(WRAP({ tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } }));
     realHerdr(fn).tabCreate("w1", "docs", "/tmp/p", { ANTHROPIC_MODEL: "sonnet" });

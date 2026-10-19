@@ -13,7 +13,10 @@ const BADGE_COLORS = ['#89b4fa', '#cba6f7', '#94e2d5', '#fab387', '#f5c2e7', '#a
 const BADGE_TOKENS = BADGE_COLORS.map((fg, slot) => `{ token = "$team_workspace_c${slot}", fg = "${fg}", bold = true, dim = false }`).join(', ');
 // Missing root-only metadata collapses the second row for every linked worktree.
 const SIDEBAR = `[ui.sidebar.agents]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label", "$team_harness"], ["$team_session", "$team_model", "$team_task"]]\n\n[ui.sidebar.spaces]\nrows = [["state_icon", ${BADGE_TOKENS}, "$team_label"], ["$team_git_summary"]]`;
-const POPUP = '[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "herdr-team console --observe"\nwidth = "90%"\nheight = "85%"';
+const ACTION_KEYS = [
+  { key: 'prefix+t', action: 'herdr-team.team-status' },
+  { key: 'prefix+shift+t', action: 'herdr-team.open-console' },
+];
 
 function herdr(args, env = process.env) {
   const result = spawnSync(env.HERDR_BIN_PATH || 'herdr', args, {
@@ -25,22 +28,16 @@ function herdr(args, env = process.env) {
   return result.stdout;
 }
 
-// Reuse an ordinary, identical pre-existing popup. Complex TOML is left to
-// Herdr's parser below; it rejects colliding bindings/tables before any write.
-function existingPopup(text) {
-  const tables = text.split(/(?=^\s*\[)/m);
-  return tables.some((table) => {
+// User-owned bindings take precedence. Herdr validates the complete candidate
+// before any write; this only recognizes ordinary literal keys to avoid collisions.
+function existingKey(text, key) {
+  return text.split(/(?=^\s*\[)/m).some((table) => {
     const lines = table.split(/\r?\n/);
     if (!/^\s*\[\[keys\.command\]\]\s*(?:#.*)?$/.test(lines.shift())) return false;
-    const values = new Map();
-    for (const line of lines) {
-      if (/^\s*(?:#.*)?$/.test(line)) continue;
-      const match = /^\s*(\w+)\s*=\s*(["'])([^"'\\\r\n]*)\2\s*(?:#.*)?$/.exec(line);
-      if (!match || values.has(match[1])) return false;
-      values.set(match[1], match[3]);
-    }
-    return values.get('key') === 'prefix+t' && values.get('type') === 'popup' &&
-      values.get('command') === 'herdr-team console --observe';
+    return lines.some(line => {
+      const match = /^\s*key\s*=\s*(["'])([^"'\\\r\n]*)\1\s*(?:#.*)?$/.exec(line);
+      return match?.[2] === key;
+    });
   });
 }
 
@@ -57,14 +54,16 @@ function validate(text) {
 
 function planConfigure(uninstall = false, file = locations().herdr) {
   const before = managed.read(file);
-  // Inspect outside our block so an already-managed popup isn't mistaken for
+  // Inspect outside our block so already-managed keys aren't mistaken for
   // user config on subsequent runs.
   const outside = managed.edit(before, 'config', null);
-  const reuse = !uninstall && existingPopup(outside.text);
-  const body = uninstall ? null : (reuse ? SIDEBAR : `${POPUP}\n\n${SIDEBAR}`);
+  const reused = ACTION_KEYS.filter(binding => existingKey(outside.text, binding.key)).map(binding => binding.key);
+  const keys = ACTION_KEYS.filter(binding => !reused.includes(binding.key)).map(binding =>
+    `[[keys.command]]\nkey = "${binding.key}"\ntype = "plugin_action"\ncommand = "${binding.action}"`);
+  const body = uninstall ? null : [...keys, SIDEBAR].join('\n\n');
   const after = managed.edit(before, 'config', body);
   if (after.exists) validate(after.text);
-  return { file, before, after, reuse, uninstall };
+  return { file, before, after, reused, uninstall };
 }
 
 function applyPlan(plan, reload = false) {
@@ -73,7 +72,7 @@ function applyPlan(plan, reload = false) {
     throw new Error('config.toml changed during validation; run the action again');
   }
   managed.write(plan.file, plan.before, plan.after);
-  console.log(`config: ${plan.file}${plan.reuse ? ' (reusing existing prefix+t popup)' : ''}`);
+  console.log(`config: ${plan.file}${plan.reused.length ? ` (keeping user keys: ${plan.reused.join(', ')})` : ''}`);
   if (reload) {
     reloadConfig();
     if (!plan.uninstall) refreshSidebar();
@@ -104,4 +103,4 @@ function main(args) {
 if (require.main === module) {
   try { main(process.argv.slice(2)); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { planConfigure, applyPlan, reloadConfig, refreshSidebar, existingPopup, SIDEBAR, POPUP };
+module.exports = { planConfigure, applyPlan, reloadConfig, refreshSidebar, existingKey, SIDEBAR, ACTION_KEYS };

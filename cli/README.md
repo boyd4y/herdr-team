@@ -147,7 +147,7 @@ herdr-team dispatch
  herdr-team dispatch <id>
 ```
 
-`up` 启动或复用常驻 agent、更新归属和侧栏，并在项目 workspace 中创建或复用 **Team Console** tab，保持当前焦点。它不自动将已有 todo 卡入队；Console 会继续处理先前已入队的任务。
+`up` 启动或复用常驻 agent、更新归属和侧栏，并在项目 workspace 中创建或复用 **Team Console** 原生插件 tab，保持当前焦点。它不自动将已有 todo 卡入队；Console 会继续处理先前已入队的任务。
 侧栏常驻会话显示角色名（如 `test`），第二行标注 `resident`；任务会话显示 `test-0061`、
 `docs-0062` 等角色与任务号，第二行标注 `task`。任务会话的工作不会重复挂在同角色的常驻会话下。
 `lead` 始终复用项目内唯一的常驻会话，lead 的任务排队处理，不创建 `lead-任务号` 会话。
@@ -355,18 +355,23 @@ Detail 会显示合并阻塞的具体原因；已结束任务不计入待投递�
 
 ## 放进 Herdr
 
-除 `up` 创建的常驻 tab，还可配置这两个只读入口：
+`up` 使用 manifest 中的 `console` pane，在明确的项目 workspace 中直接启动 CLI；不检查 shell、不注入命令。每个项目的 Console 锁和启动票据仍负责避免重复调度。原有活跃 Console 会复用，失效的旧 pane 不会被覆盖。
 
-**popup** —— 按一下浮出来，`q` 关掉，不留痕迹（Herdr 管这叫 session-modal）：
+安装配置提供两个带上下文的 Actions：
 
-```toml
-[[keys.command]]
-key = "prefix+t"
-type = "popup"
-command = "herdr-team console --observe"
-width = "90%"
-height = "85%"
+| 快捷键 | Action | 行为 |
+| --- | --- | --- |
+| `prefix+t` | `herdr-team.team-status` | 在项目 workspace 打开只读 Team Status 插件 tab，不获取调度锁、不派活 |
+| `prefix+Shift+t` | `herdr-team.open-console` | 打开或聚焦项目唯一的 Team Console tab |
+
+已有用户快捷键优先保留。动作从 `HERDR_PLUGIN_CONTEXT_JSON` 的调用 pane/workspace 定位项目，不使用插件 cwd，也不重新跟随可能变化的 UI 焦点；任务 worktree 使用主检出的 `.herdr/`。缺少配置、pane 已关闭/移动、归属不符时停止并报错。
+
+```sh
+herdr plugin action invoke herdr-team.team-status
+herdr plugin action invoke herdr-team.open-console
 ```
+
+插件声明 `console` 和 `status` 两个原生 pane，后者使用 `console --observe`。本机最低支持 Herdr 0.9.3，两种入口均使用 tab，不依赖更新版本的 plugin popup。CLI 和 Bun 必须在 Herdr server 的 PATH 上；退出使用 `q`。
 
 **标签栏一行** —— 永远可见、零布局成本：
 

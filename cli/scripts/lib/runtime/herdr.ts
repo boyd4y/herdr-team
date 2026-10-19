@@ -116,6 +116,8 @@ export interface Herdr {
    */
   paneCurrent(): { paneId: string; cwd: string | null };
   paneClose(paneId: string): void;
+  tabFocus(tabId: string): void;
+  pluginPaneOpen(entrypoint: "console" | "status", workspaceId: string, cwd: string, focus: boolean): { paneId: string; tabId: string };
   paneRun(paneId: string, command: string): void;
   paneIsShell(paneId: string): boolean;
   workspaceCloseGroup(workspaceId: string): void;
@@ -263,6 +265,17 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
     tabRename: (tabId, label) => void run(["tab", "rename", tabId, label]),
 
     paneClose: (paneId) => void run(["pane", "close", paneId]),
+    tabFocus: (tabId) => void run(["tab", "focus", tabId]),
+    pluginPaneOpen: (entrypoint, workspaceId, cwd, focus) => {
+      const args = ["plugin", "pane", "open", "--plugin", "herdr-team", "--entrypoint", entrypoint,
+        "--placement", "tab", "--workspace", workspaceId, "--cwd", cwd, focus ? "--focus" : "--no-focus"];
+      const raw = (json(args) as RawResult).result ?? {};
+      const pane = (raw["plugin_pane"] as { pane?: PaneInfo } | undefined)?.pane;
+      if (!pane?.pane_id || !pane.tab_id || pane.workspace_id !== workspaceId) {
+        throw new HerdrError("plugin pane open returned incomplete or mismatched pane IDs", args);
+      }
+      return { paneId: pane.pane_id, tabId: pane.tab_id };
+    },
     paneRun: (paneId, command) => void run(["pane", "run", paneId, command]),
     paneIsShell: (paneId) => {
       const raw = (json(["pane", "process-info", "--pane", paneId]) as RawResult).result ?? {};

@@ -2,12 +2,36 @@ id = "herdr-team"
 name = "Herdr Team"
 version = "0.1.0"
 min_herdr_version = "0.9.3"
-description = "Install the team CLI, skill, sidebar and Team Console popup."
+description = "Project agent teams with a skill, CLI, sidebar and managed Team Console."
 platforms = ["linux", "macos"]
 
 # GitHub installs perform setup once. Local links use the actions below.
 [[build]]
 command = ["node", "bin/setup.js"]
+
+[[panes]]
+id = "console"
+title = "Team Console"
+placement = "tab"
+command = ["herdr-team", "console"]
+
+[[panes]]
+id = "status"
+title = "Team Status"
+placement = "tab"
+command = ["herdr-team", "console", "--observe"]
+
+[[actions]]
+id = "open-console"
+title = "Open Console"
+contexts = ["workspace", "tab", "pane"]
+command = ["bun", "cli/scripts/plugin-action.ts", "open-console"]
+
+[[actions]]
+id = "team-status"
+title = "Team Status"
+contexts = ["workspace", "tab", "pane"]
+command = ["bun", "cli/scripts/plugin-action.ts", "team-status"]
 
 [[actions]]
 id = "install"
@@ -16,12 +40,12 @@ command = ["node", "bin/setup.js"]
 
 [[actions]]
 id = "configure"
-title = "Configure team sidebar and popup"
+title = "Configure team sidebar and action keys"
 command = ["node", "bin/configure.js", "--apply", "--reload"]
 
 [[actions]]
 id = "unconfigure"
-title = "Remove team sidebar and popup configuration"
+title = "Remove team sidebar and action key configuration"
 command = ["node", "bin/configure.js", "--uninstall", "--reload"]
 
 [[actions]]

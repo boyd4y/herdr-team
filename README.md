@@ -14,7 +14,7 @@ Install the public plugin from GitHub:
 herdr plugin install boyd4y/herdr-team
 ```
 
-The setup hook installs the bundled CLI and skill and writes Herdr's managed sidebar and popup configuration. It does not initialize a project, start agents, or modify a project's `.herdr/` directory. The CLI is placed at `$XDG_BIN_HOME/herdr-team` or, when unset, `~/.local/bin/herdr-team`; make that directory and Bun available on `PATH` in both your shell and Herdr server environment. The installer does not edit shell startup files. If setup could not reload a running session, invoke `herdr-team.configure` from a Herdr session.
+The setup hook installs the bundled CLI and skill and writes Herdr's managed sidebar and action keybindings. It does not initialize a project, start agents, or modify a project's `.herdr/` directory. The CLI is placed at `$XDG_BIN_HOME/herdr-team` or, when unset, `~/.local/bin/herdr-team`; make that directory and Bun available on `PATH` in both your shell and Herdr server environment. The installer does not edit shell startup files. If setup could not reload a running session, invoke `herdr-team.configure` from a Herdr session.
 
 Check the installation:
 
@@ -64,9 +64,16 @@ The `.herdr/` task card is the workflow record. Its `status` describes task prog
 
 Each assignment has a unique delivery ID. The receiving agent must claim that ID before starting and pass the same ID to handoff. Busy, blocked, unknown, or unavailable receivers stay queued. Handoff appends an optional summary to the task's `task.md`, records the next owner, and queues the next delivery. A task with no remaining handoff roles is completed by its final owner. See the [Chinese CLI guide's queue and delivery details](cli/README.md#team-console) for state transitions and examples.
 
-Console is the automatic scheduler and runs in the project's Team Console tab. Task file changes and native Herdr plugin events wake it; delivery deadlines use individual timers, with a 60-second reconciliation fallback. Closing it pauses automatic delivery while queue records remain on disk; run `herdr-team up` or `herdr-team console` to resume. `console --observe`, `console --once`, and `console --line` are read-only views and do not schedule work. An uncertain delivery may already have reached an agent: inspect the agent and its task artifacts before a lead uses `herdr-team queue retry <id>`. A retry receives a new delivery ID. This queue prevents blind repeat sends; it cannot guarantee exactly-once execution by the underlying terminal or agent.
+Console is the automatic scheduler and runs in a Herdr-managed plugin tab in the project's workspace. `up` opens it without stealing focus; no shell command is injected into an existing pane. Task file changes and native Herdr plugin events wake it; delivery deadlines use individual timers, with a 60-second reconciliation fallback. Closing it pauses automatic delivery while queue records remain on disk; run `herdr-team up` or `herdr-team console` to resume. `console --observe`, `console --once`, and `console --line` are read-only views and do not schedule work. An uncertain delivery may already have reached an agent: inspect the agent and its task artifacts before a lead uses `herdr-team queue retry <id>`. A retry receives a new delivery ID. This queue prevents blind repeat sends; it cannot guarantee exactly-once execution by the underlying terminal or agent.
 
 Console lists the newest task IDs first and splits the selected task's flow and details equally on the right. Delivery uses a fading light trail; the active node has a gentle border glow. Compact role rows show the full team when space allows and remain scrollable in small terminals. Try `herdr-team console --sample` for a looping demo without a project or Herdr connection. It uses in-memory data and never schedules work or writes team files. In a live Console, press `s` to preview the sample and return; scheduling pauses while the preview is open.
+
+Plugin actions use the invoking workspace/pane context to locate the project, including its main checkout when invoked from a task worktree:
+
+- `prefix+t`: **Team Status**, a read-only native plugin tab; it never schedules work.
+- `prefix+Shift+t`: **Open Console**, start or focus the project's single scheduler tab.
+
+The configured Herdr prefix precedes these keys. Existing user bindings take precedence. Actions are also available as `herdr plugin action invoke herdr-team.team-status` and `herdr plugin action invoke herdr-team.open-console`. A missing or stale project context reports an error instead of using the plugin checkout or a later UI focus. Herdr 0.9.3 hosts both views as tabs; quit with `q`.
 
 The status strip summarizes nonzero task and delivery counts. The roles table shows current tasks and queue counts; `NEEDS YOU` collects warnings. Details include the task branch and reviewed commit. The read-only tab-bar line includes a nonzero `N queued` count after task counts. See the [Team Console guide](cli/README.md#team-console) for layout and controls.
 

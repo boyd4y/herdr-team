@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import type { Herdr } from "./herdr.ts";
 import { processAlive, runtimePath, withTeamLock } from "./state.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
-import { shellQuote } from "../dispatch/queue.ts";
 import type { Project } from "../shared/types.ts";
 
 interface ConsoleOwner { pid: number; nonce: string; paneId?: string }
@@ -29,13 +28,13 @@ function owner(project: Project): ConsoleOwner | undefined {
 export function acquireConsole(project: Project): { stopped(): boolean; close(): void } {
   const record: ConsoleOwner = { pid: process.pid, nonce: randomUUID(), paneId: process.env["HERDR_PANE_ID"] };
   const file = runtimePath(project, "console.json"), stop = runtimePath(project, "console.stop");
-  withTeamLock(project, "console", () => {
+  withTeamLock(project, "console-launch", () => withTeamLock(project, "console", () => {
     const current = owner(project);
     if (current && processAlive(current.pid)) throw new Error("Team Console is already running for this project");
     writeRecord(file, record);
     const ticket = runtimePath(project, "console-launch.json");
     if (existsSync(ticket)) unlinkSync(ticket);
-  });
+  }));
   return {
     stopped: () => existsSync(stop) && readFileSync(stop, "utf8") === record.nonce,
     close: () => withTeamLock(project, "console", () => { if (owner(project)?.nonce === record.nonce) unlinkSync(file); }),
@@ -49,9 +48,7 @@ export function stopConsole(project: Project): void {
   });
 }
 
-export function ensureConsole(project: Project, herdr: Herdr, workspaceId: string,
-  pause: (milliseconds: number) => void = Bun.sleepSync,
-): ConsoleOutcome {
+export function ensureConsole(project: Project, herdr: Herdr, workspaceId: string, focus = false): ConsoleOutcome {
   try {
     return withTeamLock(project, "console-launch", () => {
       const panes = herdr.paneList(workspaceId);
@@ -61,37 +58,23 @@ export function ensureConsole(project: Project, herdr: Herdr, workspaceId: strin
         if (existsSync(stop) && readFileSync(stop, "utf8") === current.nonce) throw new Error("Team Console is stopping; run up again after it exits");
         const pane = panes.find((p) => p.pane_id === current.paneId);
         if (!pane) throw new Error("Team Console is running outside this workspace; stop it before starting another");
+        if (focus) herdr.tabFocus(pane.tab_id);
         return { action: "reused", paneId: pane.pane_id, tabId: pane.tab_id };
-      }
-      const matches = panes.filter((p) => p.tokens?.team_console_project === projectKey(project));
-      if (matches.length > 1) throw new Error("Multiple Team Console panes found; refusing to guess");
-      let paneId: string, tabId: string;
-      if (matches[0]) {
-        paneId = matches[0].pane_id; tabId = matches[0].tab_id;
-      } else {
-        const made = herdr.tabCreate(workspaceId, "Team Console", project.root, {});
-        paneId = made.paneId; tabId = made.tabId;
-        herdr.reportMetadata(paneId, "herdr-team-console", "Team Console", { team_console_project: projectKey(project) });
       }
       const ticket = runtimePath(project, "console-launch.json");
       if (existsSync(ticket)) {
         const launching = JSON.parse(readFileSync(ticket, "utf8")) as { paneId?: string; at?: number };
-        if (launching.paneId === paneId && typeof launching.at === "number" && Date.now() - launching.at < 30_000) {
-          return { action: "reused", paneId, tabId };
+        const pane = panes.find(pane => pane.pane_id === launching.paneId);
+        if (pane && typeof launching.at === "number" && Date.now() - launching.at < 30_000) {
+          if (focus) herdr.tabFocus(pane.tab_id);
+          return { action: "reused", paneId: pane.pane_id, tabId: pane.tab_id };
         }
       }
-      // A newly created tab can report its shell's startup child as foreground.
-      // Wait briefly for a verified shell; never send keys to an unknown process.
-      let ready = herdr.paneIsShell(paneId);
-      for (let attempt = 0; !ready && attempt < 20; attempt++) {
-        pause(100);
-        ready = herdr.paneIsShell(paneId);
-      }
-      if (!ready) throw new Error(`Team Console pane ${paneId} is busy; leave it at a shell prompt and run up again`);
-      const entry = join(import.meta.dir, "..", "..", "cli.ts");
+      const { paneId, tabId } = herdr.pluginPaneOpen("console", workspaceId, project.root, focus);
+      // The child acquires console-launch before claiming its lease, so it cannot
+      // clear this ticket until the native launch and ownership metadata are saved.
       writeRecord(ticket, { paneId, at: Date.now() });
-      try { herdr.paneRun(paneId, `${shellQuote(process.execPath)} ${shellQuote(entry)} console --root ${shellQuote(project.root)}`); }
-      catch (error) { unlinkSync(ticket); throw error; }
+      herdr.reportMetadata(paneId, "herdr-team-console", "Team Console", { team_console_project: projectKey(project) });
       return { action: "started", paneId, tabId };
     });
   } catch (error) { return { action: "failed", failure: error instanceof Error ? error.message : String(error) }; }

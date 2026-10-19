@@ -210,6 +210,15 @@ export function fakeHerdr(partial: Partial<FakeState> = {}): FakeHerdr {
       calls.push(`pane close ${paneId}`);
       state.agents = state.agents.filter((a) => a.pane_id !== paneId);
     },
+    tabFocus: (tabId) => { calls.push(`tab focus ${tabId}`); },
+    pluginPaneOpen: (entrypoint, workspaceId, cwd, focus) => {
+      calls.push(`plugin pane open ${entrypoint} workspace=${workspaceId} cwd=${cwd} focus=${focus}`);
+      counter++;
+      const paneId = `${workspaceId}:p${counter}`, tabId = `${workspaceId}:t${counter}`;
+      state.tabs.push({ tab_id: tabId, workspace_id: workspaceId, label: entrypoint, pane_count: 1 });
+      state.panes.push({ pane_id: paneId, tab_id: tabId, workspace_id: workspaceId, cwd });
+      return { paneId, tabId };
+    },
     paneRun: (paneId, command) => {
       calls.push(`pane run ${paneId} ${command}`);
     },

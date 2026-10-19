@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadProject } from "../scripts/lib/team/project.ts";
@@ -10,6 +10,7 @@ import { enqueueTasks, needsQueuePass, nextQueueDeadline, pumpQueue } from "../s
 import { newDelivery, deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
 import { writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
 import { down, up } from "../scripts/lib/dispatch/launch.ts";
+import { runPluginAction } from "../scripts/lib/runtime/plugin.ts";
 import { mountConsole } from "../scripts/lib/ui/console-view.ts";
 import { createTestRenderer } from "@opentui/core/testing";
 import { claimCurrent, makeProject, runningWorkspace, taskMeta, twoResidentRoles, writeTask } from "./helpers.ts";
@@ -148,14 +149,11 @@ test("up creates one owned Team Console tab in the project workspace", () => fix
   const pane = h.state.panes.find((p) => p.tokens?.team_console_project)!;
   expect(pane.workspace_id).toBe("w1");
   expect(pane.cwd).toBe(root);
-  const command = h.calls.find((c) => c.startsWith("pane run"))!;
-  expect(command).toContain("console --root");
-  const entry = /'([^']+cli\.ts)'/.exec(command)?.[1];
-  expect(entry && existsSync(entry)).toBe(true);
-  // Fake shell remains at a prompt; starting again must reuse the existing tab.
+  expect(h.calls.some(c => c.startsWith("plugin pane open console") && c.endsWith("focus=false"))).toBe(true);
+  // Pending native launches are reused before the child has claimed its lease.
   ensureConsole(p, h, "w1");
-  expect(h.calls.filter((c) => c.startsWith("tab create Team Console"))).toHaveLength(1);
-  expect(h.calls.filter((c) => c.startsWith("pane run"))).toHaveLength(1);
+  expect(h.calls.filter(c => c.startsWith("plugin pane open console"))).toHaveLength(1);
+  expect(h.calls.filter(c => c.startsWith("pane run"))).toHaveLength(0);
   expect(h.calls.filter((c) => c.startsWith("agent prompt"))).toHaveLength(0);
 }));
 
@@ -183,18 +181,20 @@ test("Console can restart immediately after its registered owner exits", () => f
   const lease = acquireConsole(p);
   lease.close();
   expect(ensureConsole(p, h, "w1").action).toBe("started");
-  expect(h.calls.filter((call) => call.startsWith("pane run"))).toHaveLength(2);
-  expect(h.calls.filter((call) => call.startsWith("tab create Team Console"))).toHaveLength(1);
+  expect(h.calls.filter(call => call.startsWith("plugin pane open console"))).toHaveLength(2);
+  expect(h.calls.filter(call => call.startsWith("pane run"))).toHaveLength(0);
 }));
 
-test("a busy Console pane is never overwritten", () => fixture((root, h) => {
+test("a stale or busy old Console pane is left untouched when opening a native pane", () => fixture((root, h) => {
   const p = loadProject(root);
-  ensureConsole(p, h, "w1");
-  h.paneIsShell = () => false;
+  const old = ensureConsole(p, h, "w1");
+  h.paneIsShell = () => { throw new Error("Native Console launch must not inspect a shell"); };
   writeFileSync(runtimePath(p, "console-launch.json"), "{}");
   h.calls.length = 0;
-  expect(ensureConsole(p, h, "w1", () => {})).toMatchObject({ action: "failed", failure: expect.stringContaining("busy") });
-  expect(h.calls).toEqual([]);
+  const next = ensureConsole(p, h, "w1");
+  expect(next.action).toBe("started");
+  expect(next.paneId).not.toBe(old.paneId);
+  expect(h.calls.some(call => call.startsWith("pane run") || call.startsWith("pane close"))).toBe(false);
 }));
 
 test("a stopped Console releases ownership; a fresh owner ignores the old stop request", () => fixture((root) => {
@@ -249,26 +249,33 @@ test("Console drives queued delivery and restores the terminal when quitting", a
 });
 
 
-test("Console startup waits for transient shell initialization before sending one command", () => fixture((root, h) => {
-  const p = loadProject(root);
-  let checks = 0, waits = 0;
-  h.paneIsShell = () => ++checks >= 4;
-  const result = ensureConsole(p, h, "w1", (ms) => { expect(ms).toBe(100); waits++; });
-  expect(result.action).toBe("started");
-  expect(waits).toBe(3);
-  expect(h.calls.filter((call) => call.startsWith("pane run"))).toHaveLength(1);
-  expect(h.calls.filter((call) => call.startsWith("agent prompt"))).toHaveLength(0);
+test("native launch failure is reported without injecting terminal input; the next attempt can recover", () => fixture((root, h) => {
+  const open = h.pluginPaneOpen;
+  h.pluginPaneOpen = () => { throw new Error("Plugin is disabled"); };
+  expect(ensureConsole(loadProject(root), h, "w1")).toMatchObject({ action: "failed", failure: "Plugin is disabled" });
+  expect(existsSync(runtimePath(loadProject(root), "console-launch.json"))).toBe(false);
+  h.pluginPaneOpen = open;
+  expect(ensureConsole(loadProject(root), h, "w1").action).toBe("started");
+  expect(h.calls.some(call => call.startsWith("pane run"))).toBe(false);
 }));
 
-test("Console startup has a bounded wait and reports the occupied pane without injecting input", () => fixture((root, h) => {
-  let checks = 0, waits = 0;
-  h.paneIsShell = () => { checks++; return false; };
-  const result = ensureConsole(loadProject(root), h, "w1", () => { waits++; });
-  expect(result.action).toBe("failed");
-  expect(result.failure).toContain("Team Console pane w1:");
-  expect(waits).toBe(20);
-  expect(checks).toBe(21);
-  expect(h.calls.some((call) => call.startsWith("pane run"))).toBe(false);
+test("plugin actions follow invocation context, open read-only status, and reuse the scheduler", () => fixture((root, h) => {
+  h.state.focusedCwd = "/unrelated";
+  const context = JSON.stringify({ workspace_id: "w1", focused_pane_id: h.state.panes[0]!.pane_id });
+  expect(runPluginAction("open-console", h, context)).toMatchObject({ action: "started", root: realpathSync(root) });
+  expect(runPluginAction("open-console", h, context).action).toBe("reused");
+  expect(h.calls.filter(call => call.startsWith("plugin pane open console"))).toHaveLength(1);
+  expect(h.calls.some(call => call.startsWith("tab focus"))).toBe(true);
+  runPluginAction("team-status", h, context);
+  expect(h.calls.filter(call => call.startsWith("plugin pane open status"))).toHaveLength(1);
+  expect(h.calls.some(call => call.startsWith("agent prompt") || call.startsWith("pane run"))).toBe(false);
+  const before = h.calls.length;
+  expect(() => runPluginAction("open-console", h, undefined)).toThrow(/context/);
+  expect(() => runPluginAction("open-console", h, JSON.stringify({ workspace_id: "w1", focused_pane_cwd: "" }))).toThrow(/No team project/);
+  expect(() => runPluginAction("open-console", h, JSON.stringify({ workspace_id: "w1", focused_pane_id: "closed" }))).toThrow(/moved or closed/);
+  h.state.workspaces[0]!.tokens = { team_project: "foreign" };
+  expect(() => runPluginAction("open-console", h, context)).toThrow(/another project/);
+  expect(h.calls).toHaveLength(before);
 }));
 
 test("console --sample works outside a team and Herdr without touching project or runtime files", () => {
