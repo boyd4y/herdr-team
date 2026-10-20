@@ -7,14 +7,6 @@ import { emitYaml } from "../shared/yaml.ts";
 /** 角色元数据里键的顺序。**不含 `name`** —— 角色名就是目录名，不重复存。 */
 export const ROLE_FIELD_ORDER = ["kind", "model", "worktree", "cwd", "args", "env"];
 
-const GITIGNORE_TEMPLATE = `# Share team configuration; keep local execution records out of Git.
-/tasks/
-/reports/
-/.retired-ids
-/projects/
-/worktrees/
-`;
-
 export class InitError extends Error {}
 
 export interface RoleSpec {
@@ -122,10 +114,12 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
 
   mkdirSync(project.herdrDir, { recursive: true });
 
-  const ignorePath = join(project.herdrDir, ".gitignore");
-  if (existsSync(ignorePath)) skipped.push(".gitignore");
+  const ignorePath = join(project.root, ".gitignore");
+  const ignore = existsSync(ignorePath) ? readFileSync(ignorePath, "utf8") : "";
+  if (ignore.split(/\r?\n/).some(line => [".herdr/", "/.herdr/"].includes(line.trim()))) skipped.push(".gitignore");
   else {
-    writeFileSync(ignorePath, GITIGNORE_TEMPLATE);
+    const newline = ignore.includes("\r\n") ? "\r\n" : "\n";
+    writeFileSync(ignorePath, `${ignore}${ignore && !ignore.endsWith("\n") ? newline : ""}/.herdr/${newline}`);
     created.push(".gitignore");
   }
 
@@ -146,17 +140,7 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
     created.push("identity.md");
   }
 
-  for (const dir of ["roles", "tasks"]) {
-    const full = join(project.herdrDir, dir);
-    mkdirSync(full, { recursive: true });
-    // 空目录 Git 不跟踪，放个 .gitkeep（它不以 . 开头？—— 它以，所以不会被当成角色/任务）
-    const keep = join(full, ".gitkeep");
-    if (existsSync(keep)) skipped.push(`${dir}/.gitkeep`);
-    else {
-      writeFileSync(keep, "");
-      created.push(`${dir}/.gitkeep`);
-    }
-  }
+  for (const dir of ["roles", "tasks"]) mkdirSync(join(project.herdrDir, dir), { recursive: true });
 
   const roleMetadataWritten: string[] = [];
   const roleBodiesWritten: string[] = [];

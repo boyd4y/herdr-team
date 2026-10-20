@@ -49,6 +49,13 @@ and summaries in their original language; Unicode input remains supported.
   Do not silently overwrite existing customized role prompts or identity files,
   or alter active task records to enforce a new prompt convention.
 
+# Local team state
+
+Keep the entire project `.herdr/` directory out of Git, including identity, roles,
+models, workflow, tasks, reports, and temporary artifacts. Initialization adds a
+root `.gitignore` entry without replacing existing rules. Reusable templates stay
+in `skill/assets/`; do not force-add local team files to share them.
+
 # Tests
 
 Keep tests focused on observable behavior and meaningful failure recovery.
@@ -84,7 +91,7 @@ Unicode width ranges; interactive text layout stays with OpenTUI.
 Keep the initial model catalog in `skill/assets/models.json`, separate from role
 plans and prompts. Initialize `.herdr/models.json` only when missing, preserve it
 even with force, and prefer the project catalog and its optional per-harness
-`preferred` choices. Customers may edit and share that file. Codex and Claude entries use their respective official model IDs or
+`preferred` choices. Customers may edit that local file. Codex and Claude entries use their respective official model IDs or
 native aliases; do not bundle third-party backend mappings. Every harness offers
 `default` without model override arguments or environment variables. Keep general
 launch flags separate from model flags. Skill owns checking official sources and

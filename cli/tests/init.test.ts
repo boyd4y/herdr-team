@@ -37,46 +37,40 @@ describe("parseRoleSpecs", () => {
   });
 });
 
-test("team configuration survives a Git clone while local tasks and runtime records stay behind", () => {
+test("init keeps the entire team directory local, including definitions and arbitrary artifacts", () => {
   const { root, cleanup } = bareProject();
   try {
+    writeFileSync(join(root, ".gitignore"), "*.local");
     init(loadProject(root), [{ name: "dev", kind: "codex", body: "Build the assigned change." }]);
-    writeFileSync(join(root, ".herdr/workflow.md"), "Develop, then validate. Lead merges accepted work.\n");
+    const ignore = readFileSync(join(root, ".gitignore"), "utf8");
+    expect(ignore.startsWith("*.local\n")).toBe(true);
+    writeFileSync(join(root, ".herdr/workflow.md"), "Develop, then validate.\n");
     createTask(loadProject(root), { title: "Local task", role: "dev", handoff: [], priority: "P2", body: "Local execution record" });
-    for (const dir of ["reports", "projects", "worktrees"]) {
+    for (const dir of ["reports", "projects", "worktrees", "local-validation"]) {
       mkdirSync(join(root, ".herdr", dir), { recursive: true });
       writeFileSync(join(root, ".herdr", dir, "local.txt"), "machine-specific data");
     }
-    writeFileSync(join(root, ".herdr/.retired-ids"), "0000\n");
     git(root, "init", "-b", "main");
-    git(root, "add", ".herdr");
-    expect(git(root, "ls-files", ".herdr").split("\n")).toEqual([
-      ".herdr/.gitignore", ".herdr/identity.md", ".herdr/models.json", ".herdr/roles/.gitkeep", ".herdr/roles/dev/.role.yaml", ".herdr/roles/dev/prompt.md", ".herdr/workflow.md",
-    ]);
-    git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "Share team configuration");
-    const clone = join(root, "..", "other-machine");
-    git(root, "clone", "--no-hardlinks", root, clone);
-    const shared = loadProject(clone);
-    expect(shared.roles.map((role) => [role.name, role.kind, role.body])).toEqual(loadProject(root).roles.map((role) => [role.name, role.kind, role.body]));
-    expect(readFileSync(join(clone, ".herdr/workflow.md"), "utf8")).toBe(readFileSync(join(root, ".herdr/workflow.md"), "utf8"));
-    expect(readFileSync(join(clone, ".herdr/models.json"), "utf8")).toBe(readFileSync(join(root, ".herdr/models.json"), "utf8"));
-    expect(shared.hasIdentity).toBe(true);
-    expect(shared.tasks).toEqual([]);
-    expect(shared.retiredIds).toEqual([]);
+    git(root, "add", ".");
+    expect(git(root, "ls-files")).toBe(".gitignore");
+    expect(git(root, "check-ignore", ".herdr/identity.md", ".herdr/models.json", ".herdr/roles/dev/prompt.md", ".herdr/workflow.md", ".herdr/local-validation/local.txt").split("\n")).toHaveLength(5);
+    init(loadProject(root), [], true);
+    expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe(ignore);
+    expect(loadProject(root).roles).toHaveLength(1);
     expect(existsSync(join(root, ".herdr/tasks/0001-local-task/task.md"))).toBe(true);
   } finally { cleanup(); }
 });
 
 describe("init —— 不覆盖已有内容", () => {
-  test("preserves custom ignore rules even with force and never edits the root ignore file", () => {
+  test("preserves custom ignore rules and existing whole-directory rules even with force", () => {
     const { root, cleanup } = bareProject();
     try {
-      writeFileSync(join(root, ".gitignore"), "*.local\n");
+      writeFileSync(join(root, ".gitignore"), "*.local\r\n.herdr/\r\n");
       writeFileSync(join(root, ".herdr/.gitignore"), "/private-notes/\n");
       const result = init(loadProject(root), [], true);
       expect(result.skipped).toContain(".gitignore");
       expect(readFileSync(join(root, ".herdr/.gitignore"), "utf8")).toBe("/private-notes/\n");
-      expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe("*.local\n");
+      expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe("*.local\r\n.herdr/\r\n");
     } finally { cleanup(); }
   });
   test("已有 identity.md 就跳过", () => {

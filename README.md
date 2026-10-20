@@ -37,7 +37,7 @@ Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onb
 
 Review `.herdr/identity.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the identity and role instructions for your project.
 
-Commit `.herdr/.gitignore`, `identity.md`, `models.json`, `roles/`, and the optional `workflow.md` to share team configuration across machines. Initialization creates an internal `.gitignore` for tasks, reports, retired task IDs, and Herdr's local project/worktree records; existing ignore files are preserved. Keep `.herdr/` itself visible to Git. Use `git rm --cached` for local records already tracked, keeping the files on disk. Tasks and native sessions remain local; install and authenticate the selected tools on each machine.
+Keep the entire `.herdr/` directory local and ignored by Git, including identity, models, roles, workflow, tasks, reports, and temporary artifacts. Initialization adds `/.herdr/` to the project's root `.gitignore`, preserving existing rules and team files even with `--force`. If team files were already tracked, use `git rm -r --cached -- .herdr` to stop tracking them while retaining the local files. Reusable defaults live in the plugin's `skill/assets/`; initialize each machine separately and install/authenticate its selected tools.
 
 To inspect roles, run `herdr-team role list`. Add a role with `herdr-team role add <name> --kind <kind>`; update an existing role's responsibilities with `herdr-team role add <name> --force --body <text>` or `--body-file <file>`; remove a role with `herdr-team role rm <name>`. Run `herdr-team up` after adding roles so they are started and reported.
 
@@ -92,7 +92,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Project initialization is not an upgrade step. Plugin and CLI versions are both `0.1.4` in this release.
+Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Use `herdr-team init` to add the whole-directory ignore rule to an existing project; it preserves existing team definitions. Plugin and CLI versions are both `0.1.5` in this release.
 
 Before removing the plugin, remove the plugin-managed skill, Herdr configuration, and CLI shim with the corresponding actions:
 

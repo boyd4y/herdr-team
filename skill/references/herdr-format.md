@@ -9,7 +9,6 @@
 
 ```
 <project>/.herdr/
-├── .gitignore                  忽略本机任务与运行记录，保留共享团队定义
 ├── models.json                 项目模型目录与 preferred，用户可改，优先于 Skill 模板
 ├── identity.md                 我的身份（纯 Markdown，无元数据）
 ├── .retired-ids                已删除任务的 id，一行一个，只追加
@@ -37,9 +36,9 @@
 
 `.retired-ids` 首次 `rm` 时才创建。扫描跳过以 `.` 开头的条目。
 
-团队定义（`.gitignore`、`identity.md`、`models.json`、`roles/`、可选 `workflow.md`）默认纳入 Git，供跨机器复用。
-内部 `.gitignore` 忽略 `tasks/`、`reports/`、`.retired-ids`、`projects/` 和 `worktrees/`。
-任务与机器会话独立保留在本地，不整体忽略 `.herdr/`。
+`.herdr/` 整体保留在本机，不纳入 Git，包括身份、模型、角色、流程、任务和临时产物。
+`init` 在项目根 `.gitignore` 追加 `/.herdr/`；已有内部忽略文件保留，不再新建。
+可复用默认模板位于插件的 `skill/assets/`，不通过提交项目 `.herdr/` 分享。
 
 ## `identity.md`
 

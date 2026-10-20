@@ -7,7 +7,7 @@
 [assets/models.json](../assets/models.json) 只是初始化模板。`init` 在项目缺少 `.herdr/models.json` 时复制一次，
 即使 `--force` 也保留现有项目文件。实际选择优先读取 `.herdr/models.json`；缺失时才使用 Skill 初始版本。
 
-项目文件按 harness 保存可选模型、启动参数、官方来源及 `checked_at` 核对日期，用户可以直接修改并纳入 Git 共享。
+项目文件按 harness 保存可选模型、启动参数、官方来源及 `checked_at` 核对日期，用户可以直接在本地修改；项目 `.herdr/` 整体由 Git 忽略。
 可选的 `harnesses.<kind>.preferred` 保存项目优先模型，例如 `harnesses.codex.preferred` 为 `gpt-6.1-sol`，
 `harnesses.claude.preferred` 为 `default`。不设置 preferred 时使用角色方案的建议；显式选择某个模型优先于项目默认偏好。
 项目 preferred 会覆盖 `--plan` 的模型建议，方案依然决定所选角色集合。

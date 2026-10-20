@@ -39,10 +39,9 @@ Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，�
 
 检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
-将 `.herdr/.gitignore`、`identity.md`、`models.json`、`roles/` 和可选的 `workflow.md` 纳入 Git，便于跨机器共享团队配置。
-初始化会创建内部 `.gitignore`，忽略任务、报告、已删除任务 ID 和 Herdr 本机 project/worktree 记录；已有忽略文件原样保留。
-不要整体忽略 `.herdr/`。已跟踪的本机记录用 `git rm --cached` 取消跟踪，保留磁盘文件。
-任务和原生会话留在本地；新机器仍需安装并登录所选工具。
+`.herdr/` 整体保留在本地并由 Git 忽略，包括身份、模型、角色、流程、任务、报告和临时产物。
+初始化会在项目根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件，`--force` 也不覆盖正文或模型目录。
+已跟踪的文件用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件。可复用默认模板保存在插件的 `skill/assets/`，各机器分别初始化并登录所选工具。
 
 运行 `herdr-team role list` 查看角色；用 `herdr-team role add <name> --kind <kind>` 添加角色；用 `herdr-team role add <name> --force --body <text>` 或 `--body-file <file>` 更新现有角色职责；用 `herdr-team role rm <name>` 移除角色。添加角色后运行 `herdr-team up`，让新角色启动并上报信息。
 
@@ -95,7 +94,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。升级无需运行 `init --force`。本次插件与 CLI 版本均为 `0.1.4`。
+安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.5`。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 

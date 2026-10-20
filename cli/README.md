@@ -54,10 +54,10 @@ herdr-team add "Implement login" --role dev --handoff test,review
 herdr-team tasks
 ```
 
-默认共享 `.herdr/.gitignore`、`identity.md`、`models.json`、`roles/` 和可选 `workflow.md`，不整体忽略 `.herdr/`。
-`init` 创建内部 `.gitignore`，忽略 tasks、reports、.retired-ids、projects、worktrees；
-已有忽略文件原样保留，包括 `--force`。CLI 不改项目根 `.gitignore`，旧整目录忽略规则由 Skill 按项目约定调整。
-已跟踪的本机文件用 `git rm --cached` 取消跟踪，保留磁盘内容；任务和会话不随配置跨机器恢复。
+`.herdr/` 整体属于本机状态，不纳入 Git，包括身份、模型、角色和流程定义。
+`init` 在根 `.gitignore` 追加 `/.herdr/`，保留已有规则；重复执行不重复添加。
+已有 `.herdr/.gitignore` 原样保留，不再生成内部忽略文件或 `.gitkeep`。
+已跟踪的目录用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件；各机器独立初始化。
 
 ### 先选工作流，再定角色
 
@@ -119,7 +119,7 @@ herdr-team tasks 0001 --json
 人类可读输出区分元数据写入、正文写入与正文保留；`init --json` 用
 `roleMetadataWritten`、`roleBodiesWritten`、`roleBodiesPreserved` 三个文件路径数组替代原来的
 `rolesWritten`，不再把只换元数据报告成整张角色已写。保留的正文也列入 `skipped`。
-`identity.md` 和 `.gitkeep` 即使加 `--force` 也始终保留。
+`identity.md` 和 `models.json` 即使加 `--force` 也始终保留。
 
 由 lead 更新已有角色职责：
 

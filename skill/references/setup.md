@@ -19,7 +19,7 @@ Skill 把用户确认的流程写入 `.herdr/workflow.md`；格式和变更规�
 可复用职责模板按角色保存在 [assets/roles](../assets/roles)：lead、dev、test、search、docs、review；
 每个目录只有 `prompt.md`，通用职责放在 default。按当前职责选择、阅读并调整所需模板，不整套加载。
 模型初始目录是 [assets/models.json](../assets/models.json)，init 只在缺失时复制到项目 `.herdr/models.json`。
-项目文件优先，用户可修改并共享；已有内容即使 --force 也保留。角色方案在 [assets/plans.json](../assets/plans.json) 中引用 harness/model。
+项目文件优先，用户可在本地修改；已有内容即使 --force 也保留。角色方案在 [assets/plans.json](../assets/plans.json) 中引用 harness/model。
 选择与刷新步骤只见 [models.md](models.md)，不在职责模板内复制模型列表。
 项目背景模板是 [assets/identity.md](../assets/identity.md)；CLI 仅在项目缺失 identity 时复制，
 Skill 结合项目事实填写背景、约定引用与偏好，不放角色指令或工作流步骤，已有内容保留。
@@ -69,10 +69,11 @@ CLI 输出、错误和生成的默认指令保持英文，无需多语言支持�
 只在用户已有业务任务和验收要求时建卡派发；不要编造试运行任务。
 派发、任务会话和恢复见 [handoff.md](handoff.md)。改角色文件不会给运行中 agent 自动重发配置，后续派活会携带角色正文。
 
-## 跨机器共享
+## 本地文件与 Git
 
-共享 `.herdr/.gitignore`、`identity.md`、`models.json`、`roles/`、可选 `workflow.md`；不要整体忽略 `.herdr/`。
-`init` 创建内部忽略规则：tasks、reports、.retired-ids、projects、worktrees；已有忽略文件保留，根 `.gitignore` 不自动修改。
-已有整目录忽略规则由 Skill 按项目约定调整。已跟踪的本机记录只用 `git rm --cached` 取消跟踪，保留磁盘文件。
+`.herdr/` 整体忽略，包括团队定义、任务、报告和临时产物；不要强制添加这些文件到 Git。
+`init` 在根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件。已有项目运行 init 即可补上规则。
+已跟踪的目录用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件；先检查差异，不删除本地配置。
 
-任务、会话和本机 worktree 不跨机器恢复。新机器安装并登录所选工具；共享角色使用相对路径，凭证不写进 Git。
+可复用默认模板在插件的 `skill/assets/`，各机器独立初始化、选择模型并登录所选工具。
+任务、会话和本机 worktree 不跨机器恢复；只有用户明确要求时才另外安排配置复制。

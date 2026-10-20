@@ -1,7 +1,0 @@
-kind: codex
-model: gpt-6.1-sol
-worktree: true
-args:
-  - "--no-daemon"
-  - "-m"
-  - gpt-6.1-sol
