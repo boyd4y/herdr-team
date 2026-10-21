@@ -1,6 +1,6 @@
 # Workflow：流程约定与 PR 交付
 
-本文件供选择流程、创建/调整任务链或执行 PR 交付时读取。通用领取与交棒只见 [handoff.md](handoff.md)。
+本文件供选择流程、创建/调整任务链、执行 PR 交付或最终收尾时读取。通用领取与交棒只见 [handoff.md](handoff.md)。
 
 ## 选择与保存
 
@@ -24,6 +24,7 @@
 - Test publishes the tested SHA as a PR and records its URL during handoff.
 - Review checks the tested PR head; rejected work repeats testing and review.
 - After approval, the reviewer's skill invokes herdr-team merge <id>.
+- After delivery and any required merge are done, the final owner ensures task cleanup with herdr-team clean <id> from the main workspace; lead coordinates cleanup when the final owner is inside the task workspace.
 - Docs/research: select the required owners for each task.
 ```
 
@@ -75,3 +76,26 @@ dev 自测，test 重点验证变更行为和风险；review 复用测试证据�
 
 交棒重复或操作失败先查任务和 PR；已合并不重跑。检查远端、本地同步和迁移效果后，才决定是否
 `merge retry <id>` 再 `merge <id>`。本地集成可显式带 `--migrate COMMAND`，在同一串行锁内执行。
+
+## 最后一棒：完成后收尾
+
+最后一棒负责让任务完成并释放其 worktree 和执行会话；不能只报告“完成”而把关闭操作留给用户。
+需要合并的任务，批准或进入合并队列还不算结束；必须等实际合并、本地同步及约定验证成功，任务为 done 后才收尾。
+手动合并方案由实际执行合并的 lead/协调会话负责这一步，无需再建收尾任务或增加验收角色。
+
+1. 先保存交付摘要、SHA、验证结果及需要保留的产物。摘要通过 handoff 留在主检出的任务卡；
+   持久证据放主检出的 `.herdr/reports/<id>/`，不能只留在即将删除的 worktree 或终端里。
+2. 用 `tasks <id> --json` 确认任务已 done，合并流程还需确认 integration 为 done。
+   普通最后一次 handoff 已尝试回收，检查返回的 cleanup 结果；未确认回收时执行：
+
+   ```sh
+   herdr-team clean <id> --root <team-root> --json
+   ```
+
+3. 从主 workspace 的 lead/协调会话执行清理，避免删除执行清理命令本身所在的工作区。
+   最后一棒在任务 workspace 内时，交付摘要明确注明待收尾任务号，由协调会话直接完成，不让用户手动关闭。
+   `removed` / `absent` 才表示当前任务没有遗留 checkout；Herdr 删除 worktree 会关闭对应 workspace、tabs 和其中的 agent。
+4. `dirty`、`closed`、`foreign`、`failed` 或 `not-terminal` 表示尚未完成清理，保留现场并说明原因；
+   不使用 force，不关闭常驻 lead、主 workspace、Console 或其他任务。分支和任务历史保留。
+
+收尾是 Skill 的交付要求；CLI 只执行显式 clean，不因读取 workflow、review 批准或 Console 刷新自行关闭工作区。

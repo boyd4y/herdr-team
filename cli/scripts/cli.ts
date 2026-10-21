@@ -2,7 +2,7 @@
 import { resolveProjectWorkspace, TeamScopeError } from "./lib/dispatch/team-scope.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { cleanupAll } from "./lib/dispatch/cleanup.ts";
+import { cleanupAll, cleanupIfDone } from "./lib/dispatch/cleanup.ts";
 import { findRoot, loadProject } from "./lib/team/project.ts";
 import { mergeRows, mergeTask, retryMerge } from "./lib/integration/merge.ts";
 import { handoff } from "./lib/tasks/handoff.ts";
@@ -62,7 +62,7 @@ Tasks:
 Maintenance:
   queue                Inspect, retry, or drain delivery records
   merge                Integrate accepted work serially
-  clean                Remove worktrees for terminal tasks
+  clean [<id>]         Remove a terminal task worktree, or all terminal worktrees
 
 Use the herdr-team skill for onboarding and task coordination.
 
@@ -723,16 +723,19 @@ function cmdTasks(args: string[]): number {
 function cmdClean(args: string[]): number {
   const parsed = parseArgs(args, ["root"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team clean [--root DIR] [--json]\n");
+    process.stdout.write("Usage: herdr-team clean [<id>] [--root DIR] [--json]\nRemove only terminal task worktrees and close their task workspaces and agents. Omit id to clean all terminal tasks; branches are retained.\n");
     return 0;
   }
+  if (parsed.pos.length > 1) throw new UsageError("clean accepts at most one task ID");
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
-  const results = cleanupAll(project, herdrClient());
+  const herdr = herdrClient();
+  const results = parsed.pos[0] ? [cleanupIfDone(project, herdr, findTask(project, parsed.pos[0]))] : cleanupAll(project, herdr);
+  const failed = results.some((r) => !["removed", "absent"].includes(r.action));
 
   if (parsed.flags.has("json")) {
     process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
-    return 0;
+    return failed ? 1 : 0;
   }
   if (results.length === 0) {
     process.stdout.write("No terminal tasks to clean up.\n");
@@ -740,7 +743,7 @@ function cmdClean(args: string[]): number {
   }
   const lines = results.map((r) => `  ${r.id}  ${r.action.padEnd(13)}${r.note}`);
   process.stdout.write(`${lines.join("\n")}\n`);
-  return results.some((r) => r.action === "dirty" || r.action === "closed") ? 1 : 0;
+  return failed ? 1 : 0;
 }
 
 /** `K=V,K=V` → 映射。 */

@@ -17,7 +17,8 @@ export type CleanupAction =
   | "closed"
   /** Git 拒绝删 —— 多半有未提交的东西。 */
   | "dirty"
-  | "foreign";
+  | "foreign"
+  | "failed";
 
 export interface CleanupResult {
   id: string;
@@ -52,7 +53,7 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
     return {
       id: card.id,
       branch,
-      action: "absent",
+      action: "failed",
       note: `Failed to list worktrees: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
@@ -93,7 +94,7 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
     id: card.id,
     branch,
     action: "removed",
-    note: `Removed ${branch} checkout (branch retained for merging)`,
+    note: `Removed ${branch} checkout and task workspace (branch retained)`,
   };
 }
 

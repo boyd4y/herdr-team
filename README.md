@@ -80,6 +80,8 @@ Each task owns a worktree and its role sessions: `dev-0046` and `dev-0047`, or `
 
 PR workflows require an authenticated GitHub CLI (`gh`) and a matching GitHub.com `origin`. PR head, testing, and review must name the same SHA. The skill requests merge after review approval; the CLI verifies that request under the integration lock, and branch protection is respected. With one shared GitHub account, Team publishes its decision as a clearly labeled PR comment because authors cannot approve their own PRs; this does not replace an independent GitHub approval required by repository rules. Separate reviewer accounts submit formal commit-specific reviews. Failed/interrupted merges require inspection before `merge retry <id>` and `merge <id>`; merged PRs are reconciled before local synchronization is retried. The optional local workflow retains `merge next` / `merge <id> --migrate 'command'`. Other tasks keep running; isolated service variables are described in the [CLI guide](cli/README.md#按任务开发验收与合并).
 
+Final delivery includes cleanup: after any required merge and validation succeed, the coordinating session runs `herdr-team clean <id>` from the main workspace. Herdr removes that task checkout and closes its workspace and agents; branches and task history remain. Dirty or unconfirmed cleanup is reported, preserving the work. See the [workflow reference](skill/references/workflow.md#最后一棒完成后收尾).
+
 ## Upgrade, remove, and troubleshoot
 
 For a GitHub installation, upgrade by updating or reinstalling `boyd4y/herdr-team` through Herdr's plugin manager. For a locally linked checkout, run `herdr plugin link .` from the checkout root to refresh the plugin manifest and event hooks, then run `herdr plugin action invoke herdr-team.install` to refresh the bundled CLI, skill, and managed configuration. The `configure` action only applies Herdr Team's managed layout and configuration and reloads config; it does not register changed event hooks or refresh the CLI and skill. Keep the user bin directory and Bun on Herdr's `PATH`.
@@ -92,7 +94,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Use `herdr-team init` to add the whole-directory ignore rule to an existing project; it preserves existing team definitions. Plugin and CLI versions are both `0.1.5` in this release.
+Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Use `herdr-team init` to add the whole-directory ignore rule to an existing project; it preserves existing team definitions. Plugin and CLI versions are both `0.1.6` in this release.
 
 Before removing the plugin, remove the plugin-managed skill, Herdr configuration, and CLI shim with the corresponding actions:
 

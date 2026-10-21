@@ -253,7 +253,7 @@ herdr-team merge 0046 --migrate 'bun run db:migrate'
 
 `merge next` 选择队列中的下一张卡；也可以指定 id。仅在任务 repo 的 `main` / `master` 主检出执行，
 工作区除 `.herdr/` 外不能有已跟踪修改。命令只合入验收的 SHA，要求任务分支 tip 仍与其相等，再在同一锁内运行可选迁移。
-成功后才标记 `done`；`clean` 可以回收任务 worktree。Console 不自动合并或执行迁移。
+成功后才标记 `done`；Skill 要求在主 workspace 执行 `clean <id>` 完成收尾，Herdr 一并关闭该 worktree 的 workspace、tabs 和 agent。Console 不自动合并或执行迁移。
 失败会标记 `blocked` 并保留冲突/迁移效果，其他独立任务继续开发、验收和入队；其他 queued 项仍可手动合入。
 先检查主检出、解决冲突并确认迁移效果，再用 `merge retry <id>` 显式重新入队。
 进程中断留下 `running` 时同样必须核对，不自动重试。分支新增提交会阻止合入，需重新验收，不能直接 retry 绕过。
@@ -403,7 +403,7 @@ cwd 是服务器启动时的目录（通常是你家目录），从那儿往上�
 找不到时普通命令提示用 `--root` 指定，`console --line` 静默退出；
 `init` 则在当前目录创建配置。显式 `--root` 仍允许定位待校验的 `.herdr/`。
 
-默认编排命令（含 `init`、建卡、改卡、派活、起停团队、增删角色、清理）及 Git 分支的创建、合并、删除都归 `lead`。
+默认编排命令（含 `init`、建卡、改卡、派活、起停团队、增删角色、清理）及 Git 分支的创建、合并、删除都归 `lead`。按 Skill 明确约定的 PR 发布、合并和自身终态任务 `clean <id>` 是执行角色的例外。
 其他角色用 `claim` 领取、`handoff --delivery ID` 交棒，以及 `tasks`、`status`、`validate`、`role list` 只读查询；允许在任务范围内提交，但不碰 main。
 这是提示词约定，CLI 不做角色权限拦截。任务完成后由当前角色交接：
 
@@ -417,9 +417,11 @@ herdr-team handoff <id> --delivery <delivery-id> --summary-file summary.md
 未进入队列的旧卡可裸 `handoff <id>`，回执和下游提示明确标记未提供摘要。JSON 包含 `summarySaved` 和绝对 `taskPath`。
 下游通过 `herdr-team tasks <id>`（可加 `--json`）读取交付内容；`herdr agent read` 仅用于排障，不能替代任务产物。
 
-最后一次 `handoff` 到 `done` 时会尝试回收 worktree；`clean` 回收所有
+最后一次 `handoff` 到 `done` 时会尝试回收 worktree；`clean <id>` 只回收指定的终态任务，省略 ID 则回收所有
 `done` / `cancelled` 任务留下的 worktree。两者都在任务 `repo`（缺省 `.`）中
 按 `feat/<id>-<slug>` 查找，不受当前角色是否隔离影响，交棒给常驻角色后仍能回收。
 没有匹配分支时返回 `absent`（原常驻角色的 `not-isolated` 结果已移除），不动其他
 checkout；Herdr workspace 已关闭时报告 `closed`，Git 拒绝删除时报告 `dirty`。
-回收不强制删除，保留分支供 lead 合并。
+回收不强制删除，保留分支和任务历史。Herdr 成功删除 checkout 后会关闭任务 workspace 及其中的 agent。
+`removed` / `absent` 返回成功；其他结果返回非零退出码，`--json` 也一样，查询失败不会当作已不存在。
+Skill 的最后一棒收尾规则见 [workflow.md](../skill/references/workflow.md#最后一棒完成后收尾)。

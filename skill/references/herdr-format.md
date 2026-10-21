@@ -145,7 +145,7 @@ Claude/Codex 只提供各自官方模型选项或 harness default。default 不�
 状态是 `review`。有 commit 验收的任务最后交棒进入合并队列，合入成功才变 `done`；
 未提交 commit 验收的纯调研/文档任务仍可由最后负责人交棒完成。
 
-最后一次 `handoff` 到 `done` 时会尝试回收 worktree；`clean` 则扫描所有
+最后一次 `handoff` 到 `done` 时会尝试回收 worktree；`clean <id>` 仅回收指定终态任务；不带 ID 时 `clean` 扫描所有
 `done` / `cancelled` 任务。两者都在任务的 `repo`（缺省 `.`）中按
 `feat/<id>-<slug>` 查找 worktree，与卡片当前角色的 `worktree` 配置无关，
 因此交棒给常驻角色后仍能回收。没有匹配分支时返回 `absent`，不动其他 checkout。

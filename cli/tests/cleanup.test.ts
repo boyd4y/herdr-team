@@ -54,6 +54,15 @@ describe("cleanupTask", () => {
     );
   });
 
+  test("a worktree lookup failure cannot be reported as successful absence", () => {
+    withProject((root) => writeTask(root, "0001-a", taskMeta({ status: "done" })), (p) => {
+      const h = fakeHerdr();
+      h.worktreeList = () => { throw new Error("Herdr unavailable"); };
+      expect(cleanupIfDone(p, h, p.tasks[0]!)).toMatchObject({ action: "failed", note: expect.stringContaining("Herdr unavailable") });
+      expect(h.calls).toEqual([]);
+    });
+  });
+
   test.each(["docs", "retired"])("当前角色 %s 不决定 worktree 是否存在", (role) => {
     withWorktree(dispatched, (p, herdr) => {
       const card = { ...p.tasks[0]!, role, status: "done" };

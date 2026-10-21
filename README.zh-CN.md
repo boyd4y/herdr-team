@@ -82,6 +82,8 @@ Console 默认按任务 ID 倒序排列，右侧流程图与详情上下各占�
 
 PR 方案需要已登录的 `gh` 和匹配的 GitHub.com `origin`，测试、审查和 PR head 必须是同一 SHA。Skill 在 review 批准后明确调用合并；CLI 使用串行锁，核对批准和 SHA，并遵守分支保护。agent 共用 GitHub 账号时，review 会明确把结论记为 PR 评论中的 Team 内部门禁，不冒充 GitHub 独立审批，也不能替代仓库要求的他人 Approve；不同账号使用正式、绑定 commit 的 PR review。失败或中断后核对远端 PR 和本地状态，再 `merge retry <id>` / `merge <id>`；已合并 PR 不会重复合并。本地方案保留 lead 的 `merge next` 或 `merge <id> --migrate 'command'`。其他任务继续执行，独立测试资源变量见[CLI 指南](cli/README.md#按任务开发验收与合并)。
 
+最后一棒还需完成收尾：所需合并、同步和验证成功后，协调会话在主 workspace 执行 `herdr-team clean <id>`。Herdr 移除该任务 checkout 并关闭对应 workspace 和 agent，保留分支与任务历史；清理受阻须明确报告并保留现场。详见 [workflow 收尾规则](skill/references/workflow.md#最后一棒完成后收尾)。
+
 ## 升级、移除与故障排查
 
 GitHub 安装的插件请通过 Herdr 插件管理器更新或重新安装 `boyd4y/herdr-team`。更新本地 link 的检出时，请在仓库根目录运行 `herdr plugin link .`，刷新插件 manifest 和事件 hook；然后运行 `herdr plugin action invoke herdr-team.install`，更新内置 CLI、skill 并应用托管配置。`configure` action 只应用 Herdr Team 托管的布局与配置并 reload config；它不会注册已变更的事件 hook，也不会更新 CLI 和 skill。Herdr 的 `PATH` 中需保留用户 bin 目录和 Bun。
@@ -94,7 +96,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.5`。
+安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.6`。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 

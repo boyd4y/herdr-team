@@ -22,7 +22,7 @@ description: 用项目内 .herdr/ 的身份、角色卡和任务卡驱动 Herdr 
 | 当前工作 | 参考 |
 | --- | --- |
 | 初始化、重新 onboard、调整角色、本地团队配置 | [setup.md](references/setup.md) |
-| 选择/调整流程、拆分新任务、PR 交付和合并 | [workflow.md](references/workflow.md) |
+| 选择/调整流程、拆分新任务、PR 交付、合并和最终收尾 | [workflow.md](references/workflow.md) |
 | 收到任务、claim/handoff、反馈缺陷、队列/Console/会话恢复 | [handoff.md](references/handoff.md) |
 | 选择模型或修改 harness 启动配置 | [models.md](references/models.md) |
 | 查询文件布局、字段和约束 | [herdr-format.md](references/herdr-format.md) |

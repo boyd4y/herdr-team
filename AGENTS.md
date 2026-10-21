@@ -14,6 +14,10 @@ and summaries in their original language; Unicode input remains supported.
   task decomposition, handoff order, validation scope, and next-step decisions.
 - Skill: maintain the project's workflow agreement in `.herdr/workflow.md`;
   explicitly request PR creation and merging under the user's agreed policy.
+- Skill: require final delivery cleanup after any required merge succeeds. Use
+  explicit task-scoped clean from the coordinating workspace; preserve resident
+  sessions, other tasks, branches, and unfinished work. CLI does not infer cleanup
+  policy from workflow prose or review approval.
 - CLI: standardize inputs, outputs, and persisted task/delivery records; execute
   explicit operations for agents, worktrees, handoffs, and merges.
 - CLI: enforce record validity, delivery deduplication, project/session scope,

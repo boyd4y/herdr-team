@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { loadProject } from "../scripts/lib/team/project.ts";
+import { projectKey } from "../scripts/lib/dispatch/team-scope.ts";
 import { rememberRoleSession } from "../scripts/lib/runtime/sessions.ts";
 import { makeProject, twoRoles, writeTask, taskMeta } from "./helpers.ts";
 
@@ -30,7 +31,7 @@ let result = {};
 state.tabs ??= [];
 state.panes ??= [];
 if (command === "workspace" && sub === "list") {
-  result = { workspaces: [{ workspace_id: "w1", label: "myproj" }] };
+  result = { workspaces: [{ workspace_id: "w1", label: "myproj" }, ...(state.workspaces ?? [])] };
 } else if (command === "tab" && sub === "list") {
   result = { tabs: [{ workspace_id: "w1", tab_id: "w1:t1", label: "docs" }, ...state.tabs] };
 } else if (command === "tab" && sub === "create") {
@@ -45,6 +46,10 @@ if (command === "workspace" && sub === "list") {
   result = { agents: state.agents };
 } else if (command === "worktree" && sub === "list") {
   result = { worktrees: state.trees };
+} else if (command === "worktree" && sub === "remove") {
+  const id = args[args.indexOf("--workspace") + 1];
+  state.trees = state.trees.filter(tree => tree.open_workspace_id !== id);
+  state.workspaces = state.workspaces.filter(ws => ws.workspace_id !== id);
 } else if (command === "worktree" && sub === "create") {
   const branch = args[args.indexOf("--branch") + 1];
   const id = "w" + (state.trees.length + 2);
@@ -87,6 +92,39 @@ process.stdout.write(JSON.stringify({ result }));
 }
 
 describe("CLI up / dispatch", () => {
+  test("clean targets one terminal task and reports incomplete cleanup as failure in JSON too", () => {
+    withCLI((cli, root, calls) => {
+      writeTask(root, "0001-a", taskMeta({ status: "done" }));
+      writeTask(root, "0002-b", taskMeta({ status: "done" }));
+      const statePath = join(root, "herdr-state.json");
+      const state = JSON.parse(readFileSync(statePath, "utf8"));
+      const owner = projectKey(loadProject(root));
+      state.workspaces = ["w2", "w3"].map(workspace_id => ({ workspace_id, tokens: { team_project: owner } }));
+      state.trees = ["0001-a", "0002-b"].map((id, i) => ({ branch: `feat/${id}`, path: `/unused/${id}`, open_workspace_id: `w${i + 2}` }));
+      writeFileSync(statePath, JSON.stringify(state));
+      const cleaned = cli("clean", "0001", "--json");
+      expect(cleaned.code).toBe(0);
+      expect(JSON.parse(cleaned.stdout)).toMatchObject([{ id: "0001", action: "removed" }]);
+      expect(JSON.parse(cleaned.stdout)).toHaveLength(1);
+      expect(JSON.parse(readFileSync(statePath, "utf8")).trees.map((tree: { branch: string }) => tree.branch)).toEqual(["feat/0002-b"]);
+      expect(JSON.parse(cli("clean", "0001", "--json").stdout)).toMatchObject([{ action: "absent" }]);
+      writeTask(root, "0002-b", taskMeta());
+      const active = cli("clean", "0002", "--json");
+      expect(active.code).toBe(1);
+      expect(JSON.parse(active.stdout)).toMatchObject([{ id: "0002", action: "not-terminal" }]);
+      expect(cli("clean", "0002").code).toBe(1);
+      expect(cli("clean", "9999", "--json").code).not.toBe(0);
+      expect(cli("clean", "0001", "0002").code).not.toBe(0);
+      const broken = JSON.parse(readFileSync(statePath, "utf8"));
+      broken.trees = null;
+      writeFileSync(statePath, JSON.stringify(broken));
+      const unavailable = cli("clean", "0001", "--json");
+      expect(unavailable.code).toBe(1);
+      expect(JSON.parse(unavailable.stdout)).toMatchObject([{ action: "failed" }]);
+      expect(calls().filter(args => args[0] === "worktree" && args[1] === "remove")).toEqual([["worktree", "remove", "--workspace", "w2"]]);
+    });
+  });
+
   test.each([false, true])("up 的默认恢复与 --fresh 通过真实 CLI 生效（fresh=%s）", (fresh) => {
     withCLI((cli, root, calls) => {
       const project = loadProject(root);

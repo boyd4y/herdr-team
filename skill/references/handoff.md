@@ -6,7 +6,7 @@
 
 lead 创建/调整任务、管理角色和会话、dispatch、处理 queue retry/drain、clean/down，并负责不明确的下一步。
 执行角色使用 claim、handoff 和只读查询，不自行建卡或改任务元数据。
-已约定的 PR 发布与批准后 merge 是 [workflow.md](workflow.md) 中明确授权的例外；不要据此自行改主分支或分支生命周期。
+已约定的 PR 发布、批准后 merge 和自身终态任务收尾是 [workflow.md](workflow.md) 中明确授权的例外；不要据此自行改主分支或分支生命周期。
 
 不同任务各有 worktree/workspace 和角色会话；同一任务所有角色共用 checkout，逐棒执行。
 常驻对话不占任务执行槽，lead 是唯一常驻串行编排者。测试/审查接手后，开发者暂停写入。
@@ -83,5 +83,6 @@ up 默认恢复已记录的常驻原生会话，运行中会话复用；fresh �
 角色正文更新不让运行中 agent 自动重读 Skill；下一次派活携带当前角色正文和 delivery 命令。
 旧已发出 delivery 继续原会话，未发出的队列可在投递前切到任务会话。
 
-lead 用 clean 回收终态任务 worktree；CLI 不强制删除脏 checkout，保留现场与分支。
+最后一棒必须完成 [workflow.md 的收尾步骤](workflow.md#最后一棒完成后收尾)；lead/协调会话在主 workspace 用 `clean <id>` 回收该终态任务。
+CLI 不强制删除脏 checkout，保留现场与分支；不要用 down 代替单任务收尾。
 down 停止 agent，默认保留 workspace；不为刷新 CLI 或 Skill 而重启团队。
