@@ -47,6 +47,37 @@ describe("两个项目同名角色、同号任务的隔离", () => {
     expect(herdr.calls.slice(calls).some((call) => call.startsWith("agent start") || call.startsWith("agent prompt"))).toBe(false);
   }));
 
+  test("up repairs a partial project binding and uses checkout identity after panes change directory", () => fixture((a, b, h) => {
+    h.state.workspaces[0]!.tokens = { team_project: projectKey(a) };
+    expect(up(a, h).workspaceId).toBe("a");
+    expect(h.state.workspaces[0]!.tokens?.team_root).toBe("1");
+    h.state.workspaces[0]!.tokens = undefined;
+    h.state.workspaces[0]!.worktree = { repo_key: `${a.root}/.git`, checkout_path: a.root, is_linked_worktree: false };
+    h.state.panes.filter(pane => pane.workspace_id === "a").forEach(pane => pane.cwd = b.root);
+    expect(up(a, h).workspaceId).toBe("a");
+    expect(h.calls.some(call => call.startsWith("workspace create"))).toBe(false);
+  }));
+
+  test("a team configured below its repository root still reuses its own workspace", () => fixture((a, _b, h) => {
+    h.state.workspaces[0]!.worktree = { repo_key: join(a.root, "..", ".git"), checkout_path: join(a.root, ".."), is_linked_worktree: false };
+    expect(resolveProjectWorkspace(a, h)).toBe("a");
+    h.state.workspaces[0]!.tokens = { team_project: projectKey(a), team_root: "1" };
+    expect(resolveProjectWorkspace(a, h)).toBe("a");
+    expect(h.calls).toEqual([]);
+  }));
+
+  test("a task workspace cannot become the root, and conflicting ownership cannot create another root", () => fixture((a, b, h) => {
+    h.state.workspaces[0]!.tokens = { team_project: projectKey(a), team_root: "0" };
+    expect(resolveProjectWorkspace(a, h)).toBeNull();
+    h.state.workspaces[0]!.tokens!.team_root = "1";
+    h.state.workspaces[0]!.worktree = { repo_key: `${a.root}/.git`, checkout_path: a.root, is_linked_worktree: true };
+    expect(() => up(a, h)).toThrow(/conflicting/);
+    h.state.workspaces[0]!.tokens = { team_project: projectKey(b) };
+    h.state.workspaces[0]!.worktree!.is_linked_worktree = false;
+    expect(() => up(a, h)).toThrow(/conflicting/);
+    expect(h.calls).toEqual([]);
+  }));
+
   test("dispatch / handoff 仅发送到本项目 pane，同号任务不改另一个项目", () => fixture((a, b, herdr) => {
     herdr.state.agents = ["dev", "docs"].map((name) => ({ name, pane_id: `b:p-${name}`, workspace_id: "b", tokens: { team_project: projectKey(b) } }));
     up(a, herdr);

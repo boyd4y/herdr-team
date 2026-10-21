@@ -86,6 +86,7 @@ export function up(project: Project, herdr: Herdr, options: { fresh?: boolean } 
     );
   }
 
+  return withTeamLock(project, "queue", () => {
   const roles = project.roles;
   if (roles.length === 0) throw new LaunchError("No roles found; run init first");
 
@@ -189,6 +190,7 @@ export function up(project: Project, herdr: Herdr, options: { fresh?: boolean } 
   }
 
   return { workspaceId, workspaceLabel: label, workspaceAction, roles: outcomes, console: ensureConsole(project, herdr, workspaceId) };
+  });
 }
 
 /** 按 priority 升序、同优先级按 id 升序派活。 */

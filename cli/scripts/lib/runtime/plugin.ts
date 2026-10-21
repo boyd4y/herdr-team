@@ -20,7 +20,8 @@ export function runPluginAction(action: string | undefined, herdr: Herdr, contex
   if (!root) throw new Error("No team project found in the invoking workspace; initialize it with the herdr-team skill");
   const project = loadProject(root);
   assertProjectWorkspace(project, herdr, context.workspace_id);
-  const workspaceId = resolveProjectWorkspace(project, herdr) ?? context.workspace_id;
+  const workspaceId = resolveProjectWorkspace(project, herdr);
+  if (!workspaceId) throw new Error("No main project workspace found; run herdr-team up before opening Console");
   const outcome = ensureConsole(project, herdr, workspaceId, true);
   if (outcome.action === "failed") throw new Error(outcome.failure);
   return { ...outcome, root };

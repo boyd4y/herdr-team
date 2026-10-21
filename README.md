@@ -94,7 +94,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Use `herdr-team init` to add the whole-directory ignore rule to an existing project; it preserves existing team definitions. Plugin and CLI versions are both `0.1.6` in this release.
+Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Use `herdr-team init` to add the whole-directory ignore rule to an existing project; it preserves existing team definitions. Plugin and CLI versions are both `0.1.7` in this release.
 
 Before removing the plugin, remove the plugin-managed skill, Herdr configuration, and CLI shim with the corresponding actions:
 

@@ -1,3 +1,4 @@
+import { projectKey } from "../scripts/lib/dispatch/team-scope.ts";
 import { expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -304,3 +305,10 @@ test("console --sample works outside a team and Herdr without touching project o
     expect(readdirSync(root)).toEqual(["bin"]);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+
+test("opening Console from a task workspace never uses it as a missing main workspace", () => fixture((root, h) => {
+  h.state.workspaces[0]!.tokens = { team_project: projectKey(loadProject(root)), team_root: "0" };
+  expect(() => runPluginAction("open-console", h, JSON.stringify({ workspace_id: "w1", focused_pane_id: h.state.panes[0]!.pane_id }))).toThrow(/main project workspace/);
+  expect(h.calls.some(call => call.startsWith("plugin pane open"))).toBe(false);
+}));

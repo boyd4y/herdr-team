@@ -8,7 +8,7 @@ import { makeProject, twoRoles, writeTask, taskMeta } from "./helpers.ts";
 
 // Exercise the real CLI and realHerdr adapter, with an offline Herdr executable.
 // Every mutation is confined to a throwaway project, never the user's team.
-function withCLI(run: (cli: (...args: string[]) => { code: number; stdout: string; stderr: string }, root: string, calls: () => string[][]) => void, promptError = ""): void {
+function withCLI(run: (cli: (...args: string[]) => { code: number; stdout: string; stderr: string }, root: string, calls: () => string[][], env: NodeJS.ProcessEnv) => void, promptError = ""): void {
   const { root, cleanup } = makeProject();
   try {
     twoRoles(root);
@@ -21,17 +21,29 @@ function withCLI(run: (cli: (...args: string[]) => { code: number; stdout: strin
     writeFileSync(stateFile, JSON.stringify({ calls: [], agents: [], trees: [] }));
     const executable = join(bin, "herdr");
     writeFileSync(executable, `#!/usr/bin/env bun
-import { readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 const path = process.env.HERDR_TEST_STATE;
 const state = JSON.parse(readFileSync(path, "utf8"));
 const args = process.argv.slice(2);
+if (process.env.HERDR_TEST_CALL_LOG) appendFileSync(process.env.HERDR_TEST_CALL_LOG, JSON.stringify(args) + "\\n");
 state.calls.push(args);
 const [command, sub] = args;
 let result = {};
 state.tabs ??= [];
 state.panes ??= [];
 if (command === "workspace" && sub === "list") {
-  result = { workspaces: [{ workspace_id: "w1", label: "myproj" }, ...(state.workspaces ?? [])] };
+  result = { workspaces: [...(state.rootAbsent ? [] : [{ workspace_id: "w1", label: "myproj" }]), ...(state.workspaces ?? [])] };
+} else if (command === "workspace" && sub === "create") {
+  if (process.env.HERDR_TEST_CALL_LOG) Bun.sleepSync(150);
+  const ws = "w" + process.pid;
+  const workspace = { workspace_id: ws, label: args[args.indexOf("--label") + 1] };
+  const tab = { workspace_id: ws, tab_id: ws + ":t1", label: "1" };
+  const pane = { workspace_id: ws, tab_id: tab.tab_id, pane_id: ws + ":p1", cwd: args[args.indexOf("--cwd") + 1] };
+  state.workspaces ??= []; state.workspaces.push(workspace); state.tabs.push(tab); state.panes.push(pane);
+  result = { workspace, tab, root_pane: pane };
+} else if (command === "tab" && sub === "rename") {
+  const tab = state.tabs.find(tab => tab.tab_id === args[2]);
+  if (tab) tab.label = args[3];
 } else if (command === "tab" && sub === "list") {
   result = { tabs: [{ workspace_id: "w1", tab_id: "w1:t1", label: "docs" }, ...state.tabs] };
 } else if (command === "tab" && sub === "create") {
@@ -76,22 +88,51 @@ if (command === "agent" && sub === "prompt" && process.env.HERDR_TEST_PROMPT_ERR
 process.stdout.write(JSON.stringify({ result }));
 `);
     chmodSync(executable, 0o755);
+    const env = { ...process.env, HERDR_ENV: "1", HERDR_TEST_STATE: stateFile, HERDR_TEST_ROOT: root,
+      HERDR_BIN_PATH: executable, HERDR_TEST_PROMPT_ERROR: promptError, PATH: `${bin}${delimiter}${process.env.PATH}` };
     const cli = (...args: string[]) => {
       const proc = Bun.spawnSync([join(bin, "herdr-team"), ...args], {
         cwd: root,
-        env: { ...process.env, HERDR_ENV: "1", HERDR_TEST_STATE: stateFile, HERDR_TEST_ROOT: root,
-          HERDR_BIN_PATH: executable, HERDR_TEST_PROMPT_ERROR: promptError, PATH: `${bin}${delimiter}${process.env.PATH}` },
+        env,
         stdout: "pipe", stderr: "pipe",
       });
       return { code: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
     };
-    run(cli, root, () => JSON.parse(readFileSync(stateFile, "utf8")).calls);
+    run(cli, root, () => JSON.parse(readFileSync(stateFile, "utf8")).calls, env);
   } finally {
     cleanup();
   }
 }
 
 describe("CLI up / dispatch", () => {
+  test("parallel up commands create one project workspace and reuse one resident agent", () => {
+    withCLI((_cli, root, _calls, env) => {
+      const stateFile = join(root, "herdr-state.json");
+      const state = JSON.parse(readFileSync(stateFile, "utf8"));
+      state.rootAbsent = true;
+      writeFileSync(stateFile, JSON.stringify(state));
+      const log = join(root, "herdr-calls.jsonl");
+      const command = [join(root, "bin", "herdr-team"), "up", "--json"];
+      const runner = Bun.spawnSync([process.execPath, "-e", `
+        const results = await Promise.all([0, 1].map(async () => {
+          const child = Bun.spawn(${JSON.stringify(command)}, { stdout: "pipe", stderr: "pipe" });
+          const stdout = await new Response(child.stdout).text(), stderr = await new Response(child.stderr).text();
+          return { code: await child.exited, stdout, stderr };
+        }));
+        console.log(JSON.stringify(results));
+      `], { cwd: root, env: { ...env, HERDR_TEST_CALL_LOG: log }, stdout: "pipe", stderr: "pipe" });
+      expect(runner.exitCode).toBe(0);
+      const results = JSON.parse(runner.stdout.toString()) as Array<{ code: number; stdout: string; stderr: string }>;
+      expect(results.map(result => result.code)).toEqual([0, 0]);
+      const outputs = results.map(result => JSON.parse(result.stdout));
+      expect(new Set(outputs.map(result => result.workspaceId)).size).toBe(1);
+      expect(outputs.map(result => result.workspaceAction).sort()).toEqual(["created", "reused"]);
+      const calls = readFileSync(log, "utf8").trim().split("\n").map(line => JSON.parse(line) as string[]);
+      expect(calls.filter(args => args[0] === "workspace" && args[1] === "create")).toHaveLength(1);
+      expect(calls.filter(args => args[0] === "agent" && args[1] === "start")).toHaveLength(1);
+    });
+  });
+
   test("clean targets one terminal task and reports incomplete cleanup as failure in JSON too", () => {
     withCLI((cli, root, calls) => {
       writeTask(root, "0001-a", taskMeta({ status: "done" }));

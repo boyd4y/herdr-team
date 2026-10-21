@@ -32,6 +32,14 @@ and summaries in their original language; Unicode input remains supported.
   instructions in their respective references; link to each topic instead of
   copying its procedures or role prompts into multiple files.
 
+# Workspace ownership
+
+CLI owns project workspace discovery and creation. Serialize same-project startup,
+prefer canonical checkout identity and verified ownership, and reject ambiguous or
+conflicting bindings. A task workspace cannot stand in for a missing main workspace.
+Skill uses team up/dispatch/handoff instead of creating additional workspaces to
+recover from errors; inspect existing state before retrying an uncertain operation.
+
 # Role prompts and shared context
 
 - Maintain reusable role prompts in `skill/assets/roles/<role>/prompt.md` and the

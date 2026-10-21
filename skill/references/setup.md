@@ -69,6 +69,18 @@ CLI 输出、错误和生成的默认指令保持英文，无需多语言支持�
 只在用户已有业务任务和验收要求时建卡派发；不要编造试运行任务。
 派发、任务会话和恢复见 [handoff.md](handoff.md)。改角色文件不会给运行中 agent 自动重发配置，后续派活会携带角色正文。
 
+## Workspace 归属与复用
+
+主 workspace 由 `herdr-team up --root <team-root>` 统一定位或创建；不要在 up 前后额外运行
+`herdr workspace create`，也不要因启动/Console 失败就另建一个“补救” workspace。
+任务 worktree/workspace 交给 dispatch/handoff 创建和复用，不手工再按角色各建一份。
+在其他目录或任务 worktree 中始终使用派活给出的主项目绝对 root，不把当前 `$PWD` 当作团队 root。
+
+同一项目一个主 workspace，任务各有工作区；以项目 root、归属 token、checkout 身份和返回的 workspace ID 为准，
+侧栏名称相同不代表同一个项目。CLI 串行执行同项目 up，复用已有主 workspace 和运行中的角色。
+归属冲突、重复候选或启动结果不明时先查看实际 workspace/pane 与原命令结果；保留现场，不重复创建或自行合并/关闭工作区。
+从任务 worktree 打开 Console 也必须落在主 workspace；主 workspace 不存在时先由协调会话 up，不把任务工作区临时改成主工作区。
+
 ## 本地文件与 Git
 
 `.herdr/` 整体忽略，包括团队定义、任务、报告和临时产物；不要强制添加这些文件到 Git。

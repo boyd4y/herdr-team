@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
+import { isAbsolute, relative } from "node:path";
 import { findRoot } from "../team/project.ts";
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
 import { isolatedAgentName, type Project, type RoleCard } from "../shared/types.ts";
@@ -27,10 +28,34 @@ export function resolveProjectWorkspace(project: Project, herdr: Herdr): string 
   const key = projectKey(project);
   const root = realpathSync(project.root);
   const workspaces = herdr.workspaceList();
-  const bound = workspaces.filter((w) => w.tokens?.team_project === key && w.tokens?.team_root === "1");
-  const matches = bound.length ? bound : workspaces.filter((w) => {
-    if (w.tokens?.team_project !== undefined || w.worktree?.is_linked_worktree) return false;
-    return herdr.paneList(w.workspace_id).some((pane) => pane.cwd && findRoot(pane.cwd) === root);
+  const canonical = (path: string) => { try { return realpathSync(path); } catch { return path; } };
+  const contains = (parent: string, child: string) => {
+    const offset = relative(parent, child);
+    return offset !== ".." && !offset.startsWith("../") && !isAbsolute(offset);
+  };
+  const candidates = workspaces.filter((workspace) => {
+    const tokens = workspace.tokens, checkout = workspace.worktree?.checkout_path;
+    const boundRoot = tokens?.team_project === key && tokens.team_root === "1";
+    const mainCheckout = checkout !== undefined && canonical(checkout) === root;
+    if ((boundRoot && (workspace.worktree?.is_linked_worktree || (checkout !== undefined && !contains(canonical(checkout), root)))) ||
+        (mainCheckout && (tokens?.team_root === "0" || (tokens?.team_project !== undefined && tokens.team_project !== key)))) {
+      throw new TeamScopeError(`Workspace ${workspace.workspace_id} has conflicting project/checkout ownership; resolve it before continuing`);
+    }
+    if (workspace.worktree?.is_linked_worktree || tokens?.team_root === "0" ||
+        (tokens?.team_project !== undefined && tokens.team_project !== key)) return false;
+    return boundRoot || mainCheckout;
+  });
+  const matches = candidates.length ? candidates : workspaces.filter((workspace) => {
+    const tokens = workspace.tokens;
+    if (workspace.worktree?.is_linked_worktree || tokens?.team_root === "0" ||
+        (tokens?.team_project !== undefined && tokens.team_project !== key) ||
+        (workspace.worktree?.checkout_path !== undefined && !contains(canonical(workspace.worktree.checkout_path), root))) return false;
+    return herdr.paneList(workspace.workspace_id).some((pane) => {
+      if (!pane.cwd) return false;
+      // findRoot maps linked worktrees to the main team; that alone is not
+      // evidence that this pane belongs to the main checkout workspace.
+      return contains(root, canonical(pane.cwd)) && findRoot(pane.cwd) === root;
+    });
   });
   if (matches.length > 1) throw new TeamScopeError(
     `Project ${project.root} matches multiple workspaces (${matches.map((w) => w.workspace_id).join(", ")}); resolve ownership before continuing`,

@@ -153,6 +153,11 @@ herdr-team dispatch
 `lead` 始终复用项目内唯一的常驻会话，lead 的任务排队处理，不创建 `lead-任务号` 会话。
 项目身份与角色职责随 `dispatch` / `handoff` 的实际任务发送。
 
+同项目的并发 up 使用项目锁，重新读取现场后只创建一份主 workspace 和常驻角色。
+主 workspace 优先按归属 token 和原生 checkout 身份定位，归属标记不完整且目录证据明确时补齐；
+不凭 label 匹配，不把任务 workspace 当主 workspace。归属冲突或多个候选会报错，不额外新建。
+Skill 不应在 up/dispatch/handoff 之外手动创建补救 workspace；在任务 worktree 操作使用主项目的绝对 `--root`。
+
 常驻角色退出后，再次 `up` 默认用已保存的原生 session ID 恢复，输出 `resumed`。
 ID 按规范化的项目路径和角色名分开保存在插件 state 的 `agent-sessions/` 下，不写进
 项目 `.herdr/`，也不依赖 workspace/pane ID；角色的 kind 或 cwd 改变后不复用旧会话。
