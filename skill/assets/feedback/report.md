@@ -20,6 +20,9 @@ Use only supported measurements. Explain justified retests and parallel work whe
 
 ## Upstream feedback
 
+Record candidates and local drafts first. Search GitHub issues only after this report
+is complete, the upstream problem is confirmed, and the user decides to submit it.
+
 | Finding | Responsible repository | Issue title and proposed change | Public reproduction / evidence | Status / issue URL |
 | --- | --- | --- | --- | --- |
 

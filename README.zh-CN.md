@@ -37,7 +37,7 @@ onboard 由 herdr-team Skill 对话引导，CLI 不提供 `onboard` 命令；`in
 Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，再检查所需工具与登录，明确启动和派活。
 已有角色默认保留，研究与文档角色按需选择。角色 prompt 定义职责，Skill 引导协作；派活消息要求先读 Skill，再按指导使用消息里的 CLI 参数模板。`herdr-team --help` 列出全部可用命令，包括任务操作。侧栏刷新由插件内部 hook 执行。
 
-Skill 提供五个工作入口：**setup（onboard）**、**workflow**、**handoff**、**models** 和 **feedback**。例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。feedback 从已有记录检查慢任务、重复工作、职责交叉和环境阻塞，保存本地报告，并分别给出上游 GitHub issue 草稿与当前仓库改进建议；缺失的耗时数据明确标注。发布 issue 和实施修复按用户请求范围执行。详见 [feedback 参考](skill/references/feedback.md)。这些是 agent 的 Skill 工作入口，不是 CLI 命令。
+Skill 提供五个工作入口：**setup（onboard）**、**workflow**、**handoff**、**models** 和 **feedback**。例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。feedback 从已有记录检查慢任务、重复工作、职责交叉和环境阻塞，保存本地报告，并分别给出上游 GitHub issue 草稿与当前仓库改进建议；缺失的耗时数据明确标注。先完成并查看本地报告，确认插件问题且决定提交后，才查询上游同类 issue。实施修复按用户请求范围执行。详见 [feedback 参考](skill/references/feedback.md)。这些是 agent 的 Skill 工作入口，不是 CLI 命令。
 
 检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
@@ -98,7 +98,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.8`。
+安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.9`。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 

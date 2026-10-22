@@ -16,6 +16,8 @@ and summaries in their original language; Unicode input remains supported.
   delivery, artifact and Git evidence; separate observed timing from inference.
   Propose upstream issues and repository fixes under the user's requested scope;
   do not add a feedback CLI, background telemetry, or automatic workflow rewriting.
+  Complete the local report first; search upstream issues only after the report is
+  reviewed, the upstream problem is confirmed, and the user decides to submit it.
 - Skill: maintain the project's workflow agreement in `.herdr/workflow.md`;
   explicitly request PR creation and merging under the user's agreed policy.
 - Skill: require final delivery cleanup after any required merge succeeds. Use
