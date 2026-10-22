@@ -18,6 +18,8 @@ and summaries in their original language; Unicode input remains supported.
   do not add a feedback CLI, background telemetry, or automatic workflow rewriting.
   Complete the local report first; search upstream issues only after the report is
   reviewed, the upstream problem is confirmed, and the user decides to submit it.
+  Present core findings, traceable evidence, and concrete owner/action/validation
+  recommendations in the conversation; a report link alone is not the deliverable.
 - Skill: maintain the project's workflow agreement in `.herdr/workflow.md`;
   explicitly request PR creation and merging under the user's agreed policy.
 - Skill: require final delivery cleanup after any required merge succeeds. Use

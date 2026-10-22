@@ -10,13 +10,29 @@
 - Missing evidence and limits:
 - Previous report, if any:
 
+## Core conclusion
+
+- Main delivery bottleneck and observed impact:
+- Strongest supporting evidence and limits:
+- First recommended change and owner:
+
 ## Findings
 
-| ID | Priority | Tasks / delivery / SHA | Observed time or repetition | Evidence | Cause hypothesis and confidence | Impact |
-| --- | --- | --- | --- | --- | --- | --- |
+For each finding, include:
+
+- ID, priority, and affected tasks / deliveries / SHAs:
+- Observed problem and impact:
+- Evidence: source path and line / event time / commit or PR link, key excerpt or
+  change, and how it supports the claim:
+- Measurement: duration boundaries or counting rule, deduplicated event list with
+  sources, affected task count, and any unknowns:
+- Cause hypothesis and confidence, separate from observed facts:
+- Minimal change: responsible role, target file / setting / acceptance action:
+- Validation and recommendation status:
 
 Distinguish waiting, stage wall-clock time, open-task age, and unknown time.
-Use only supported measurements. Explain justified retests and parallel work where relevant.
+Explain justified retests and parallel work where relevant. A source path alone
+is insufficient evidence; unsupported causes remain hypotheses.
 
 ## Upstream feedback
 
