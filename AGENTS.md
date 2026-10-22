@@ -12,6 +12,10 @@ and summaries in their original language; Unicode input remains supported.
 
 - Skill: own onboarding, workflow recommendations, role responsibilities,
   task decomposition, handoff order, validation scope, and next-step decisions.
+- Skill: own execution feedback and improvement reports. Use existing task,
+  delivery, artifact and Git evidence; separate observed timing from inference.
+  Propose upstream issues and repository fixes under the user's requested scope;
+  do not add a feedback CLI, background telemetry, or automatic workflow rewriting.
 - Skill: maintain the project's workflow agreement in `.herdr/workflow.md`;
   explicitly request PR creation and merging under the user's agreed policy.
 - Skill: require final delivery cleanup after any required merge succeeds. Use

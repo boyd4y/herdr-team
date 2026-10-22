@@ -1,6 +1,6 @@
 ---
 name: herdr-team
-description: 用项目内 .herdr/ 的身份、角色卡和任务卡驱动 Herdr agent 团队：初始化骨架、按角色拉起 agent 并按优先级和依赖派活、以任务卡为载体在角色间交接。适用于需要多 agent 分工的本地开发；不绑定具体项目、仓库名或 agent 类型。
+description: 用项目内 .herdr/ 的身份、角色卡和任务卡驱动 Herdr agent 团队：初始化骨架、按角色拉起 agent 并按优先级和依赖派活、以任务卡为载体在角色间交接，并复盘执行耗时、重复工作和职责交叉、提出上游反馈与项目改进。适用于需要多 agent 分工或执行复盘的本地开发；不绑定具体项目、仓库名或 agent 类型。
 ---
 
 # Herdr Team
@@ -14,18 +14,21 @@ description: 用项目内 .herdr/ 的身份、角色卡和任务卡驱动 Herdr 
 - 任务元数据和历史由 CLI 写；不要手算 ID、手改任务卡或绕过队列发消息。
 - 任务已有 role/handoff 是执行依据；CLI 不解释旧 workflow 快照；活动旧格式应由 lead 明确处理，历史记录保留。
 
-## 按当前工作读取
+## Skill 工作入口
 
 每次收到任务，先读取本 Skill，再按当前工作读取参考；不要直接照 role prompt 或命令模板跳过引导。
-只读当前需要的参考，不默认把全部文件载入上下文。
+这些入口由 agent 理解与执行，不是 CLI 子命令；只读当前需要的参考。
 
-| 当前工作 | 参考 |
-| --- | --- |
-| 初始化、重新 onboard、调整角色、本地团队配置 | [setup.md](references/setup.md) |
-| 选择/调整流程、拆分新任务、PR 交付、合并和最终收尾 | [workflow.md](references/workflow.md) |
-| 收到任务、claim/handoff、反馈缺陷、队列/Console/会话恢复 | [handoff.md](references/handoff.md) |
-| 选择模型或修改 harness 启动配置 | [models.md](references/models.md) |
-| 查询文件布局、字段和约束 | [herdr-format.md](references/herdr-format.md) |
+| 入口 | 用途 | 参考 |
+| --- | --- | --- |
+| setup（onboard） | 初始化、调整角色和本地团队配置 | [setup.md](references/setup.md) |
+| workflow | 选择流程、拆任务、PR 交付、合并和最终收尾 | [workflow.md](references/workflow.md) |
+| handoff | 领取任务、协作交付、缺陷、队列/Console/会话恢复 | [handoff.md](references/handoff.md) |
+| models | 选择模型或修改 harness 启动配置 | [models.md](references/models.md) |
+| feedback | 回顾指定时间的执行，分析耗时、重复与职责交叉，生成报告、上游 issue 草稿和仓库改进建议 | [feedback.md](references/feedback.md) |
+
+例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。用户询问有哪些入口时列出上表。
+文件布局、字段和约束按需查 [herdr-format.md](references/herdr-format.md)，不作为额外执行模式。
 
 已有授权和偏好直接复用，只问缺失信息。普通任务用简短摘要交棒，验证相关改动和风险，避免每棒重复全量测试或额外生成报告。
 
