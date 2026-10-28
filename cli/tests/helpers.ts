@@ -33,17 +33,17 @@ export interface Fixture {
   cleanup: () => void;
 }
 
-/** 建一个临时项目目录。`withIdentity=false` 时不建 identity.md（给 init 测试用）。 */
-export function makeProject(dirName = "myproj", withIdentity = true): Fixture {
+/** 建一个临时项目目录。`withTeamFile=false` 时不建 TEAM.md（给 init 测试用）。 */
+export function makeProject(dirName = "myproj", withTeamFile = true): Fixture {
   const base = mkdtempSync(join(tmpdir(), "herdr-team-test-"));
   const root = join(base, dirName);
   mkdirSync(join(root, ".herdr"), { recursive: true });
-  if (withIdentity) writeFileSync(join(root, ".herdr", "identity.md"), "# 我是谁\n");
+  if (withTeamFile) writeFileSync(join(root, "TEAM.md"), "# Team agreement\n");
   fixtureProjectRoot = root;
   return { root, cleanup: () => rmSync(base, { recursive: true, force: true }) };
 }
 
-/** 真正空的 .herdr/ —— 连 identity.md 都没有。 */
+/** 真正空的 .herdr/ —— 连 TEAM.md 都没有。 */
 export function makeBareProject(dirName = "myproj"): Fixture {
   return makeProject(dirName, false);
 }

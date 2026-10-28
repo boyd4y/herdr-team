@@ -59,6 +59,16 @@ test("task file changes invalidate snapshots; Herdr notices and reports do not r
     writeFileSync(join(f.root, ".herdr/reports/report.md"), "Output only");
     await Bun.sleep(180);
     expect(events.load()).toBe(changed);
+    const agreement = join(f.root, "TEAM.md");
+    rmSync(agreement);
+    await until(() => !events.load().hasTeamFile);
+    writeFileSync(join(f.root, "team-save.tmp"), "# Updated agreement\n");
+    renameSync(join(f.root, "team-save.tmp"), agreement);
+    await until(() => events.load().hasTeamFile);
+    changed = events.load();
+    writeFileSync(join(f.root, "unrelated.txt"), "Not team state");
+    await Bun.sleep(180);
+    expect(events.load()).toBe(changed);
     expect(events.load(true)).not.toBe(changed);
     const before = notices;
     stopConsole(loadProject(f.root)); // No owner: no stop notice is written.

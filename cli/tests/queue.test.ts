@@ -36,6 +36,29 @@ test("only explicitly enqueued cards are scheduled", () => fixture((f) => {
   expect(f.task().meta.delivery).toBeUndefined();
 }));
 
+test("dispatch and handoff carry the current root TEAM.md without executing its workflow", () => fixture((f) => {
+  const agreement = join(f.root, "TEAM.md");
+  writeFileSync(agreement, "# Team\nProject: public widget.\nWorkflow: dev to docs.\n");
+  // These retained files must not compete with the shared agreement.
+  writeFileSync(join(f.root, ".herdr/identity.md"), "Obsolete project context");
+  writeFileSync(join(f.root, ".herdr/workflow.md"), "Obsolete workflow");
+  const prompts: string[] = [];
+  f.herdr.agentPrompt = (_pane, text) => { prompts.push(text); };
+  dispatch(f.load(), f.herdr, "0001");
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toContain(agreement);
+  expect(prompts[0]).toContain("Project: public widget.");
+  expect(prompts[0]).not.toContain("Obsolete");
+  const delivery = claimCurrent(f.root);
+  writeFileSync(agreement, "# Team\nUpdated shared context; future tasks use dev only.\n");
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery, summary: "Ready for docs" });
+  expect(prompts).toHaveLength(2);
+  expect(prompts[1]).toContain("Updated shared context");
+  expect(prompts[1]).not.toContain("public widget");
+  expect(f.task().role).toBe("docs");
+  expect(f.task().handoff).toEqual(["dev"]);
+}));
+
 test.each(["working", "blocked", "unknown"])("busy receiver %s waits on disk, then drains when idle", (status) => fixture((f) => {
   f.herdr.state.agents[0]!.agent_status = status;
   expect(dispatch(f.load(), f.herdr, "0001")[0]!.action).toBe("queued");

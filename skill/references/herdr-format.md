@@ -1,6 +1,6 @@
 # `.herdr/` 格式规范
 
-`.herdr/` 位于**目标项目根目录**。本文件是唯一的格式权威：字段、枚举、约束都以它为准。
+共享约定在**目标项目根目录的 TEAM.md**，本地执行数据在 `.herdr/`。本文件是唯一的格式权威：字段、枚举、约束都以它为准。
 `herdr-team` CLI 就是照它实现的。
 
 ## 元数据与散文分开
@@ -8,18 +8,19 @@
 **一个 item 一个目录，元数据放点文件，正文是纯 Markdown。**
 
 ```
-<project>/.herdr/
-├── models.json                 项目模型目录与 preferred，用户可改，优先于 Skill 模板
-├── identity.md                 我的身份（纯 Markdown，无元数据）
-├── .retired-ids                已删除任务的 id，一行一个，只追加
-├── roles/
-│   └── <name>/
-│       ├── .role.yaml          元数据
-│       └── prompt.md           散文：角色设定
-└── tasks/
-    └── <id>-<slug>/
-        ├── .task.yaml          元数据
-        └── task.md             散文：任务描述 + 流转记录
+<project>/
+├── TEAM.md                     共享项目背景、偏好和 workflow，纳入 Git
+└── .herdr/                     以下为本地执行数据
+    ├── models.json                 项目模型目录与 preferred，用户可改，优先于 Skill 模板
+    ├── .retired-ids                已删除任务的 id，一行一个，只追加
+    ├── roles/
+    │   └── <name>/
+    │       ├── .role.yaml          元数据
+    │       └── prompt.md           散文：角色设定
+    └── tasks/
+        └── <id>-<slug>/
+            ├── .task.yaml          元数据
+            └── task.md             散文：任务描述 + 流转记录
 ```
 
 这么摆的理由是**避免「读—改—写」的往返**：
@@ -36,18 +37,17 @@
 
 `.retired-ids` 首次 `rm` 时才创建。扫描跳过以 `.` 开头的条目。
 
-`.herdr/` 整体保留在本机，不纳入 Git，包括身份、模型、角色、流程、任务和临时产物。
+`.herdr/` 整体保留在本机，不纳入 Git，包括模型、角色启动配置、任务和临时产物；根 TEAM.md 不在忽略范围。
 `init` 在项目根 `.gitignore` 追加 `/.herdr/`；已有内部忽略文件保留，不再新建。
 可复用默认模板位于插件的 `skill/assets/`，不通过提交项目 `.herdr/` 分享。
 
-## `identity.md`
+## `TEAM.md`
 
-无元数据，纯 Markdown。描述"我是谁、代码风格、偏好"。
-
-它会随 `dispatch` / `handoff` 的任务说明发送，作为行为基线；`up` 不发送消息。因此：
-
-- 只写跨角色通用的内容。角色专属的设定属于角色卡，不属于这里。
-- 写成给 agent 读的祈使句，不写成给人看的简介。
+根目录的纯 Markdown，统一记录项目背景、稳定偏好、角色边界与 workflow，提交 Git 共享。
+每次运行 Skill 都先读取；缺失时由 Skill 按 [setup](setup.md#团队约定-teammd) 初始化或合并旧背景/流程。
+CLI init 只复制缺失模板，已有文件即使 force 也保留。CLI 不解析流程或自动生成 handoff。
+派活和交棒携带主项目根的 TEAM.md 内容与绝对路径，避免任务 checkout 内的过期副本。
+AGENTS.md 仍维护代码与 agent 约束，TEAM.md 引用它而不重复维护。
 
 ## 角色 `roles/<name>/`
 
@@ -73,7 +73,7 @@ Claude/Codex 只提供各自官方模型选项或 harness default。default 不�
 
 ### `prompt.md`
 
-角色设定，会被作为该 agent 的 prompt 素材。**必须写明完成后如何交棒。**
+角色职责、边界和交付要求，会作为该 agent 的 prompt 素材。协作步骤由 Skill 和 TEAM.md 引导，不复制操作流程。
 文件可以缺席（视为空）。
 
 ### 名字即身份
@@ -268,7 +268,7 @@ Herdr 更新后这个列表可能变化。**运行时以 `herdr agent start --ki
 | 6 | `depends_on` 的每一项都能解析到存在的任务 `id` |
 | 7 | `depends_on` 无环 |
 | 8 | `cwd` 不逃逸项目根 |
-| 9 | `identity.md` 存在 |
+| 9 | 根 `TEAM.md` 是存在的文件 |
 
 ## 取消与删除
 

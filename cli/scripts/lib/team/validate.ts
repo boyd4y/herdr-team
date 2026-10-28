@@ -175,8 +175,8 @@ function findCycles(tasks: readonly DependencyTask[]): string[] {
 export function validateProject(project: Project): Problem[] {
   const out: Problem[] = [...project.problems];
 
-  if (!project.hasIdentity) {
-    out.push({ file: ".herdr", rule: "9", message: "identity.md is missing" });
+  if (!project.hasTeamFile) {
+    out.push({ file: "TEAM.md", rule: "9", message: "TEAM.md is missing or is not a file; use the herdr-team skill to initialize the team agreement" });
   }
 
   const roleNames = new Set<string>();

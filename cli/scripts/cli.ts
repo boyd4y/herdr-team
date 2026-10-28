@@ -315,7 +315,7 @@ function cmdInit(args: string[]): number {
   const inline = parsed.values.get("roles");
   const file = parsed.values.get("roles-file");
   const plan = parsed.values.get("plan");
-  if (["workflow", "workflow-file"].some((name) => parsed.flags.has(name) || parsed.values.has(name))) throw new UsageError("Workflow configuration belongs to the skill; save the agreement in .herdr/workflow.md");
+  if (["workflow", "workflow-file"].some((name) => parsed.flags.has(name) || parsed.values.has(name))) throw new UsageError("Workflow configuration belongs to the skill; save the agreement in root TEAM.md");
   const root = resolveInitRoot(parsed.values.get("root"));
   const project = loadProject(root);
   const given = [inline, file, plan].filter((v) => v !== undefined);

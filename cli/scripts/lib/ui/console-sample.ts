@@ -42,7 +42,7 @@ export function sampleConsole(state: ConsoleState, elapsedMs = 0) {
   blocked.meta.delivery = { id: "sample-delivery-0082", role: "test", phase: "handoff", state: "claimed", queued_at: queued,
     reason: "Choose the expected keyboard behavior before continuing" };
   blocked.body = "Confirm navigation at 62 columns.\n\n## History\n- 10:31  dev → test\n- 10:32  test requested clarification\n";
-  const project: Project = { root: "/sample/herdr-team", herdrDir: "/sample/herdr-team/.herdr", hasIdentity: true,
+  const project: Project = { root: "/sample/herdr-team", herdrDir: "/sample/herdr-team/.herdr", hasTeamFile: true,
     roles: [role("dev", "codex", "gpt-6.1-sol"), role("test", "claude", "default"), role("doc", "codex", "gpt-6-luna")],
     tasks: [main, waiting, blocked], problems: [], retiredIds: [] };
   const agents: AgentInfo[] = [

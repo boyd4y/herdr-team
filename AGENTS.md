@@ -20,7 +20,9 @@ and summaries in their original language; Unicode input remains supported.
   reviewed, the upstream problem is confirmed, and the user decides to submit it.
   Present core findings, traceable evidence, and concrete owner/action/validation
   recommendations in the conversation; a report link alone is not the deliverable.
-- Skill: maintain the project's workflow agreement in `.herdr/workflow.md`;
+- Skill: check the repository-root `TEAM.md` on every invocation and initialize it
+  when missing. Maintain shared project identity, preferences, role boundaries,
+  and workflow there; keep it in Git. Follow the setup reference for migration;
   explicitly request PR creation and merging under the user's agreed policy.
 - Skill: require final delivery cleanup after any required merge succeeds. Use
   explicit task-scoped clean from the coordinating workspace; preserve resident
@@ -52,28 +54,30 @@ recover from errors; inspect existing state before retrying an uncertain operati
 
 - Maintain reusable role prompts in `skill/assets/roles/<role>/prompt.md` and the
   harness model catalog in `skill/assets/models.json`; role plans reference it from
-  `skill/assets/plans.json`, and the shared identity template in
-  `skill/assets/identity.md`; do not embed these texts or catalogs in code.
+  `skill/assets/plans.json`, and the shared team agreement template in
+  `skill/assets/TEAM.md`; do not embed these texts or catalogs in code.
 - Role `prompt.md`: define the role's responsibilities, allowed scope, boundaries,
   and expected deliverables. Direct agents to the herdr-team skill for procedures;
   do not copy command catalogs, workflow rules, or handoff/PR/merge recipes here.
-- `identity.md`: provide shared project background, stable conventions, and user
-  preferences. Do not assign roles, route tasks, prescribe command sequences, or
-  duplicate the skill. Reference existing `AGENTS.md` conventions instead of
-  maintaining a competing copy; identity text does not override them.
+- `TEAM.md`: maintain shared project background, stable preferences, role boundaries,
+  and the agreed workflow. Reference `AGENTS.md` for code and agent constraints;
+  do not duplicate skill procedures, task assignments, or local launch settings.
+  Skill owns migration from old identity/workflow files; preserve existing prose.
+  CLI only initializes a missing template and passes the root agreement to agents;
+  it does not interpret the workflow or overwrite an existing agreement.
 - Delivery messages: request skill loading first, then supply assignment facts,
   task/artifact paths, SHAs, delivery IDs, and exact CLI argument templates.
   Templates identify an operation; the skill determines when and how to use it.
   Do not turn the message builder into a second workflow guide.
 - Keep these layers separate when updating defaults and onboarding instructions.
-  Do not silently overwrite existing customized role prompts or identity files,
+  Do not silently overwrite existing customized role prompts or TEAM.md,
   or alter active task records to enforce a new prompt convention.
 
 # Local team state
 
-Keep the entire project `.herdr/` directory out of Git, including identity, roles,
-models, workflow, tasks, reports, and temporary artifacts. Initialization adds a
-root `.gitignore` entry without replacing existing rules. Reusable templates stay
+Keep root `TEAM.md` in Git. Keep the entire project `.herdr/` directory out of Git,
+including local roles, models, tasks, reports, and temporary artifacts.
+Initialization adds a root `.gitignore` entry without replacing existing rules. Reusable templates stay
 in `skill/assets/`; do not force-add local team files to share them.
 
 # Tests

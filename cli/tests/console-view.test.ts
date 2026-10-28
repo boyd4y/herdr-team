@@ -61,7 +61,7 @@ function projectOf(tasks: TaskCard[], roles: RoleCard[] = [DEV, TEST]): Project 
   return {
     root: "/tmp/myproj",
     herdrDir: "/tmp/myproj/.herdr",
-    hasIdentity: true,
+    hasTeamFile: true,
     roles,
     tasks,
     retiredIds: [],

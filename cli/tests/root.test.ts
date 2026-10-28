@@ -25,7 +25,7 @@ function withWorktree(run: (main: string, wt: string) => void): void {
   const wt = join(base, "wt");
   try {
     mkdirSync(join(main, ".herdr", "tasks", "0001-old"), { recursive: true });
-    writeFileSync(join(main, ".herdr", "identity.md"), "# 我是谁\n");
+    writeFileSync(join(main, "TEAM.md"), "# 我是谁\n");
     writeFileSync(join(main, ".herdr", "tasks", "0001-old", ".task.yaml"), "title: old\n");
     git(main, "init", "-q");
     git(main, "config", "user.email", "t@example.com");
@@ -63,6 +63,8 @@ describe("findRoot —— worktree 里回落到主检出", () => {
 
       rmSync(join(main, ".herdr"), { recursive: true });
       mkdirSync(join(main, ".herdr", "worktrees"), { recursive: true });
+      rmSync(join(main, "TEAM.md"));
+      rmSync(join(wt, "TEAM.md"));
       expect(findRoot(nested)).toBeNull();
     });
   });
@@ -85,7 +87,7 @@ describe("findRoot —— 不在 git 里", () => {
     try {
       const proj = join(base, "p", "sub");
       mkdirSync(join(base, "p", ".herdr"), { recursive: true });
-      writeFileSync(join(base, "p", ".herdr", "identity.md"), "# 我是谁\n");
+      writeFileSync(join(base, "p", "TEAM.md"), "# 我是谁\n");
       mkdirSync(proj, { recursive: true });
       expect(findRoot(proj)).toBe(canonical(join(base, "p")));
     } finally {
@@ -135,12 +137,12 @@ describe("findRoot —— 区分 Herdr 数据目录和团队项目", () => {
     });
   });
 
-  for (const marker of ["identity.md", "models.json", "roles", "tasks"]) {
+  for (const marker of ["TEAM.md", "models.json", "roles", "tasks"]) {
     test(`只有 ${marker} 的半成品仍可从子目录找到`, () => {
       withHerdrData((_base, project) => {
         const herdr = join(project, ".herdr");
         mkdirSync(herdr);
-        if (marker.endsWith(".md") || marker.endsWith(".json")) writeFileSync(join(herdr, marker), marker.endsWith(".json") ? "{}" : "# Identity\n");
+        if (marker.endsWith(".md") || marker.endsWith(".json")) writeFileSync(join(marker === "TEAM.md" ? project : herdr, marker), marker.endsWith(".json") ? "{}" : "# Identity\n");
         else mkdirSync(join(herdr, marker));
         const nested = join(project, "src", "nested");
         mkdirSync(nested, { recursive: true });
@@ -150,13 +152,13 @@ describe("findRoot —— 区分 Herdr 数据目录和团队项目", () => {
     });
   }
 
-  test("无团队配置时 CLI 报找不到项目，而非 identity.md 缺失", () => {
+  test("无团队配置时 CLI 报找不到项目，而非 TEAM.md 缺失", () => {
     withHerdrData((_base, project) => {
       const result = cli(project, "validate");
       expect(result.exitCode).toBe(2);
       expect(result.stdout.toString()).toBe("");
       expect(result.stderr.toString()).toContain("No team project found in this directory or its parents; use --root");
-      expect(result.stderr.toString()).not.toContain("identity.md is missing");
+      expect(result.stderr.toString()).not.toContain("TEAM.md is missing");
     });
   });
 
@@ -173,7 +175,10 @@ describe("findRoot —— 区分 Herdr 数据目录和团队项目", () => {
     withHerdrData((base, project) => {
       const result = cli(project, "init");
       expect(result.exitCode).toBe(0);
-      for (const marker of ["identity.md", "roles", "tasks"]) {
+      expect(existsSync(join(project, "TEAM.md"))).toBe(true);
+      expect(existsSync(join(base, "TEAM.md"))).toBe(false);
+      expect(existsSync(join(project, ".herdr", "identity.md"))).toBe(false);
+      for (const marker of ["roles", "tasks"]) {
         expect(existsSync(join(project, ".herdr", marker))).toBe(true);
         expect(existsSync(join(base, ".herdr", marker))).toBe(false);
       }

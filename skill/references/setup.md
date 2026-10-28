@@ -4,16 +4,26 @@ onboard 是 Skill 对话，不是 CLI 向导。复用已确认的选择与授权
 
 ## 了解与确认
 
-读 README、AGENTS.md、目录结构、Git 状态、`.herdr/identity.md`、现有角色、任务和队列。
+读 README、AGENTS.md、目录结构、Git 状态、根 `TEAM.md`、现有角色、任务和队列。
 已有团队先用 `role list --json` 检查实际配置，区分新建与调整，保留已有职责和模型偏好。
 
 按 [workflow.md](workflow.md) 选择流程后，用同一张表确认角色的职责、边界、交付要求、harness、模型和启动方式，
 不把职责与模型拆成两轮确认。辅助 docs、research/search 按需要提出；模型方案不能决定固定角色名单。
 模型配置按需读 [models.md](models.md)。角色名描述职责，不用 agent 类型命名。
 
+## 团队约定 TEAM.md
+
+所有 Skill 入口先检查并读取团队项目根的 `TEAM.md`；它是可提交 Git 的背景、通用偏好和 workflow 来源。
+缺失时由 Skill 用 [TEAM.md 模板](../assets/TEAM.md) 结合 README、AGENTS.md、已有角色和用户已确认的约定初始化，
+不要求用户为创建文件再次确认，也不把模板中未确定的流程当作授权。尚未约定的事项写明未约定；只有后续操作依赖它时才补问。
+已有 `.herdr/identity.md` 或 `.herdr/workflow.md` 时先读取并合并有效内容，保留原文件但不再作为并行约定来源；
+公开文件不迁入凭证、私人路径或本机环境值。已有 TEAM.md 保留用户正文，只按本次请求定向调整，不随升级覆盖。
+TEAM.md 在主检出维护；任务会话优先读取派活 root 指向的文件，避免分支副本过期。更改约定不改写活动任务的指派或历史。
+AGENTS.md 维护代码与 agent 约束；TEAM.md 引用它并补充团队背景/角色边界/协作流程，避免复制两套规则。
+
 ## 保存角色与项目约定
 
-Skill 把用户确认的流程写入 `.herdr/workflow.md`；格式和变更规则只见 [workflow.md](workflow.md)。
+Skill 把用户确认的流程写入 `TEAM.md` 的 Workflow 部分；流程选择和变更规则见 [workflow.md](workflow.md)。
 角色通过 CLI 保存，不手拼 YAML。`body` 只保留角色职责、边界、交付要求和先读 herdr-team Skill 的入口，
 不复制命令清单或 claim/handoff/PR 的完整操作流程。新生成的正文使用英文，用户自带正文保留原语言。
 可复用职责模板按角色保存在 [assets/roles](../assets/roles)：lead、dev、test、search、docs、review；
@@ -21,8 +31,7 @@ Skill 把用户确认的流程写入 `.herdr/workflow.md`；格式和变更规�
 模型初始目录是 [assets/models.json](../assets/models.json)，init 只在缺失时复制到项目 `.herdr/models.json`。
 项目文件优先，用户可在本地修改；已有内容即使 --force 也保留。角色方案在 [assets/plans.json](../assets/plans.json) 中引用 harness/model。
 选择与刷新步骤只见 [models.md](models.md)，不在职责模板内复制模型列表。
-项目背景模板是 [assets/identity.md](../assets/identity.md)；CLI 仅在项目缺失 identity 时复制，
-Skill 结合项目事实填写背景、约定引用与偏好，不放角色指令或工作流步骤，已有内容保留。
+CLI init 只在根 TEAM.md 缺失时复制模板，不解释或决定其中流程；已有旧文件的项目应先由 Skill 完成上述迁移，再初始化本地执行配置。
 CLI 对未提供 body 的新角色按同名模板初始化，未知角色用 default；已有正文不随模板更新自动改写。
 例如临时 `roles.json` 的输入形状：
 
@@ -59,7 +68,7 @@ herdr-team validate
 
 ## 核对后启动
 
-填写真实的 identity，检查角色正文与启动参数；不要把保留旧配置误报为更新成功。
+核对 TEAM.md 的真实背景和流程，检查角色正文与启动参数；不要把保留旧配置误报为更新成功。
 CLI 输出、错误和生成的默认指令保持英文，无需多语言支持。
 
 启动前核对 Herdr、Bun、选定 agent CLI 及对应登录。PR 交付还需要匹配的 GitHub.com origin、已登录的 gh 和测试资源；
@@ -83,9 +92,9 @@ CLI 输出、错误和生成的默认指令保持英文，无需多语言支持�
 
 ## 本地文件与 Git
 
-`.herdr/` 整体忽略，包括团队定义、任务、报告和临时产物；不要强制添加这些文件到 Git。
+根 `TEAM.md` 应纳入 Git，跨机器共享项目背景和团队流程。`.herdr/` 整体忽略，包括本地角色配置、任务、报告和临时产物；不要强制添加这些文件到 Git。
 `init` 在根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件。已有项目运行 init 即可补上规则。
 已跟踪的目录用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件；先检查差异，不删除本地配置。
 
-可复用默认模板在插件的 `skill/assets/`，各机器独立初始化、选择模型并登录所选工具。
+可复用默认模板在插件的 `skill/assets/`，各机器读取已共享的 TEAM.md，再独立初始化角色启动配置、选择模型并登录所选工具。
 任务、会话和本机 worktree 不跨机器恢复；只有用户明确要求时才另外安排配置复制。

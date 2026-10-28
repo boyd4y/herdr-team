@@ -9,7 +9,7 @@ import { makeBareProject } from "./helpers.ts";
 import { git } from "../scripts/lib/tasks/verification.ts";
 import { createTask } from "../scripts/lib/tasks/cards.ts";
 
-/** 一个只有 .herdr/identity.md 的空项目。 */
+/** A project with no local team configuration or agreement. */
 function bareProject(): { root: string; cleanup: () => void } {
   return makeBareProject();
 }
@@ -37,14 +37,13 @@ describe("parseRoleSpecs", () => {
   });
 });
 
-test("init keeps the entire team directory local, including definitions and arbitrary artifacts", () => {
+test("init tracks the root agreement while keeping local configuration and artifacts ignored", () => {
   const { root, cleanup } = bareProject();
   try {
     writeFileSync(join(root, ".gitignore"), "*.local");
     init(loadProject(root), [{ name: "dev", kind: "codex", body: "Build the assigned change." }]);
     const ignore = readFileSync(join(root, ".gitignore"), "utf8");
     expect(ignore.startsWith("*.local\n")).toBe(true);
-    writeFileSync(join(root, ".herdr/workflow.md"), "Develop, then validate.\n");
     createTask(loadProject(root), { title: "Local task", role: "dev", handoff: [], priority: "P2", body: "Local execution record" });
     for (const dir of ["reports", "projects", "worktrees", "local-validation"]) {
       mkdirSync(join(root, ".herdr", dir), { recursive: true });
@@ -52,8 +51,8 @@ test("init keeps the entire team directory local, including definitions and arbi
     }
     git(root, "init", "-b", "main");
     git(root, "add", ".");
-    expect(git(root, "ls-files")).toBe(".gitignore");
-    expect(git(root, "check-ignore", ".herdr/identity.md", ".herdr/models.json", ".herdr/roles/dev/prompt.md", ".herdr/workflow.md", ".herdr/local-validation/local.txt").split("\n")).toHaveLength(5);
+    expect(git(root, "ls-files").split("\n")).toEqual([".gitignore", "TEAM.md"]);
+    expect(git(root, "check-ignore", ".herdr/models.json", ".herdr/roles/dev/prompt.md", ".herdr/local-validation/local.txt").split("\n")).toHaveLength(3);
     init(loadProject(root), [], true);
     expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe(ignore);
     expect(loadProject(root).roles).toHaveLength(1);
@@ -73,13 +72,13 @@ describe("init —— 不覆盖已有内容", () => {
       expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe("*.local\r\n.herdr/\r\n");
     } finally { cleanup(); }
   });
-  test("已有 identity.md 就跳过", () => {
+  test("preserves existing TEAM.md even with force", () => {
     const { root, cleanup } = bareProject();
     try {
-      writeFileSync(join(root, ".herdr/identity.md"), "# 我的身份\n\n很长的一段说明。\n");
-      const result = init(loadProject(root), []);
-      expect(result.skipped).toContain("identity.md");
-      expect(readFileSync(join(root, ".herdr/identity.md"), "utf8")).toContain("很长的一段说明");
+      writeFileSync(join(root, "TEAM.md"), "# 我的身份\n\n很长的一段说明。\n");
+      const result = init(loadProject(root), [], true);
+      expect(result.skipped).toContain("TEAM.md");
+      expect(readFileSync(join(root, "TEAM.md"), "utf8")).toContain("很长的一段说明");
     } finally {
       cleanup();
     }

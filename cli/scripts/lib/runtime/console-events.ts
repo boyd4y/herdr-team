@@ -38,7 +38,7 @@ export function createConsoleEvents(initial: Project, resyncMs = 60_000) {
     try {
       const current = watch(initial.herdrDir, { recursive: true, persistent: false }, (_event, file) => {
         const top = file?.toString().split(/[\\/]/)[0];
-        if (!top || [".herdr", "tasks", "roles", "identity.md", "models.json", ".retired-ids"].includes(top)) {
+        if (!top || [".herdr", "tasks", "roles", "models.json", ".retired-ids"].includes(top)) {
           if (!top || top === ".herdr") { current.close(); if (projectWatch === current) projectWatch = undefined; }
           invalidate(); request();
         }
@@ -60,6 +60,11 @@ export function createConsoleEvents(initial: Project, resyncMs = 60_000) {
   };
   const attachNotices = () => {
     for (const current of watches.splice(0)) current.close();
+    watchDirectory(initial.root, file => {
+      if (file !== null && file !== "TEAM.md") return false;
+      invalidate();
+      return true;
+    });
     watchDirectory(dirname(notice), file => file === null || file === notice.slice(dirname(notice).length + 1));
     watchDirectory(dirname(stop), file => file === null || file === "console.stop");
   };

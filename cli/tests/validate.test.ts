@@ -40,12 +40,12 @@ describe("合法项目", () => {
   });
 });
 
-describe("规则 9 —— identity.md", () => {
+describe("规则 9 —— TEAM.md", () => {
   test("缺失即报错", () => {
     const { root, cleanup } = makeProject();
     try {
       writeRole(root, "dev", roleMeta());
-      rmSync(join(root, ".herdr", "identity.md"));
+      rmSync(join(root, "TEAM.md"));
       expect(rules(validateProject(loadProject(root)))).toEqual(["9"]);
     } finally {
       cleanup();

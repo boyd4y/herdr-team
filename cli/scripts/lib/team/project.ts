@@ -16,7 +16,7 @@ import { parseYaml } from "../shared/yaml.ts";
 
 /** 项目至少有一个团队配置标记；Herdr 自己的 projects/、worktrees/ 不算。 */
 function hasTeamConfig(root: string): boolean {
-  return ["identity.md", "models.json", "roles", "tasks", "workflow.md"].some((name) => existsSync(join(root, ".herdr", name)));
+  return existsSync(join(root, "TEAM.md")) || ["models.json", "roles", "tasks"].some((name) => existsSync(join(root, ".herdr", name)));
 }
 
 /** 从 start 向上找含团队配置的目录；找不到返回 null。 */
@@ -218,7 +218,7 @@ export function loadProject(root: string): Project {
   return {
     root,
     herdrDir,
-    hasIdentity: existsSync(join(herdrDir, "identity.md")),
+    hasTeamFile: existsSync(join(root, "TEAM.md")) && statSync(join(root, "TEAM.md")).isFile(),
     roles: loadRoles(herdrDir, problems),
     tasks: loadTasks(herdrDir, problems),
     retiredIds: loadRetiredIds(herdrDir),

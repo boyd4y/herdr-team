@@ -68,9 +68,9 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
   const leadTemplate = path.join(checkout, 'skill/assets/roles/lead/prompt.md');
   fs.appendFileSync(leadTemplate, '\nProject-specific template change.\n');
   const expectedLead = fs.readFileSync(leadTemplate, 'utf8');
-  const identityTemplate = path.join(checkout, 'skill/assets/identity.md');
-  fs.appendFileSync(identityTemplate, '\nTemplate change for packaging verification.\n');
-  const expectedIdentity = fs.readFileSync(identityTemplate, 'utf8');
+  const teamTemplate = path.join(checkout, 'skill/assets/TEAM.md');
+  fs.appendFileSync(teamTemplate, '\nTemplate change for packaging verification.\n');
+  const expectedTeam = fs.readFileSync(teamTemplate, 'utf8');
   const expectedDocs = fs.readFileSync(path.join(checkout, 'skill/assets/roles/docs/prompt.md'), 'utf8');
   const expectedDefault = fs.readFileSync(path.join(checkout, 'skill/assets/roles/default/prompt.md'), 'utf8');
   const buildState = path.join(f.env.XDG_STATE_HOME, 'herdr/plugins/herdr-team');
@@ -87,7 +87,7 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
     assert(f.cli(command, '--help').includes(`Usage: herdr-team ${command}`));
   }
   f.cli('init', '--plan', 'balanced');
-  assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/identity.md'), 'utf8'), expectedIdentity);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'TEAM.md'), 'utf8'), expectedTeam);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.dir, '.herdr/models.json'), 'utf8')), models);
   const configured = JSON.parse(f.cli('role', 'list', '--json'));
   assert(configured.find(role => role.name === 'dev').args.includes('--test-catalog-flag'));

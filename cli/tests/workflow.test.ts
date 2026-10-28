@@ -50,7 +50,7 @@ test("Skill agreements and old project defaults cannot implicitly configure new 
   const p = makeProject();
   try {
     for (const role of ["builder", "qa", "auditor"]) writeRole(p.root, role, roleMeta());
-    const agreement = join(p.root, ".herdr/workflow.md");
+    const agreement = join(p.root, "TEAM.md");
     writeFileSync(agreement, "Use builder → qa → auditor; merge after approval.\n");
     // Old project JSON is now Skill input; even malformed contents cannot block the CLI.
     writeFileSync(join(p.root, ".herdr/workflow.json"), "old invalid configuration");
@@ -75,7 +75,7 @@ test("initialization preserves role bodies, Skill agreements and existing task r
     createTask(load(), { title: "Existing", role: "builder", handoff: ["qa"], priority: "P2", body: "Criteria" });
     const taskPath = join(p.root, ".herdr", load().tasks[0]!.dir, ".task.yaml");
     const before = readFileSync(taskPath, "utf8");
-    const agreement = join(p.root, ".herdr/workflow.md"); writeFileSync(agreement, "Keep this agreement.\n");
+    const agreement = join(p.root, "TEAM.md"); writeFileSync(agreement, "Keep this agreement.\n");
     expect(run(p.root, ["init", "--roles", JSON.stringify([{ name: "builder", kind: "claude", body: "Replacement" }])]).exitCode).toBe(0);
     expect(load().roles.find((role) => role.name === "builder")!.body.trim()).toBe("Existing responsibilities");
     expect(readFileSync(agreement, "utf8")).toBe("Keep this agreement.\n");

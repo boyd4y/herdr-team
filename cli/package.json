@@ -1,7 +1,7 @@
 {
   "name": "herdr-team",
-  "version": "0.1.10",
-  "description": "Drive a Herdr agent team from a project's .herdr/ directory: identity, role cards and task cards.",
+  "version": "0.1.11",
+  "description": "Coordinate Herdr agent teams with a shared root TEAM.md and local .herdr/ role and task records.",
   "type": "module",
   "bin": {
     "herdr-team": "./scripts/cli.ts"

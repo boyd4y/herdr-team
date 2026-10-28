@@ -125,6 +125,7 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
       if (waiting.length) { hold(`Waiting for ${waiting.join(", ")}`); continue; }
       const role = fresh.roles.find((r) => r.name === task.role);
       if (!role) { hold(`Role ${task.role} is unavailable`); continue; }
+      const team = readFileSync(join(fresh.root, "TEAM.md"), "utf8");
       let agent;
       try { agent = taskAgent(fresh, herdr, role, task); }
       catch (error) { hold(`Agent startup failed: ${error instanceof Error ? error.message : String(error)}`); continue; }
@@ -140,11 +141,9 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
       const sending: Delivery = { ...d, state: "sending", pane_id: agent.pane_id, sent_at: now.toISOString(), reason: "" };
       if (agent.agent_session) sending.session_id = agent.agent_session.value;
       save(fresh, task, sending);
-      const identityPath = join(fresh.herdrDir, "identity.md");
-      const identity = existsSync(identityPath) ? readFileSync(identityPath, "utf8") : "";
       const claim = `herdr-team claim ${task.id} --delivery ${d.id} --root ${shellQuote(fresh.root)}`;
       const handoff = `herdr-team handoff ${task.id} --delivery ${d.id} --root ${shellQuote(fresh.root)}`;
-      const prompt = `${assignmentPrompt(identity, role.body, task, fresh.root)}\nTeam root: ${fresh.root}\nTask file: ${join(fresh.herdrDir, task.dir, TASK_BODY)}\nDelivery ID: ${d.id}\nClaim command: ${claim}\nHandoff base command: ${handoff}\nThese commands identify this delivery; use the skill to choose the result options and next action.`;
+      const prompt = `${assignmentPrompt(team, role.body, task, fresh.root)}\nTeam root: ${fresh.root}\nTask file: ${join(fresh.herdrDir, task.dir, TASK_BODY)}\nDelivery ID: ${d.id}\nClaim command: ${claim}\nHandoff base command: ${handoff}\nThese commands identify this delivery; use the skill to choose the result options and next action.`;
       try { herdr.agentPrompt(agent.pane_id, prompt); }
       catch (error) {
         const rejected = error instanceof HerdrError && ["agent_blocked", "agent_not_ready", "agent_not_found", "pane_not_found", "empty_agent_prompt"].includes(error.code ?? "");

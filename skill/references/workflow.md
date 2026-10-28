@@ -4,7 +4,7 @@
 
 ## 选择与保存
 
-先读已有项目约定，推荐方案不能代替用户选择。流程名是对话中的简称，不是 CLI 预设：
+先读根 TEAM.md 的已有项目约定，推荐方案不能代替用户选择。流程名是对话中的简称，不是 CLI 预设：
 
 | 方案 | 职责与交付 |
 | --- | --- |
@@ -13,11 +13,10 @@
 | direct | 一位负责人直接交付，适用于不需要交接验收的工作 |
 | 自定义 | 按实际职责决定顺序、角色名与交付方式，无固定阶段数 |
 
-明确谁执行 PR 发布，以及审查批准后自动还是手动合并。Skill 将约定保存到 `.herdr/workflow.md`，
-用简短 Markdown 即可，例如：
+明确谁执行 PR 发布，以及审查批准后自动还是手动合并。Skill 将约定保存到根 `TEAM.md` 的 Workflow 部分，保留其中背景与偏好；用简短 Markdown 即可，例如：
 
 ```markdown
-# Team workflow
+## Workflow
 
 - Lead: one resident coordinator.
 - Feature work: dev → test → review in one task checkout.

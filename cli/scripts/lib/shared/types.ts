@@ -86,7 +86,7 @@ export interface Problem {
 export interface Project {
   root: string;
   herdrDir: string;
-  hasIdentity: boolean;
+  hasTeamFile: boolean;
   roles: RoleCard[];
   tasks: TaskCard[];
   retiredIds: string[];

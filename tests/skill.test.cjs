@@ -21,7 +21,7 @@ function fixture(t) {
 test('npx installs the bundled local skill globally and reports its real destination',(t)=>{
  const f=fixture(t),r=f.ok();
  assert.deepEqual(f.calls(),[['--yes',SKILLS_PACKAGE,'add',path.join(root,'skill'),'--skill','herdr-team','--global','--yes','--json','--agent','codex']]);
- for(const file of ['SKILL.md','references/setup.md','references/workflow.md','references/handoff.md','references/models.md','references/feedback.md','assets/feedback/report.md','agents/openai.yaml','assets/plans.json','assets/models.json','assets/identity.md', ...fs.readdirSync(path.join(root,'skill/assets/roles')).map(role=>`assets/roles/${role}/prompt.md`)])assert.deepEqual(fs.readFileSync(path.join(f.destination,file)),fs.readFileSync(path.join(root,'skill',file)));
+ for(const file of ['SKILL.md','references/setup.md','references/workflow.md','references/handoff.md','references/models.md','references/feedback.md','assets/feedback/report.md','agents/openai.yaml','assets/plans.json','assets/models.json','assets/TEAM.md', ...fs.readdirSync(path.join(root,'skill/assets/roles')).map(role=>`assets/roles/${role}/prompt.md`)])assert.deepEqual(fs.readFileSync(path.join(f.destination,file)),fs.readFileSync(path.join(root,'skill',file)));
  assert(r.stdout.includes(`Skill installed: ${f.destination}`));
  assert.equal(stateDirectory({},f.dir),path.join(f.dir,'.local/state/herdr/plugins/herdr-team'));
 });
@@ -55,7 +55,7 @@ test('installation and removal ignore old ownership ledgers and unmanaged skill 
 test('installed skill and relative references survive checkout move and removal',(t)=>{
  const f=fixture(t),checkout=path.join(f.dir,'checkout');fs.cpSync(root,checkout,{recursive:true,filter:file=>!['tests','node_modules','.git','.herdr'].includes(path.basename(file))});
  f.ok([],{},checkout);fs.renameSync(checkout,path.join(f.dir,'moved'));f.ok([],{},path.join(f.dir,'moved'));fs.rmSync(path.join(f.dir,'moved'),{recursive:true});
- const text=fs.readFileSync(path.join(f.destination,'SKILL.md'),'utf8');for(const [,link]of text.matchAll(/\]\((references\/[^)]+)\)/g))assert(fs.existsSync(path.join(f.destination,link)));assert(!text.includes(checkout));
+ const text=fs.readFileSync(path.join(f.destination,'SKILL.md'),'utf8');for(const [,link]of text.matchAll(/\]\((references\/[^)]+)\)/g))assert(fs.existsSync(path.join(f.destination,link.split("#")[0])));assert(!text.includes(checkout));
 });
 test('concurrent actions wait for the lock and failures release it',async(t)=>{
  const f=fixture(t);fs.mkdirSync(f.env.HERDR_PLUGIN_STATE_DIR,{recursive:true});const lock=path.join(f.env.HERDR_PLUGIN_STATE_DIR,'skill.lock');fs.writeFileSync(lock,'busy');

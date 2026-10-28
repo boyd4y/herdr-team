@@ -18,7 +18,7 @@
 未指定时间时使用最近 7 天，记录实际起止时间、时区、项目绝对 root 和分析时刻；用户已指定的范围优先。
 同项目可以有多个 workspace。以具体 pane/tab/workspace 绑定、任务和 delivery 关联记录，不按目录名全局猜会话。
 
-1. 读取项目 AGENTS.md、workflow.md、角色说明和已有反馈报告，理解实际约定及之前建议的处理情况。
+1. 读取项目 AGENTS.md、根 TEAM.md、角色说明和已有反馈报告，理解实际约定及之前建议的处理情况。
 2. 用只读 `herdr-team tasks --json --root <team-root>` 获取索引，再读候选卡的 `.task.yaml`、task.md 历史与交付摘要。
    纳入时间窗内有执行事件或与时间窗重叠的任务，包含进行中、blocked、cancelled 和窗口前开始的任务。
    不能只看当前 doing/done，也不能把列表中的当前角色或已缩短的 handoff 当成原始执行链。

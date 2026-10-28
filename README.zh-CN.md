@@ -31,7 +31,7 @@ herdr-team init --roles-file roles.json
 herdr-team validate
 ```
 
-Skill 将职责、交棒顺序、PR 交付和合并策略写入 `.herdr/workflow.md`。建卡时显式传入 `--role` 和 `--handoff`；CLI 不提供 workflow 命令、流程预设或自动套用的默认交接链。修改约定不改变已有任务；CLI 不再执行旧 workflow 快照。历史记录可读；活动旧格式需明确处理后重新建卡。
+Skill 每次运行先检查仓库根 `TEAM.md`，缺失时初始化；项目背景、通用偏好、职责边界、交棒顺序、PR 交付和合并策略统一写在这里。建卡时显式传入 `--role` 和 `--handoff`；CLI 不提供 workflow 命令、流程预设或自动套用的默认交接链。修改约定不改变已有任务；CLI 不再执行旧 workflow 快照。历史记录可读；活动旧格式需明确处理后重新建卡。
 
 onboard 由 herdr-team Skill 对话引导，CLI 不提供 `onboard` 命令；`init` 只保存已确认的配置。
 Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，再检查所需工具与登录，明确启动和派活。
@@ -39,9 +39,9 @@ Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，�
 
 Skill 提供五个工作入口：**setup（onboard）**、**workflow**、**handoff**、**models** 和 **feedback**。例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。feedback 从已有记录检查慢任务、重复工作、职责交叉和环境阻塞，保存本地报告，并分别给出上游 GitHub issue 草稿与当前仓库改进建议；缺失的耗时数据明确标注。先完成并查看本地报告，确认插件问题且决定提交后，才查询上游同类 issue。实施修复按用户请求范围执行。详见 [feedback 参考](skill/references/feedback.md)。这些是 agent 的 Skill 工作入口，不是 CLI 命令。
 
-检查 `.herdr/identity.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
+根 `TEAM.md` 纳入 Git，跨机器共享团队约定。旧项目缺失该文件时，Skill 合并 `.herdr/identity.md` 与 `.herdr/workflow.md` 的有效内容，保留旧文件但不继续维护两套来源。检查 `TEAM.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
-`.herdr/` 整体保留在本地并由 Git 忽略，包括身份、模型、角色、流程、任务、报告和临时产物。
+`.herdr/` 整体保留在本地并由 Git 忽略，包括模型、本地角色配置、任务、报告和临时产物；根 TEAM.md 位于忽略目录外，`init --force` 也不会覆盖。
 初始化会在项目根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件，`--force` 也不覆盖正文或模型目录。
 已跟踪的文件用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件。可复用默认模板保存在插件的 `skill/assets/`，各机器分别初始化并登录所选工具。
 
@@ -98,7 +98,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.10`。
+安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.11`。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 

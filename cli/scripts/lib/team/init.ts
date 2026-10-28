@@ -106,7 +106,7 @@ export function parseRoleSpecs(input: string): RoleSpec[] {
 
 /**
  * 建骨架。默认跳过已有角色；force 只重写元数据，始终保留已有正文。
- * 用户的 `.herdr/` 里可能有手写的身份说明或角色，不能被 init 冲掉。
+ * 用户的 TEAM.md 和本地角色正文不能被 init 冲掉。
  */
 export function init(project: Project, roleSpecs: RoleSpec[], force = false): InitResult {
   const created: string[] = [];
@@ -132,12 +132,12 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
     skipped.push("models.json");
   }
 
-  const identityPath = join(project.herdrDir, "identity.md");
-  if (existsSync(identityPath)) {
-    skipped.push("identity.md");
-  } else {
-    writeFileSync(identityPath, readAsset("identity.md"));
-    created.push("identity.md");
+  try {
+    writeFileSync(join(project.root, "TEAM.md"), readAsset("TEAM.md"), { flag: "wx" });
+    created.push("TEAM.md");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    skipped.push("TEAM.md");
   }
 
   for (const dir of ["roles", "tasks"]) mkdirSync(join(project.herdrDir, dir), { recursive: true });

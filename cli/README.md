@@ -39,13 +39,13 @@ onboard 时先选择工作流，再用一张表一起配置各角色的职责、
 完整顺序：读取项目与已有团队 → 选择流程 → 配置角色（职责与模型一起定） → 保存确认后的配置 → 校验 → 启动 → 明确派活。
 Skill 负责对话引导，CLI 负责确定性落盘；不会自行替用户完成选择。
 onboard 是 Skill 的对话流程，不是 CLI 命令。Skill 提供工作流候选、确认角色和模型，再用 `init` 保存配置。
-读 `.herdr/workflow.md` 并用 `role list --json` 核对实际角色、harness、模型及启动配置，补齐缺失职责并运行 `validate`。
-初始化成功只表示文件已保存；Skill 还需核对 identity、工具和登录，再决定是否启动与派活。
+读取根 `TEAM.md`，并用 `role list --json` 核对实际角色、harness、模型及启动配置，补齐缺失职责并运行 `validate`。
+初始化成功只表示文件已保存；Skill 还需核对 TEAM.md、工具和登录，再决定是否启动与派活。
 角色 prompt 只保留职责与边界，协作步骤由 Skill 引导；派活消息先要求读取 Skill，CLI 命令模板只提供当前任务的准确参数。
 已有角色默认保留，因此重新选择模型方案后要检查实际输出，不把保留的角色误报为已换模型或重写职责。
 启动用 `up`，业务任务用 `add` / `dispatch`，分别明确执行。
 
-在项目根目录创建团队配置，再填写 `.herdr/identity.md`（以下 roles.json 为已确认的角色定义，格式见团队设置参考）：
+在项目根目录创建团队配置，再由 Skill 填写根 `TEAM.md` 的项目背景和流程（以下 roles.json 为已确认的角色定义，格式见团队设置参考）：
 
 ```sh
 herdr-team init --roles-file roles.json
@@ -69,7 +69,7 @@ herdr-team tasks
 | `dev-test` | dev → test | 本地验收，通过后由 lead 手动串行合入 |
 | `direct` | dev | 直接交付，适合无需测试和 PR 的任务 |
 
-流程由 Skill 维护在 `.herdr/workflow.md`，用 Markdown 写明职责顺序、PR/本地交付和手动/自动合并即可。
+流程由 Skill 维护在根 `TEAM.md` 的 Workflow 部分，用 Markdown 写明职责顺序、PR/本地交付和手动/自动合并即可。
 CLI 不提供 workflow 命令、流程预设或默认链。创建任务始终显式提供角色和后续交接：
 
 ```sh
@@ -119,7 +119,7 @@ herdr-team tasks 0001 --json
 人类可读输出区分元数据写入、正文写入与正文保留；`init --json` 用
 `roleMetadataWritten`、`roleBodiesWritten`、`roleBodiesPreserved` 三个文件路径数组替代原来的
 `rolesWritten`，不再把只换元数据报告成整张角色已写。保留的正文也列入 `skipped`。
-`identity.md` 和 `models.json` 即使加 `--force` 也始终保留。
+根 `TEAM.md` 和 `.herdr/models.json` 即使加 `--force` 也始终保留；init 只复制缺失模板，具体背景与流程由 Skill 填写。
 
 由 lead 更新已有角色职责：
 
@@ -402,7 +402,7 @@ cwd 是服务器启动时的目录（通常是你家目录），从那儿往上�
 在 linked worktree 里跑会读**主检出**的 `.herdr/`（`findRoot` 的既有行为，见
 `scripts/lib/team/project.ts`）—— 那才是活的卡片，worktree 里那份是切出去时的过期副本。
 
-自动查找项目根时，`.herdr/` 中至少要有 `identity.md`、`roles`、`tasks` 之一；
+自动查找项目根时，根 `TEAM.md` 或 `.herdr/` 中的 `models.json`、`roles`、`tasks` 任一存在即可；
 只有 `projects/`、`worktrees/` 的 Herdr 数据目录不会被当成团队项目。
 子目录仍可向上找到项目，只建了一部分配置的项目也能被识别。
 找不到时普通命令提示用 `--root` 指定，`console --line` 静默退出；

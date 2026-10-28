@@ -3,12 +3,13 @@ import { join } from "node:path";
 import { TASK_BODY, type TaskCard } from "../shared/types.ts";
 import { pullRequestFor } from "../integration/pull-request.ts";
 
-export function assignmentPrompt(identity: string, roleBody: string, card: TaskCard, root?: string): string {
+export function assignmentPrompt(team: string, roleBody: string, card: TaskCard, root?: string): string {
   const pr = pullRequestFor(card);
   return [
     "Use the installed herdr-team skill for this assignment. Read its SKILL.md and follow its reference routing before claiming or working; role instructions describe responsibilities, not a separate collaboration procedure.",
     "",
-    identity.trim(),
+    `Team agreement: ${root === undefined ? "TEAM.md" : join(root, "TEAM.md")}`,
+    team.trim(),
     "",
     roleBody.trim(),
     ...(pr ? [`Pull request: ${pr.url}; tested head: ${pr.commit}`] : []),

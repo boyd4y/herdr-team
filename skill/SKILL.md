@@ -1,15 +1,18 @@
 ---
 name: herdr-team
-description: 用项目内 .herdr/ 的身份、角色卡和任务卡驱动 Herdr agent 团队：初始化骨架、按角色拉起 agent 并按优先级和依赖派活、以任务卡为载体在角色间交接，并复盘执行耗时、重复工作和职责交叉、提出上游反馈与项目改进。适用于需要多 agent 分工或执行复盘的本地开发；不绑定具体项目、仓库名或 agent 类型。
+description: 用项目根 TEAM.md 的团队约定和 .herdr/ 的角色卡、任务卡驱动 Herdr agent 团队：初始化骨架、按角色拉起 agent 并按优先级和依赖派活、以任务卡为载体在角色间交接，并复盘执行耗时、重复工作和职责交叉、提出上游反馈与项目改进。适用于需要多 agent 分工或执行复盘的本地开发；不绑定具体项目、仓库名或 agent 类型。
 ---
 
 # Herdr Team
 
-用项目 `.herdr/` 管理团队，Herdr 承载原生 agent 会话。先读项目约定和实际任务，不假设仓库名、角色名或 harness。
+项目根 `TEAM.md` 保存共享背景与团队流程，`.herdr/` 保存本地执行配置和任务，Herdr 承载 agent 会话。
+每次运行任何入口，先按派活给出的绝对 root 或 Git 主检出定位团队项目，读取 AGENTS.md 和根目录 TEAM.md。
+TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队约定-teammd) 初始化，再继续当前工作；
+不要在子目录或任务 worktree 另建一份，也不从父目录其他仓库借用约定。不假设仓库名、角色或 harness。
 
 ## 职责边界
 
-- Skill 决定流程、角色分工、任务拆分、验收范围及下一步；项目流程约定放在 `.herdr/workflow.md`。
+- Skill 决定流程、角色分工、任务拆分、验收范围及下一步；项目背景、偏好与流程约定统一放在根 `TEAM.md`。
 - CLI 标准化输入输出、保存任务/delivery 并执行明确操作，负责引用校验、去重、SHA 一致性和并发锁。
 - 任务元数据和历史由 CLI 写；不要手算 ID、手改任务卡或绕过队列发消息。
 - 任务已有 role/handoff 是执行依据；CLI 不解释旧 workflow 快照；活动旧格式应由 lead 明确处理，历史记录保留。
