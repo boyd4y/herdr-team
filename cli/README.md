@@ -29,23 +29,23 @@ node --test tests/*.test.cjs
 herdr-team --help
 ```
 
-onboard 时先选择工作流，再用一张表一起配置各角色的职责、边界、交付与交棒方式、harness、模型和是否隔离。
+onboard 时确认实际角色的核心工作步骤、harness、模型和启动方式，不增加 workflow 选择环节。
 预设是分工的起点；需要定制职责时，把确认过的正文放入每个角色定义的 `body`，
 使用 `init --roles-file F`。只有连职责正文也原样接受预设时才直接 `init --plan`。
 完整引导见插件内置的 `herdr-team` skill 中的 `references/setup.md`。
 `herdr-team --help` 列出全部可用命令，具体参数用 `<command> --help` 查询。
 侧栏刷新由插件事件 hook 内部执行，不提供 CLI 命令。
 
-完整顺序：读取项目与已有团队 → 选择流程 → 配置角色（职责与模型一起定） → 保存确认后的配置 → 校验 → 启动 → 明确派活。
+完整顺序：读取项目与已有团队 → 配置角色（核心步骤与模型一起定） → 保存确认后的配置 → 校验 → 启动 → 明确派活。
 Skill 负责对话引导，CLI 负责确定性落盘；不会自行替用户完成选择。
-onboard 是 Skill 的对话流程，不是 CLI 命令。Skill 提供工作流候选、确认角色和模型，再用 `init` 保存配置。
+onboard 是 Skill 的对话流程，不是 CLI 命令。Skill 确认角色步骤和模型，再用 `init` 保存配置。
 读取根 `TEAM.md`，并用 `role list --json` 核对实际角色、harness、模型及启动配置，补齐缺失职责并运行 `validate`。
 初始化成功只表示文件已保存；Skill 还需核对 TEAM.md、工具和登录，再决定是否启动与派活。
 角色 prompt 只保留职责与边界，协作步骤由 Skill 引导；派活消息先要求读取 Skill，CLI 命令模板只提供当前任务的准确参数。
 已有角色默认保留，因此重新选择模型方案后要检查实际输出，不把保留的角色误报为已换模型或重写职责。
 启动用 `up`，业务任务用 `add` / `dispatch`，分别明确执行。
 
-在项目根目录创建团队配置，再由 Skill 填写根 `TEAM.md` 的项目背景和流程（以下 roles.json 为已确认的角色定义，格式见团队设置参考）：
+在项目根目录创建团队配置，再由 Skill 填写根 `TEAM.md` 的各角色中文编号步骤（以下 roles.json 为已确认的角色定义，格式见团队设置参考）：
 
 ```sh
 herdr-team init --roles-file roles.json
@@ -54,36 +54,19 @@ herdr-team add "Implement login" --role dev --handoff test,review
 herdr-team tasks
 ```
 
-`.herdr/` 整体属于本机状态，不纳入 Git，包括身份、模型、角色和流程定义。
+`.herdr/` 整体属于本机状态，不纳入 Git，包括本地模型、角色启动配置和任务记录；角色工作步骤保存在纳入 Git 的根 TEAM.md。
 `init` 在根 `.gitignore` 追加 `/.herdr/`，保留已有规则；重复执行不重复添加。
 已有 `.herdr/.gitignore` 原样保留，不再生成内部忽略文件或 `.gitkeep`。
 已跟踪的目录用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件；各机器独立初始化。
 
-### 先选工作流，再定角色
+### 角色步骤与任务分配
 
-工作流是可选建议，不是所有项目必须遵守的固定流程。CLI 不根据模型预设偷偷改变已有项目的流程。
-
-| 选项 | 步骤 | 交付与合并 |
-| --- | --- | --- |
-| `dev-test-review`（推荐） | dev → test → review | dev/test 共用本地任务 worktree；测试通过后发 PR；独立 review 批准后自动合并 |
-| `dev-test` | dev → test | 本地验收，通过后由 lead 手动串行合入 |
-| `direct` | dev | 直接交付，适合无需测试和 PR 的任务 |
-
-流程由 Skill 维护在根 `TEAM.md` 的 Workflow 部分，用 Markdown 写明职责顺序、PR/本地交付和手动/自动合并即可。
-CLI 不提供 workflow 命令、流程预设或默认链。创建任务始终显式提供角色和后续交接：
-
-```sh
-herdr-team add "Implement login" --role dev --handoff test,review
-```
-
-约定变化只影响后续编排。未开始任务可以用 `edit --handoff` 明确调整；已投递任务先核对执行。
-新任务只有 role/handoff 执行链，不再复制一份 workflow.steps。不再执行 task workflow 快照；
-旧 `.herdr/workflow.json` 不再影响新任务，也不会因过期内容阻塞 CLI。
-活动旧格式先核对并取消，再按新约定建卡，不手改历史元数据。
+TEAM.md 只按实际角色写简短中文步骤。交棒、协作和交付由 Skill 指导，CLI 接收明确的 role/handoff，
+不读取角色清单来生成默认任务链。编辑 TEAM.md 不改变活动任务；需要调整时由 Skill 明确执行。
 
 ### 推荐的 PR 流程
 
-这是 Skill 推荐方案，可在 onboard 选择并随时调整；CLI 不强制三个阶段或固定角色名。
+仅在用户授权 PR 交付时，由 Skill 按任务需要执行；CLI 不强制三个阶段或固定角色名。
 
 1. dev 自测并提交，用 `handoff <id> --delivery ID --commit SHA --summary TEXT` 交给下一位。
 2. test 在同一任务 worktree 验证该 SHA。通过后由 Skill 推送任务分支，用 `gh pr list/create` 复用或创建 PR，
@@ -119,7 +102,7 @@ herdr-team tasks 0001 --json
 人类可读输出区分元数据写入、正文写入与正文保留；`init --json` 用
 `roleMetadataWritten`、`roleBodiesWritten`、`roleBodiesPreserved` 三个文件路径数组替代原来的
 `rolesWritten`，不再把只换元数据报告成整张角色已写。保留的正文也列入 `skipped`。
-根 `TEAM.md` 和 `.herdr/models.json` 即使加 `--force` 也始终保留；init 只复制缺失模板，具体背景与流程由 Skill 填写。
+根 `TEAM.md` 和 `.herdr/models.json` 即使加 `--force` 也始终保留；init 只复制缺失模板，角色步骤由 Skill 用中文填写。
 
 由 lead 更新已有角色职责：
 
@@ -429,4 +412,4 @@ herdr-team handoff <id> --delivery <delivery-id> --summary-file summary.md
 checkout；Herdr workspace 已关闭时报告 `closed`，Git 拒绝删除时报告 `dirty`。
 回收不强制删除，保留分支和任务历史。Herdr 成功删除 checkout 后会关闭任务 workspace 及其中的 agent。
 `removed` / `absent` 返回成功；其他结果返回非零退出码，`--json` 也一样，查询失败不会当作已不存在。
-Skill 的最后一棒收尾规则见 [workflow.md](../skill/references/workflow.md#最后一棒完成后收尾)。
+Skill 的最后一棒收尾规则见 [delivery.md](../skill/references/delivery.md#最后一棒完成后收尾)。

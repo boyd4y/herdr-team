@@ -76,7 +76,7 @@ Herdr Team 的本技能与 CLI 问题提交到 `boyd4y/herdr-team`；原生 Herd
 
 针对责任边界、workflow、角色 prompt、项目文档、测试范围、依赖拆分和工具/环境配置提出具体改法。
 每项写明目标文件或配置位置、负责角色、优先级、最小修改、预期效果和验证条件。
-职责修订与流程走 [setup.md](setup.md) / [workflow.md](workflow.md)，不把操作流程再复制进 role prompt。
+角色步骤调整见 [setup.md](setup.md)，协作与交付改进见 [handoff.md](handoff.md)；不把操作流程复制进 TEAM.md 或 role prompt。
 
 feedback 默认只诊断和建议；用户要求落地修复或已有对应实施授权时，再按正常任务链执行，
 保留活动任务当前指派及历史，不为复盘自动取消、重派、改卡或重写已有 workflow/角色正文。

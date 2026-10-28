@@ -1,28 +1,13 @@
-# Team agreement
+# 团队
 
-## Project identity
+## dev
 
-Describe the project, its users, and the repository's purpose. Link to maintained
-project documentation for details.
+1. 明确需求和验收标准。
+2. 完成实现及相关文档。
+3. 自测并提交可验收的版本。
 
-## Shared conventions and preferences
+## review
 
-Follow AGENTS.md and the repository's contribution guidance. Record stable team
-preferences here without duplicating those documents or storing secrets.
-
-## Roles and responsibilities
-
-Record the agreed responsibilities and boundaries. Local harness, model, and
-launch configuration lives in .herdr/roles/ and .herdr/models.json.
-
-## Workflow
-
-Record the agreed handoff order, validation scope, delivery method, and merge
-owner/policy. An unconfirmed choice is not authorization to publish or merge.
-Task assignments remain explicit in each task's role and handoff records.
-
-## Completion
-
-After delivery, any required merge, and agreed validation succeed, the coordinating
-session cleans the terminal task's worktree and agents. Preserve resident sessions,
-other tasks, branches, history, and unfinished work; report blocked cleanup.
+1. 核对需求、指定提交和测试证据。
+2. 检查正确性、回归风险和可维护性。
+3. 给出通过或拒绝结论，附具体问题和证据。

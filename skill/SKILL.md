@@ -5,7 +5,7 @@ description: 用项目根 TEAM.md 的团队约定和 .herdr/ 的角色卡、任�
 
 # Herdr Team
 
-项目根 `TEAM.md` 保存共享背景与团队流程，`.herdr/` 保存本地执行配置和任务，Herdr 承载 agent 会话。
+项目根 `TEAM.md` 只按角色保存简短的中文工作步骤，`.herdr/` 保存本地执行配置和任务，Herdr 承载 agent 会话。
 每次运行任何入口，先按派活给出的绝对 root 或 Git 主检出定位团队项目，读取 AGENTS.md 和根目录 TEAM.md。
 TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队约定-teammd) 初始化，再继续当前工作；
 每次创建或重建都按该节检查旧 identity/workflow，并提示迁移与清理选择。
@@ -13,7 +13,7 @@ TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队�
 
 ## 职责边界
 
-- Skill 决定流程、角色分工、任务拆分、验收范围及下一步；项目背景、偏好与流程约定统一放在根 `TEAM.md`。
+- Skill 决定流程、角色分工、任务拆分、验收范围及下一步；TEAM.md 只写各角色做什么；交棒、协作、任务流转与收尾由 Skill 统一指导。
 - CLI 标准化输入输出、保存任务/delivery 并执行明确操作，负责引用校验、去重、SHA 一致性和并发锁。
 - 任务元数据和历史由 CLI 写；不要手算 ID、手改任务卡或绕过队列发消息。
 - 任务已有 role/handoff 是执行依据；CLI 不解释旧 workflow 快照；活动旧格式应由 lead 明确处理，历史记录保留。
@@ -26,8 +26,7 @@ TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队�
 | 入口 | 用途 | 参考 |
 | --- | --- | --- |
 | setup（onboard） | 初始化、调整角色和本地团队配置 | [setup.md](references/setup.md) |
-| workflow | 选择流程、拆任务、PR 交付、合并和最终收尾 | [workflow.md](references/workflow.md) |
-| handoff | 领取任务、协作交付、缺陷、队列/Console/会话恢复 | [handoff.md](references/handoff.md) |
+| handoff | 拆任务、领取、协作交付、PR、合并、收尾与会话恢复 | [handoff.md](references/handoff.md) |
 | models | 选择模型或修改 harness 启动配置 | [models.md](references/models.md) |
 | feedback | 回顾指定时间的执行，分析耗时、重复与职责交叉，生成报告、上游 issue 草稿和仓库改进建议 | [feedback.md](references/feedback.md) |
 

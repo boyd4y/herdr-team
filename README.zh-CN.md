@@ -24,22 +24,20 @@ herdr-team --help
 
 ## 为项目启动团队
 
-先选择工作流，再用一张表一起配置各角色的职责、harness、模型和启动方式。推荐 `dev-test-review`：dev/test 在同一本地任务 worktree 完成开发和测试，通过后发布 PR，独立 review 决定批准自动合并或退回开发和测试。也可以选择 `dev-test`、`direct` 或自定义流程。模型预设不能代替职责确认；确认后的角色定义写入 `roles.json`，通过 `--roles-file` 保存。详见 [CLI 指南](cli/README.md) 和[团队设置参考](skill/references/setup.md)。
+说明需要哪些角色、每个角色做什么。Skill 在根 `TEAM.md` 按角色生成简短的中文编号步骤，再配置 harness、模型和启动方式，无需选择或维护 workflow。详见[团队设置参考](skill/references/setup.md)。
 
 ```sh
 herdr-team init --roles-file roles.json
 herdr-team validate
 ```
 
-Skill 每次运行先检查仓库根 `TEAM.md`，缺失时初始化；项目背景、通用偏好、职责边界、交棒顺序、PR 交付和合并策略统一写在这里。建卡时显式传入 `--role` 和 `--handoff`；CLI 不提供 workflow 命令、流程预设或自动套用的默认交接链。修改约定不改变已有任务；CLI 不再执行旧 workflow 快照。历史记录可读；活动旧格式需明确处理后重新建卡。
+Skill 每次运行先读取根 `TEAM.md`，缺失时初始化。模板与生成内容使用中文，只保留各角色的核心步骤，例如 dev 的 1、2、3，review 的 1、2、3。交棒、协作、任务分配、PR、合并和收尾由 Skill 指导，不复制进 TEAM.md。调整角色步骤不改写已有任务指派。
 
-onboard 由 herdr-team Skill 对话引导，CLI 不提供 `onboard` 命令；`init` 只保存已确认的配置。
-Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，再检查所需工具与登录，明确启动和派活。
-已有角色默认保留，研究与文档角色按需选择。角色 prompt 定义职责，Skill 引导协作；派活消息要求先读 Skill，再按指导使用消息里的 CLI 参数模板。`herdr-team --help` 列出全部可用命令，包括任务操作。侧栏刷新由插件内部 hook 执行。
+onboard 由 Skill 对话引导；CLI 的 `init` 只保存已确认的本地配置。Skill 用 `role list --json` 和 `validate` 核对配置再启动派活，保留已有角色和用户自定义正文。
 
-Skill 提供五个工作入口：**setup（onboard）**、**workflow**、**handoff**、**models** 和 **feedback**。例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。feedback 从已有记录检查慢任务、重复工作、职责交叉和环境阻塞，保存本地报告，并分别给出上游 GitHub issue 草稿与当前仓库改进建议；缺失的耗时数据明确标注。先完成并查看本地报告，确认插件问题且决定提交后，才查询上游同类 issue。实施修复按用户请求范围执行。详见 [feedback 参考](skill/references/feedback.md)。这些是 agent 的 Skill 工作入口，不是 CLI 命令。
+Skill 提供四个工作入口：**setup（onboard）**、**handoff**、**models** 和 **feedback**。例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。feedback 从已有记录检查慢任务、重复工作、职责交叉和环境阻塞，保存本地报告，并分别给出上游 GitHub issue 草稿与当前仓库改进建议；缺失的耗时数据明确标注。先完成并查看本地报告，确认插件问题且决定提交后，才查询上游同类 issue。实施修复按用户请求范围执行。详见 [feedback 参考](skill/references/feedback.md)。这些是 agent 的 Skill 工作入口，不是 CLI 命令。
 
-根 `TEAM.md` 纳入 Git，跨机器共享团队约定。每次创建或重建时，Skill 检查旧 `.herdr/identity.md` 与 `.herdr/workflow.md`，展示拟迁移内容并提示是否迁移清理；确认后先保存核对 TEAM.md，再只删除同意清理的旧文件。选择保留或暂不迁移时，旧文件不作为执行依据。普通读取不重复询问。检查 `TEAM.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
+根 `TEAM.md` 纳入 Git，跨机器共享角色步骤。每次创建或重建时，Skill 检查旧 `.herdr/identity.md` 与 `.herdr/workflow.md`，展示拟迁移内容并提示是否迁移清理；确认后先保存核对 TEAM.md，再只删除同意清理的旧文件。选择保留或暂不迁移时，旧文件不作为执行依据。普通读取不重复询问。检查 `TEAM.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
 `.herdr/` 整体保留在本地并由 Git 忽略，包括模型、本地角色配置、任务、报告和临时产物；根 TEAM.md 位于忽略目录外，`init --force` 也不会覆盖。
 初始化会在项目根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件，`--force` 也不覆盖正文或模型目录。
@@ -84,7 +82,7 @@ Console 默认按任务 ID 倒序排列，右侧流程图与详情上下各占�
 
 PR 方案需要已登录的 `gh` 和匹配的 GitHub.com `origin`，测试、审查和 PR head 必须是同一 SHA。Skill 在 review 批准后明确调用合并；CLI 使用串行锁，核对批准和 SHA，并遵守分支保护。agent 共用 GitHub 账号时，review 会明确把结论记为 PR 评论中的 Team 内部门禁，不冒充 GitHub 独立审批，也不能替代仓库要求的他人 Approve；不同账号使用正式、绑定 commit 的 PR review。失败或中断后核对远端 PR 和本地状态，再 `merge retry <id>` / `merge <id>`；已合并 PR 不会重复合并。本地方案保留 lead 的 `merge next` 或 `merge <id> --migrate 'command'`。其他任务继续执行，独立测试资源变量见[CLI 指南](cli/README.md#按任务开发验收与合并)。
 
-最后一棒还需完成收尾：所需合并、同步和验证成功后，协调会话在主 workspace 执行 `herdr-team clean <id>`。Herdr 移除该任务 checkout 并关闭对应 workspace 和 agent，保留分支与任务历史；清理受阻须明确报告并保留现场。详见 [workflow 收尾规则](skill/references/workflow.md#最后一棒完成后收尾)。
+最后一棒还需完成收尾：所需合并、同步和验证成功后，协调会话在主 workspace 执行 `herdr-team clean <id>`。Herdr 移除该任务 checkout 并关闭对应 workspace 和 agent，保留分支与任务历史；清理受阻须明确报告并保留现场。详见 [交付收尾规则](skill/references/delivery.md#最后一棒完成后收尾)。
 
 ## 升级、移除与故障排查
 
@@ -98,7 +96,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.12`。
+安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.13`。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 

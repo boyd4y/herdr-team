@@ -1,31 +1,19 @@
-# Team agreement
+# 团队
 
-## Project identity
+## dev
 
-We maintain Herdr Team (boyd4y/herdr-team), a public Herdr plugin, Bun/TypeScript CLI, and bundled agent skill for project-scoped team coordination.
+1. 明确需求，阅读相关代码与 AGENTS.md。
+2. 完成最小范围实现及相关文档。
+3. 自测并提交可验收的版本。
 
-### Conventions
+## test
 
-Follow AGENTS.md for language, responsibilities, implementation boundaries, and validation requirements. It is the maintained source of project rules.
+1. 核对验收标准和指定提交。
+2. 验证变更行为、边界情况与回归风险。
+3. 给出通过或失败结论，附复现步骤和证据。
 
-### Preferences
+## doc
 
-Keep collaboration lightweight and task scopes small. Prefer existing runtime APIs and established libraries. Keep delivery summaries concise, with relevant verification and any unresolved issues.
-
-### Project references
-
-- README.md and README.zh-CN.md: public usage and installation.
-- CONTRIBUTING.md and CONTRIBUTING.zh-CN.md: contribution and validation guidance.
-- cli/ARCHITECTURE.md: implementation modules and asset locations.
-
-## Workflow
-
-- Roles: dev implements changes, test independently validates the assigned version, and doc maintains public and skill documentation.
-- The coordinating conversation routes tasks and owns team configuration and branch lifecycle; there is no separate lead or review role.
-- Feature work follows dev → test. Documentation-only work can go directly to doc; relevant documentation may be prepared independently or included in the feature checkout before final validation.
-- Each task owns its worktree. Roles working on the same task reuse that checkout one stage at a time. Independent tasks may run concurrently.
-- Test validates a pinned commit. If doc adds commits to that checkout after validation, the new version requires testing before integration.
-- The recorded task owner and handoff chain determine the actual assignment. Only real interface or data dependencies should block independent work.
-- Final acceptance queues integration. The coordinating conversation explicitly merges within the user's authorization; Console does not decide when to merge.
-
-- Final delivery includes cleanup. After integration and agreed validation succeed and the task is done, the coordinating conversation runs herdr-team clean <id> --root <team-root> from the main workspace. This closes that task worktree and its agents; preserve resident sessions, other tasks, branches, and task history. Report blocked cleanup and keep unfinished work.
+1. 从使用者和贡献者角度核对实际行为。
+2. 更新相关使用说明和中英文文档。
+3. 检查命令、示例及链接是否准确。

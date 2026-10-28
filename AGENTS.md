@@ -1,7 +1,7 @@
 # Language conventions
 
 Use English for CLI help, command output, errors, TUI labels, and generated
-default instructions. Keep a single English interface; do not add localization,
+default instructions, except the Chinese TEAM.md template and role checklists. Keep a single English interface; do not add localization,
 locale detection, translation catalogs, or language flags.
 
 Documentation may use Chinese or English. Separate English and Chinese README
@@ -10,7 +10,7 @@ and summaries in their original language; Unicode input remains supported.
 
 # Skill and CLI responsibilities
 
-- Skill: own onboarding, workflow recommendations, role responsibilities,
+- Skill: own onboarding, role responsibilities,
   task decomposition, handoff order, validation scope, and next-step decisions.
 - Skill: own execution feedback and improvement reports. Use existing task,
   delivery, artifact and Git evidence; separate observed timing from inference.
@@ -21,8 +21,8 @@ and summaries in their original language; Unicode input remains supported.
   Present core findings, traceable evidence, and concrete owner/action/validation
   recommendations in the conversation; a report link alone is not the deliverable.
 - Skill: check the repository-root `TEAM.md` on every invocation and initialize it
-  when missing. Maintain shared project identity, preferences, role boundaries,
-  and workflow there; keep it in Git. Follow the setup reference for migration;
+  when missing. Keep it in Git as brief Chinese numbered steps per actual role;
+  do not require workflow selection or a project workflow configuration. Follow the setup reference for migration;
   explicitly request PR creation and merging under the user's agreed policy.
 - Skill: require final delivery cleanup after any required merge succeeds. Use
   explicit task-scoped clean from the coordinating workspace; preserve resident
@@ -35,10 +35,10 @@ and summaries in their original language; Unicode input remains supported.
 - Do not add workflow presets, workflow management commands, or role-specific
   next-step decisions to the CLI. A handoff must not implicitly publish a PR or
   merge because of a preset. Do not retain obsolete workflow execution engines.
-- Keep task state CLI-owned. Workflow prose is Skill-owned; it must not override
+- Keep task state CLI-owned. Collaboration procedures are Skill-owned; it must not override
   an active task's recorded assignment. Reject unsupported active task formats explicitly;
   leave completed historical records readable.
-- Keep `skill/SKILL.md` a short entry point. Put setup, workflow, and handoff
+- Keep `skill/SKILL.md` a short entry point. Put setup, delivery, and handoff
   instructions in their respective references; link to each topic instead of
   copying its procedures or role prompts into multiple files.
 
@@ -59,16 +59,17 @@ recover from errors; inspect existing state before retrying an uncertain operati
 - Role `prompt.md`: define the role's responsibilities, allowed scope, boundaries,
   and expected deliverables. Direct agents to the herdr-team skill for procedures;
   do not copy command catalogs, workflow rules, or handoff/PR/merge recipes here.
-- `TEAM.md`: maintain shared project background, stable preferences, role boundaries,
-  and the agreed workflow. Reference `AGENTS.md` for code and agent constraints;
-  do not duplicate skill procedures, task assignments, or local launch settings.
+- `TEAM.md`: keep only short Chinese numbered work steps under each actual role.
+  Do not add identity, preferences, Workflow or Completion sections. Handoff,
+  collaboration, task routing, PR/merge and cleanup procedures belong in the skill,
+  not TEAM.md. Engineering constraints stay in AGENTS.md; startup settings stay local.
   Skill owns migration from old identity/workflow files. When creating or rebuilding
   TEAM.md, present the proposed migration and exact old paths and ask whether to
   migrate and clean them, unless this operation is already explicitly authorized.
   Verify the saved agreement before deleting only approved, unchanged old files;
   preserve existing prose and all task/runtime records. Ordinary reads do not prompt.
   CLI only initializes a missing template and passes the root agreement to agents;
-  it does not interpret the workflow or overwrite an existing agreement.
+  it does not interpret role steps or overwrite an existing checklist.
 - Delivery messages: request skill loading first, then supply assignment facts,
   task/artifact paths, SHAs, delivery IDs, and exact CLI argument templates.
   Templates identify an operation; the skill determines when and how to use it.

@@ -21,7 +21,7 @@
 lead、dev、test、search、docs、review 各有一个目录；default 是自定义角色的通用起点。
 模型初始目录在 `skill/assets/models.json`；init 在缺失时复制为 `.herdr/models.json`，后者优先读取且可由用户修改，角色方案在 `skill/assets/plans.json` 引用 harness/model，共享团队约定模板在 `skill/assets/TEAM.md`，均不嵌在 TypeScript 中。
 初始化只在项目根 TEAM.md 缺失时复制该模板；Skill 每次运行先读取，缺失时按项目事实初始化或迁移旧约定，已有内容不会被更新模板覆盖。
-TEAM.md 由 Git 共享背景与 workflow，派活读取主项目根的内容与路径；CLI 不解析其中流程。本地启动配置与任务仍在忽略的 .herdr/。
+TEAM.md 由 Git 共享各角色的简短中文步骤，派活读取主项目根的内容与路径；CLI 不解析步骤或生成工作流。本地启动配置与任务仍在忽略的 .herdr/。
 
 修改角色正文直接改对应 Markdown。Skill 在 onboard 时按需读取并调整；CLI 对未提供正文的新角色读取同名模板，
 未知角色使用 default。更新资产不会覆盖项目里已经自定义的 prompt.md。
