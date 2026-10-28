@@ -106,3 +106,45 @@ CLI 输出、错误和生成的默认指令保持英文，无需多语言支持�
 
 可复用默认模板在插件的 `skill/assets/`，各机器读取已共享的 TEAM.md，再独立初始化角色启动配置、选择模型并登录所选工具。
 任务、会话和本机 worktree 不跨机器恢复；只有用户明确要求时才另外安排配置复制。
+
+## 更新插件
+
+仅在用户要求更新 herdr-team 插件、CLI 或 Skill 时执行；普通初始化、派活和 feedback 不自动检查或更新。
+使用 Herdr skill，先确认当前在 Herdr 管理的 pane 中，并以本机 `herdr --help` / `herdr plugin` 为命令依据。
+用 `herdr plugin list --plugin herdr-team` 查看安装来源和版本，`herdr-team --version` 查看 CLI 版本；按实际来源更新。
+
+### GitHub 安装
+
+```sh
+herdr plugin install boyd4y/herdr-team --ref main
+```
+
+安装会运行插件 setup，同步插件、内置 CLI、Skill 和托管配置。用户指定版本时将 main 换为指定 tag/ref，
+不要把读取到的本地版本称为已确认上游最新，也不要用当前业务仓库的 origin 推断插件来源。
+
+### 本地 link
+
+先定位 plugin list 返回的插件源码检出；在该目录检查 Git 状态。更新源码时保留未提交修改，
+按该检出的跟踪分支执行 `git pull --ff-only`；有冲突或没有跟踪分支时说明原因，不强制覆盖或切换分支。
+源码已是目标版本时直接刷新，无需重复拉取。然后在插件源码根执行：
+
+```sh
+herdr plugin link .
+herdr plugin action invoke herdr-team.install
+```
+
+link 刷新 manifest 和事件 hook，install action 更新 CLI、Skill 和托管配置。
+不要在业务项目目录 link；`configure` action 只应用配置，不更新 CLI/Skill 或注册变更的 hook。
+
+### 核对与生效
+
+```sh
+herdr plugin list --plugin herdr-team
+herdr-team --version
+```
+
+核对插件与 CLI 是否匹配选定源码/版本，并确认安装输出中 Skill 安装成功；失败时保留原错误，不将部分成功报为全部更新完成。
+更新后的 Skill 文件要重新读取；当前 agent 已加载的上下文不会自动刷新。已运行的 Console 需要在其 tab 按 q 退出，
+再按 `prefix+t` 打开，以加载新运行时；不要用 down 重启整个团队或关闭其他 agent。
+`herdr-team init --force` 用于项目角色元数据，不更新插件。插件更新保留 TEAM.md 和项目 .herdr/ 的自定义内容；
+若用户改过已安装 Skill，更新前先保留这些修改，不编辑冻结的 CLI 缓存来代替源码更新。

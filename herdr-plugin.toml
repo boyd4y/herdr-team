@@ -1,6 +1,6 @@
 id = "herdr-team"
 name = "Herdr Team"
-version = "0.1.13"
+version = "0.1.14"
 min_herdr_version = "0.9.3"
 description = "Project agent teams with a skill, CLI, sidebar and managed Team Console."
 platforms = ["linux", "macos"]

@@ -86,7 +86,7 @@ Final delivery includes cleanup: after any required merge and validation succeed
 
 ## Upgrade, remove, and troubleshoot
 
-For a GitHub installation, upgrade by updating or reinstalling `boyd4y/herdr-team` through Herdr's plugin manager. For a locally linked checkout, run `herdr plugin link .` from the checkout root to refresh the plugin manifest and event hooks, then run `herdr plugin action invoke herdr-team.install` to refresh the bundled CLI, skill, and managed configuration. The `configure` action only applies Herdr Team's managed layout and configuration and reloads config; it does not register changed event hooks or refresh the CLI and skill. Keep the user bin directory and Bun on Herdr's `PATH`.
+See the skill's [plugin update instructions](skill/references/setup.md#更新插件) for GitHub installations, local links, and verification. Keep the user bin directory and Bun on Herdr's `PATH`.
 
 To update a GitHub installation and check the installed versions:
 
@@ -96,7 +96,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Use `herdr-team init` to add the whole-directory ignore rule to an existing project; it preserves existing team definitions. Plugin and CLI versions are both `0.1.13` in this release.
+Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Use `herdr-team init` to add the whole-directory ignore rule to an existing project; it preserves existing team definitions. Plugin and CLI versions are both `0.1.14` in this release.
 
 Before removing the plugin, remove the plugin-managed skill, Herdr configuration, and CLI shim with the corresponding actions:
 

@@ -1,6 +1,6 @@
 {
   "name": "herdr-team",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Coordinate Herdr agent teams with a shared root TEAM.md and local .herdr/ role and task records.",
   "type": "module",
   "bin": {

@@ -25,12 +25,13 @@ TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队�
 
 | 入口 | 用途 | 参考 |
 | --- | --- | --- |
-| setup（onboard） | 初始化、调整角色和本地团队配置 | [setup.md](references/setup.md) |
+| setup（onboard） | 初始化、调整角色与本地配置、按用户要求更新插件 | [setup.md](references/setup.md) |
 | handoff | 拆任务、领取、协作交付、PR、合并、收尾与会话恢复 | [handoff.md](references/handoff.md) |
 | models | 选择模型或修改 harness 启动配置 | [models.md](references/models.md) |
 | feedback | 回顾指定时间的执行，分析耗时、重复与职责交叉，生成报告、上游 issue 草稿和仓库改进建议 | [feedback.md](references/feedback.md) |
 
 例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。用户询问有哪些入口时列出上表。
+用户要求升级插件、CLI 或 Skill 时，读 [setup：更新插件](references/setup.md#更新插件)。
 文件布局、字段和约束按需查 [herdr-format.md](references/herdr-format.md)，不作为额外执行模式。
 
 已有授权和偏好直接复用，只问缺失信息。普通任务用简短摘要交棒，验证相关改动和风险，避免每棒重复全量测试或额外生成报告。

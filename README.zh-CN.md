@@ -86,7 +86,7 @@ PR 方案需要已登录的 `gh` 和匹配的 GitHub.com `origin`，测试、审
 
 ## 升级、移除与故障排查
 
-GitHub 安装的插件请通过 Herdr 插件管理器更新或重新安装 `boyd4y/herdr-team`。更新本地 link 的检出时，请在仓库根目录运行 `herdr plugin link .`，刷新插件 manifest 和事件 hook；然后运行 `herdr plugin action invoke herdr-team.install`，更新内置 CLI、skill 并应用托管配置。`configure` action 只应用 Herdr Team 托管的布局与配置并 reload config；它不会注册已变更的事件 hook，也不会更新 CLI 和 skill。Herdr 的 `PATH` 中需保留用户 bin 目录和 Bun。
+GitHub 安装、本地 link 和更新后核对的完整步骤见 Skill 的[更新插件说明](skill/references/setup.md#更新插件)。Herdr 的 `PATH` 中需保留用户 bin 目录和 Bun。
 
 GitHub 安装可用以下命令更新并检查版本：
 
@@ -96,7 +96,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.13`。
+安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.14`。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 
