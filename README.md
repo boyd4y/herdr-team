@@ -37,7 +37,7 @@ Onboarding is a conversation guided by the herdr-team skill. The CLI has no `onb
 
 The skill has five work entries: **setup** (onboard), **workflow**, **handoff**, **models**, and **feedback**. Ask, for example, “Use the herdr-team skill's feedback entry to review the last seven days.” Feedback examines slow tasks, repeated work, responsibility overlap, and environment blockers from existing records. It saves a local report with upstream GitHub issue drafts and actionable repository improvements; timing gaps remain explicit. Complete and review the local report first; search for similar upstream issues only after confirming a plugin problem and deciding to submit it. Applying fixes follows the requested scope. See the [feedback reference](skill/references/feedback.md). These are agent skill entries, not CLI commands.
 
-Commit `TEAM.md` to share the team agreement across machines. The skill migrates existing `.herdr/identity.md` and `.herdr/workflow.md` into it when it is missing, retaining the old files without using them as competing sources. Review `TEAM.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the shared agreement and local role instructions for your project.
+Commit `TEAM.md` to share the team agreement across machines. When creating or rebuilding it, the skill checks for old `.herdr/identity.md` and `.herdr/workflow.md`, shows the proposed migration, and asks whether to migrate and clean them up. It verifies the saved agreement before removing only approved old files; keeping or declining migration leaves them inactive. Ordinary reads do not repeat this prompt. Review `TEAM.md`, role metadata in `.herdr/roles/<role>/.role.yaml`, and role instructions in `.herdr/roles/<role>/prompt.md`. Edit the shared agreement and local role instructions for your project.
 
 Keep the entire `.herdr/` directory local and ignored by Git, including models, local role configuration, tasks, reports, and temporary artifacts. `TEAM.md` stays outside that directory and is preserved even with `init --force`. Initialization adds `/.herdr/` to the project's root `.gitignore`, preserving existing rules and team files even with `--force`. If team files were already tracked, use `git rm -r --cached -- .herdr` to stop tracking them while retaining the local files. Reusable defaults live in the plugin's `skill/assets/`; initialize each machine separately and install/authenticate its selected tools.
 
@@ -96,7 +96,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Use `herdr-team init` to add the whole-directory ignore rule to an existing project; it preserves existing team definitions. Plugin and CLI versions are both `0.1.11` in this release.
+Installation refreshes the plugin, bundled CLI, skill, and managed configuration. Exit an already-running Console and reopen it with `prefix+t` to load the new runtime. Use `herdr-team init` to add the whole-directory ignore rule to an existing project; it preserves existing team definitions. Plugin and CLI versions are both `0.1.12` in this release.
 
 Before removing the plugin, remove the plugin-managed skill, Herdr configuration, and CLI shim with the corresponding actions:
 

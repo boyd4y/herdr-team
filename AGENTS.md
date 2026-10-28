@@ -62,7 +62,11 @@ recover from errors; inspect existing state before retrying an uncertain operati
 - `TEAM.md`: maintain shared project background, stable preferences, role boundaries,
   and the agreed workflow. Reference `AGENTS.md` for code and agent constraints;
   do not duplicate skill procedures, task assignments, or local launch settings.
-  Skill owns migration from old identity/workflow files; preserve existing prose.
+  Skill owns migration from old identity/workflow files. When creating or rebuilding
+  TEAM.md, present the proposed migration and exact old paths and ask whether to
+  migrate and clean them, unless this operation is already explicitly authorized.
+  Verify the saved agreement before deleting only approved, unchanged old files;
+  preserve existing prose and all task/runtime records. Ordinary reads do not prompt.
   CLI only initializes a missing template and passes the root agreement to agents;
   it does not interpret the workflow or overwrite an existing agreement.
 - Delivery messages: request skill loading first, then supply assignment facts,

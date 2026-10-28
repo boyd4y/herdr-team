@@ -8,6 +8,7 @@ description: 用项目根 TEAM.md 的团队约定和 .herdr/ 的角色卡、任�
 项目根 `TEAM.md` 保存共享背景与团队流程，`.herdr/` 保存本地执行配置和任务，Herdr 承载 agent 会话。
 每次运行任何入口，先按派活给出的绝对 root 或 Git 主检出定位团队项目，读取 AGENTS.md 和根目录 TEAM.md。
 TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队约定-teammd) 初始化，再继续当前工作；
+每次创建或重建都按该节检查旧 identity/workflow，并提示迁移与清理选择。
 不要在子目录或任务 worktree 另建一份，也不从父目录其他仓库借用约定。不假设仓库名、角色或 harness。
 
 ## 职责边界

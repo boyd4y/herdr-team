@@ -39,7 +39,7 @@ Skill 用 `role list --json`、流程约定和 `validate` 核对实际配置，�
 
 Skill 提供五个工作入口：**setup（onboard）**、**workflow**、**handoff**、**models** 和 **feedback**。例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。feedback 从已有记录检查慢任务、重复工作、职责交叉和环境阻塞，保存本地报告，并分别给出上游 GitHub issue 草稿与当前仓库改进建议；缺失的耗时数据明确标注。先完成并查看本地报告，确认插件问题且决定提交后，才查询上游同类 issue。实施修复按用户请求范围执行。详见 [feedback 参考](skill/references/feedback.md)。这些是 agent 的 Skill 工作入口，不是 CLI 命令。
 
-根 `TEAM.md` 纳入 Git，跨机器共享团队约定。旧项目缺失该文件时，Skill 合并 `.herdr/identity.md` 与 `.herdr/workflow.md` 的有效内容，保留旧文件但不继续维护两套来源。检查 `TEAM.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
+根 `TEAM.md` 纳入 Git，跨机器共享团队约定。每次创建或重建时，Skill 检查旧 `.herdr/identity.md` 与 `.herdr/workflow.md`，展示拟迁移内容并提示是否迁移清理；确认后先保存核对 TEAM.md，再只删除同意清理的旧文件。选择保留或暂不迁移时，旧文件不作为执行依据。普通读取不重复询问。检查 `TEAM.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
 `.herdr/` 整体保留在本地并由 Git 忽略，包括模型、本地角色配置、任务、报告和临时产物；根 TEAM.md 位于忽略目录外，`init --force` 也不会覆盖。
 初始化会在项目根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件，`--force` 也不覆盖正文或模型目录。
@@ -98,7 +98,7 @@ herdr plugin list --plugin herdr-team
 herdr-team --version
 ```
 
-安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.11`。
+安装会更新插件、内置 CLI、skill 和托管配置。退出正在运行的 Console，再按 `prefix+t` 打开，才能加载新运行时。已有项目运行 `herdr-team init` 即可补上整目录忽略规则，已有团队定义保留。本次插件与 CLI 版本均为 `0.1.12`。
 
 移除插件前，先用对应 action 撤销插件管理的 skill、Herdr 配置和 CLI shim：
 
