@@ -9,6 +9,16 @@ export function padTo(s: string, width: number): string {
   return s + " ".repeat(Math.max(0, width - displayWidth(s)));
 }
 
+/** Shared plain CLI list layout, including Unicode-safe column alignment. */
+export function formatColumns(rows: readonly (readonly string[])[]): string {
+  const cells = rows.map(row => row.map(value => sanitize(value)));
+  const widths = cells.reduce<number[]>((widths, row) => {
+    row.forEach((value, i) => { widths[i] = Math.max(widths[i] ?? 0, displayWidth(value)); });
+    return widths;
+  }, []);
+  return cells.map(row => `  ${row.map((value, i) => padTo(value, widths[i]!)).join("  ").trimEnd()}`).join("\n");
+}
+
 /**
  * 按显示宽度截断，超出时以 `…` 结尾。
  *

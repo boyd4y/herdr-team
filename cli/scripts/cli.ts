@@ -7,9 +7,9 @@ import { findRoot, loadProject } from "./lib/team/project.ts";
 import { mergeRows, mergeTask, retryMerge } from "./lib/integration/merge.ts";
 import { handoff } from "./lib/tasks/handoff.ts";
 import { init, InitError, parseRoleSpecs, readRolesFile } from "./lib/team/init.ts";
-import { listAgentPresets } from "./lib/team/agents.ts";
+import { formatAgentPresets, listAgentPresets } from "./lib/team/agents.ts";
 import { describePlan, isPlanName, PLAN_NAMES, planRoles } from "./lib/team/plans.ts";
-import { addRole, describeRole, removeRole, RoleError } from "./lib/team/roles.ts";
+import { addRole, formatRoles, removeRole, RoleError } from "./lib/team/roles.ts";
 import { realHerdr, type Herdr } from "./lib/runtime/herdr.ts";
 import { refreshSidebar } from "./lib/ui/sidebar.ts";
 import { syncWorkspaceGit } from "./lib/ui/workspace-git.ts";
@@ -779,7 +779,7 @@ function cmdAgents(args: string[]): number {
   let rows: ReturnType<typeof listAgentPresets>;
   try { rows = listAgentPresets(resolveConfigRoot(parsed.values.get("root")), parsed.values.get("kind")); }
   catch (error) { throw new UsageError(error instanceof Error ? error.message : String(error)); }
-  return out(parsed, rows, rows.length ? rows.map(row => `${JSON.stringify(`${row.kind}/${row.preset}`)}  ${JSON.stringify(row.config)}`).join("\n") : "(no agent presets)");
+  return out(parsed, rows, formatAgentPresets(rows));
 }
 
 function cmdRole(args: string[]): number {
@@ -807,12 +807,7 @@ function cmdRole(args: string[]): number {
   const project = loadOrFail(root);
 
   if (sub === "list") {
-    if (project.roles.length === 0 && !parsed.flags.has("json")) {
-      process.stdout.write("(no roles yet)\n");
-      return 0;
-    }
-    const lines = project.roles.map((r) => `  ${describeRole(r)}`);
-    return out(parsed, project.roles.map(cardForJson), lines.join("\n"));
+    return out(parsed, project.roles.map(cardForJson), formatRoles(project.roles));
   }
 
   const name = parsed.pos[0];

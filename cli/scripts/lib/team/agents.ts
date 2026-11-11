@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { KINDS } from "../shared/types.ts";
+import { formatColumns } from "../shared/text.ts";
 import { readAsset } from "./templates.ts";
 
 export interface AgentPreset {
@@ -100,6 +101,19 @@ export function listAgentPresets(root: string, kind?: string) {
   return (kind === undefined ? Object.keys(presets).sort() : [kind]).flatMap(harness =>
     Object.keys(presets[harness]!).sort().map(name => ({ kind: harness, preset: name, config: presets[harness]![name]! })),
   );
+}
+
+export function formatAgentPresets(rows: ReturnType<typeof listAgentPresets>): string {
+  if (!rows.length) return "(no agent presets)";
+  return formatColumns([
+    ["HARNESS", "PRESET", "MODEL", "OPTIONS"],
+    ...rows.map(({ kind, preset, config }) => [
+      kind, preset, config.model ?? "default",
+      Object.entries(config).filter(([key]) => key !== "model").map(([key, value]) =>
+        `${key}=${typeof value === "object" ? Object.entries(value).map(([name, item]) => `${name}=${item}`).join(",") : value}`,
+      ).join("  "),
+    ]),
+  ]);
 }
 
 /** Only init/plan preview may use the seed before the project file exists. */

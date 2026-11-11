@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { KINDS, NAME_RE, ROLE_BODY, ROLE_META, isTerminal, type Project, type RoleCard } from "../shared/types.ts";
 import { emitYaml, parseYaml } from "../shared/yaml.ts";
+import { formatColumns } from "../shared/text.ts";
 
 /** 角色元数据里键的顺序。**不含 `name`** —— 角色名就是目录名。 */
 export const ROLE_FIELD_ORDER = ["kind", "preset", "model", "worktree", "cwd", "args", "env"];
@@ -140,9 +141,10 @@ export function removeRole(project: Project, name: string, force = false): Remov
   return { name, dir: role.dir };
 }
 
-/** 给人看的一行：角色名、类型、模型、是否隔离。 */
-export function describeRole(role: RoleCard): string {
-  const bits = [role.kind, ...(role.preset ? [`preset:${role.preset}`] : []), role.model ?? "default"];
-  if (role.worktree) bits.push("worktree");
-  return `${role.name.padEnd(10)}${bits.join("  ")}`;
+export function formatRoles(roles: readonly RoleCard[]): string {
+  if (!roles.length) return "(no roles yet)";
+  return formatColumns([
+    ["ROLE", "HARNESS", "PRESET", "MODEL", "OPTIONS"],
+    ...roles.map(role => [role.name, role.kind, role.preset ?? "-", role.model ?? "default", role.worktree ? "worktree" : ""]),
+  ]);
 }
