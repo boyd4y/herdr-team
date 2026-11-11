@@ -2,10 +2,9 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveAgentPreset, type listAgentPresets } from "../team/agents.ts";
+import { agentLaunch, agentOutputLimit, captureAgentCommand, type PresetRow } from "./agent-command.ts";
 import { formatColumns, sanitize, truncate } from "../shared/text.ts";
 
-type PresetRow = ReturnType<typeof listAgentPresets>[number];
 export interface AgentTestResult {
   kind: string;
   preset: string;
@@ -17,16 +16,10 @@ export interface AgentTestResult {
 
 const responseToken = "HERDR_TEAM_OK";
 const prompt = `Reply with exactly ${responseToken}. Do not use tools, read files or make changes.`;
-const outputLimit = 16_384;
-
 function launch(row: PresetRow) {
-  const settings = resolveAgentPreset({ [row.kind]: { [row.preset]: row.config } }, row.kind, row.preset);
-  const env = { ...process.env, ...settings.env };
-  const aliases: Record<string, string[]> = { cursor: ["cursor-agent"], kiro: ["kiro-cli"], qodercli: ["qoder", "qodercli", "qoderclicn", "qodercn"] };
-  const candidates = aliases[row.kind] ?? [row.kind];
-  const executable = candidates.map(name => Bun.which(name, { PATH: env.PATH })).find(Boolean);
-  if (!executable) throw new Error(`Executable not found on PATH: ${candidates.join(" / ")}`);
-  return { executable, env, args: settings.args };
+  const result = agentLaunch(row);
+  if (!result.executable) throw new Error(`Executable not found on PATH: ${result.candidates.join(" / ")}`);
+  return { ...result, executable: result.executable };
 }
 
 /** Explicit standalone setup operation; does not create team agents or workspaces. */
@@ -56,7 +49,7 @@ function responseCommand(row: PresetRow, args: string[], answer: string): string
   if (row.kind === "claude") return ["--print", prompt, ...args, "--output-format", "text", "--no-session-persistence", "--tools", ""];
   if (row.kind === "grok") return [...args, "--single", prompt, "--output-format", "plain", "--max-turns", "1", "--tools", ""];
   if (row.kind === "kimi") return [...args, "--prompt", prompt, "--output-format", "text"];
-  if (row.kind === "qodercli") return [...args, "--print", prompt, "--output-format", "text", "--max-turns", "1"];
+  if (row.kind === "qoder") return [...args, "--print", prompt, "--output-format", "text", "--no-session-persistence", "--tools", ""];
 }
 
 async function responseTest(row: PresetRow, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<AgentTestResult> {
@@ -70,27 +63,12 @@ async function responseTest(row: PresetRow, cwd: string, timeoutMs: number, sign
   try {
     const { executable, env, args } = launch(row);
     const command = responseCommand(row, args, answer)!;
-    const child = spawn(executable, command, { cwd, env: { ...env, NO_COLOR: "1" }, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
-    let stdout = "", stderr = "", timedOut = false, error: Error | undefined;
-    const kill = () => {
-      try { if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL"); else child.kill("SIGKILL"); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
-    };
-    child.stdout!.setEncoding("utf8").on("data", (data: string) => { stdout = (stdout + data).slice(-outputLimit); });
-    child.stderr!.setEncoding("utf8").on("data", (data: string) => { stderr = (stderr + data).slice(-outputLimit); });
-    child.once("error", value => { error = value; });
-    child.once("exit", kill); // Reap helpers that would otherwise keep pipes open.
-    const timer = setTimeout(() => { timedOut = true; kill(); }, timeoutMs);
-    signal?.addEventListener("abort", kill, { once: true });
-    if (signal?.aborted) kill();
-    let code: number | null;
-    try { code = await new Promise<number | null>(resolve => child.once("close", resolve)); }
-    finally { clearTimeout(timer); signal?.removeEventListener("abort", kill); }
+    const { code, stdout, stderr, timedOut, error } = await captureAgentCommand(executable, command, cwd, env, timeoutMs, signal);
     if (signal?.aborted) return result("failed", "Cancelled");
     if (timedOut) return result("failed", `Timed out after ${timeoutMs} ms`);
     if (error) return result("failed", error.message);
     if (code !== 0) return result("failed", sanitize((stderr || stdout).trim(), true).slice(-4000) || `Exited with code ${code}`);
-    if (row.kind === "codex" && statSync(answer).size > outputLimit) return result("failed", "Response exceeds test output limit");
+    if (row.kind === "codex" && statSync(answer).size > agentOutputLimit) return result("failed", "Response exceeds test output limit");
     const response = row.kind === "codex" ? readFileSync(answer, "utf8").trim() : stdout.trim();
     return response === responseToken ? result("passed", "Model responded") : result("failed", `Unexpected response: ${sanitize(response).slice(0, 400) || "(empty)"}`);
   } catch (error) { return result("failed", error instanceof Error ? error.message : String(error)); }

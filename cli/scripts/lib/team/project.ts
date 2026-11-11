@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "n
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import {
+  canonicalKind,
   ROLE_BODY,
   ROLE_META,
   TASK_BODY,
@@ -172,7 +173,7 @@ function loadRoles(herdrDir: string, problems: Problem[], presets?: AgentPresets
       name,
       meta,
       preset: asString(meta["preset"]),
-      kind: asString(meta["kind"]) ?? "",
+      kind: canonicalKind(asString(meta["kind"]) ?? ""),
       model: launch?.model ?? asString(meta["model"]),
       cwd: asString(meta["cwd"]),
       args: launch?.args ?? asStringList(meta["args"]),

@@ -1,7 +1,7 @@
 import { readAsset, rolePrompt } from "./templates.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { KINDS, NAME_RE, ROLE_BODY, ROLE_META, type Project } from "../shared/types.ts";
+import { canonicalKind, KINDS, NAME_RE, ROLE_BODY, ROLE_META, type Project } from "../shared/types.ts";
 import { checkPresetRole, initialAgentPresets } from "./agents.ts";
 import { emitYaml } from "../shared/yaml.ts";
 
@@ -66,7 +66,7 @@ export function parseRoleSpecs(input: string): RoleSpec[] {
   return list.map((raw) => {
     const rec = asRecord(raw);
     const name = requireString(rec, "name");
-    const kind = requireString(rec, "kind");
+    const kind = canonicalKind(requireString(rec, "kind"));
     if (!NAME_RE.test(name)) throw new InitError(`Role name "${name}" must match ${NAME_RE}`);
     if (names.has(name)) throw new InitError(`Duplicate role definition: ${name}`);
     names.add(name);

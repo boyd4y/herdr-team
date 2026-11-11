@@ -14,6 +14,13 @@ function recordingSpawn(stdout: string, code = 0): { fn: SpawnFn; calls: string[
 const WRAP = (result: object) => JSON.stringify({ result });
 
 describe("herdr 客户端 —— 参数拼装", () => {
+  test("Qoder public names map to the native Herdr kind and observations map back", () => {
+    const { fn, calls } = recordingSpawn(WRAP({ agents: [{ name: "dev", agent: "qodercli" }] }));
+    const herdr = realHerdr(fn);
+    herdr.agentStart("dev", "qoder", "w1:p1", ["--model", "project-model"]);
+    expect(calls[0]).toEqual(["agent", "start", "dev", "--kind", "qodercli", "--pane", "w1:p1", "--", "--model", "project-model"]);
+    expect(herdr.agentList()[0]!.agent).toBe("qoder");
+  });
   test("native plugin panes use explicit workspace/cwd/focus and validate returned scope", () => {
     const { fn, calls } = recordingSpawn(WRAP({ plugin_pane: { pane: { pane_id: "w1:p3", tab_id: "w1:t3", workspace_id: "w1" } } }));
     expect(realHerdr(fn).pluginPaneOpen("w1", "/tmp/a project", false)).toEqual({ paneId: "w1:p3", tabId: "w1:t3" });

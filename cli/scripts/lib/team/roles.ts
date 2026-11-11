@@ -3,7 +3,7 @@ import { checkPresetRole, readAgentPresets } from "./agents.ts";
 import { reviewFor } from "../tasks/verification.ts";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { KINDS, NAME_RE, ROLE_BODY, ROLE_META, isTerminal, type Project, type RoleCard } from "../shared/types.ts";
+import { canonicalKind, KINDS, NAME_RE, ROLE_BODY, ROLE_META, isTerminal, type Project, type RoleCard } from "../shared/types.ts";
 import { emitYaml, parseYaml } from "../shared/yaml.ts";
 import { formatColumns } from "../shared/text.ts";
 
@@ -59,7 +59,8 @@ export function addRole(project: Project, opts: AddRoleOptions): AddRoleResult {
 
   const meta = existed ? parseYaml(readFileSync(metaPath, "utf8")) : {};
   if (meta === null) throw new RoleError(`Role "${opts.name}" has an invalid YAML mapping in ${ROLE_META}`);
-  const kind = opts.kind ?? meta["kind"];
+  const inputKind = opts.kind ?? meta["kind"];
+  const kind = typeof inputKind === "string" ? canonicalKind(inputKind) : inputKind;
   if (kind === undefined) throw new RoleError("--kind is required for new roles (codex / claude / grok / kimi ...)");
   if (typeof kind !== "string" || !(KINDS as readonly string[]).includes(kind)) {
     throw new RoleError(`Unsupported kind "${kind}"`);

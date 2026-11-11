@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { KINDS } from "../shared/types.ts";
+import { canonicalKind, KINDS } from "../shared/types.ts";
 import { formatColumns } from "../shared/text.ts";
 import { readAsset } from "./templates.ts";
 
@@ -33,8 +33,17 @@ function mapping(value: unknown): value is Record<string, unknown> {
 export function readAgentPresets(root?: string): AgentPresets {
   const file = root ? join(root, "agents.json") : undefined;
   try {
-    const presets: unknown = JSON.parse(file ? readFileSync(file, "utf8") : readAsset("agents.json"));
-    if (!mapping(presets)) throw new Error("Expected a mapping of harnesses to presets");
+    const parsed: unknown = JSON.parse(file ? readFileSync(file, "utf8") : readAsset("agents.json"));
+    if (!mapping(parsed)) throw new Error("Expected a mapping of harnesses to presets");
+    const presets: Record<string, unknown> = { ...parsed };
+    if (Object.hasOwn(presets, "qodercli")) {
+      const old = presets.qodercli, current = presets.qoder;
+      if (!mapping(old) || (current !== undefined && !mapping(current))) throw new Error("Qoder must contain a preset mapping");
+      const duplicate = Object.keys(old).find(name => current && Object.hasOwn(current, name));
+      if (duplicate) throw new Error(`Both qoder and qodercli define preset ${duplicate}; keep one definition`);
+      presets.qoder = { ...old, ...(current as Record<string, unknown> | undefined) };
+      delete presets.qodercli;
+    }
     for (const [kind, entries] of Object.entries(presets)) {
       if (kind !== "acpc" && !(KINDS as readonly string[]).includes(kind)) throw new Error(`Unsupported harness ${kind}`);
       if (!mapping(entries)) throw new Error(`Harness ${kind} must contain a preset mapping`);
@@ -69,7 +78,7 @@ function expandPreset(kind: string, preset: AgentPreset) {
   const model = preset.model ?? "default";
   if (model !== "default") {
     if (kind === "codex") args.push("-m", model);
-    else if (kind === "claude" || kind === "qodercli") args.push("--model", model);
+    else if (kind === "claude" || kind === "qoder") args.push("--model", model);
     else throw new Error(`Named model selection is not supported for harness ${kind}`);
   }
   if (kind === "codex") {
@@ -88,6 +97,7 @@ function expandPreset(kind: string, preset: AgentPreset) {
 }
 
 export function resolveAgentPreset(presets: AgentPresets, kind: string, name: string) {
+  kind = canonicalKind(kind);
   const entries = Object.hasOwn(presets, kind) ? presets[kind] : undefined;
   const preset = entries && Object.hasOwn(entries, name) ? entries[name] : undefined;
   if (!preset) throw new Error(`Unknown agent preset ${kind}/${name} in agents.json`);
@@ -96,6 +106,7 @@ export function resolveAgentPreset(presets: AgentPresets, kind: string, name: st
 
 /** Project configuration only: listing does not inspect live agents or task state. */
 export function listAgentPresets(root: string, kind?: string) {
+  if (kind !== undefined) kind = canonicalKind(kind);
   const presets = readAgentPresets(root);
   if (kind !== undefined && !Object.hasOwn(presets, kind)) throw new Error(`Unknown harness ${kind} in agents.json`);
   return (kind === undefined ? Object.keys(presets).sort() : [kind]).flatMap(harness =>

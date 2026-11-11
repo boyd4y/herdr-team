@@ -19,6 +19,15 @@ function fixture(run: (project: ReturnType<typeof loadProject>, herdr: ReturnTyp
 }
 
 describe("up 的原生会话恢复", () => {
+  test("Qoder resumes existing native session records after the public rename", () => {
+    fixture((project) => {
+      const role = { ...project.roles[0]!, kind: "qoder", args: [], model: "default", worktree: false };
+      expect(rememberRoleSession(project, role, { cwd: project.root, agent_session: session("qodercli", "native-qoder-id") })).toBe(true);
+      expect(savedResumeArgs(project, role)).toEqual(["--resume", "native-qoder-id"]);
+      expect(resumeArgs("qodercli", session("qodercli", "native-qoder-id"))).toEqual(["--resume", "native-qoder-id"]);
+      expect(resumeArgs("qoder", session("codex", "foreign-id"))).toBeUndefined();
+    });
+  });
   test("关停前保存 ID；重建 Herdr 后按项目和角色恢复并保留模型参数", () => {
     fixture((p, h) => {
       const transcripts = join(process.env.CLAUDE_CONFIG_DIR!, "projects", "saved-project");

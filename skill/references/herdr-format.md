@@ -215,15 +215,16 @@ project workspace
 
 ### `kind` 枚举
 
-Herdr 支持的 agent 类型：
+Herdr Team 对外使用的 agent 类型：
 
 ```
 claude codex gemini cursor devin opencode copilot grok kimi droid
-amp qwen cline kiro pi agy omp mastracode hermes kilo qodercli
+amp qwen cline kiro pi agy omp mastracode hermes kilo qoder
 letta maki muse
 ```
 
-Herdr 更新后这个列表可能变化。**运行时以 `herdr agent start --kind` 实际接受值为准**。
+qoder 由适配层转换为 Herdr 原生 qodercli；配置与 CLI 始终使用 qoder。
+Herdr 更新后支持范围可能变化，原生调用以本机 `herdr agent start --kind` 实际接受值为准。
 
 ### `priority` 枚举
 

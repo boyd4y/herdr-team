@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { AgentInfo, AgentSessionInfo, Herdr } from "./herdr.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
-import { worktreeBranch, type Project, type RoleCard } from "../shared/types.ts";
+import { canonicalKind, worktreeBranch, type Project, type RoleCard } from "../shared/types.ts";
 
 interface SavedSession {
   version: 1;
@@ -51,8 +51,9 @@ export function roleSessionPath(project: Project, role: RoleCard, scope?: TaskSe
 
 /** Mirrors Herdr's official native-session restore syntax; no --last guessing. */
 export function resumeArgs(kind: string, session: AgentSessionInfo): string[] | undefined {
-  const source = kind === "agy" ? "antigravity_cli" : kind;
-  if (session.agent !== kind || session.source !== `herdr:${source}` ||
+  kind = canonicalKind(kind);
+  const source = kind === "agy" ? "antigravity_cli" : kind === "qoder" ? "qodercli" : kind;
+  if (canonicalKind(session.agent) !== kind || session.source !== `herdr:${source}` ||
     typeof session.value !== "string" || !session.value || /[\x00-\x1f\x7f]/.test(session.value) ||
     session.value.startsWith("-")) return;
   if (session.kind === "path") {
@@ -69,7 +70,7 @@ export function resumeArgs(kind: string, session: AgentSessionInfo): string[] | 
       ? value.length > 8 ? ["--conversation", "default", "--agent", value.slice(8)] : undefined
       : ["--conversation", value];
     case "claude": case "grok": case "devin": case "droid": case "hermes":
-    case "qodercli": case "qwen": case "cursor": return ["--resume", value];
+    case "qoder": case "qwen": case "cursor": return ["--resume", value];
   }
 }
 

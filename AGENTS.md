@@ -137,9 +137,17 @@ Keep credentials in native user configuration or external environment, not share
 presets. Existing explicit role launch settings remain readable; migrate them only
 when requested, preserving custom flags, environment and prompt contents.
 
-Standalone `agents run` and `agents test` are explicit local preset checks, separate
+Standalone `agents check`, `agents run` and `agents test` are explicit local preset checks, separate
 from team orchestration. They may invoke native binaries directly, including acpc
 for interactive diagnostics. Do not use them as a dispatch fallback, bind them to
 roles or save team resume references. Response tests use isolated temporary working
 directories, bounded subprocess output, timeouts and cancellation cleanup; report
 unsupported response adapters as skipped rather than a passing model response.
+Local CLI checks use native version and read-only auth-status commands, respect
+preset environments, and report unsupported or unrecognized login status as unknown.
+Do not infer authentication from files or environment variable presence, expose raw
+auth output, send prompts during checks, or probe automatically when listing presets.
+
+Use `qoder` in project configuration, role kinds, CLI selectors and display. Translate
+to Herdr native `qodercli` only in the runtime adapter; preserve native session
+source identifiers and read existing qodercli configuration without overwriting it.

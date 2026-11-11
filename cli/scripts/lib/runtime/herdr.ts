@@ -4,6 +4,8 @@
  * 抽成接口是为了测试能塞假实现 —— 不然 status/up/handoff 全都没法离线测。
  */
 
+import { canonicalKind } from "../shared/types.ts";
+
 export class HerdrError extends Error {
   constructor(
     message: string,
@@ -302,10 +304,11 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
       return { paneId: pane.pane_id, cwd: pane.cwd ?? null };
     },
 
-    agentList: () => unwrap<AgentInfo>(json(["agent", "list"]), "agents", ["agent", "list"]),
+    agentList: () => unwrap<AgentInfo>(json(["agent", "list"]), "agents", ["agent", "list"])
+      .map(agent => agent.agent === "qodercli" ? { ...agent, agent: canonicalKind(agent.agent) } : agent),
 
     agentStart: (name, kind, paneId, extraArgs) => {
-      const args = ["agent", "start", name, "--kind", kind, "--pane", paneId];
+      const args = ["agent", "start", name, "--kind", kind === "qoder" ? "qodercli" : kind, "--pane", paneId];
       if (extraArgs.length > 0) args.push("--", ...extraArgs);
       run(args);
     },

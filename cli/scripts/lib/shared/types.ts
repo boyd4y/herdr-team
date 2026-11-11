@@ -1,9 +1,13 @@
-/** Herdr 支持的 agent 类型。与 references/herdr-format.md 的 kind 枚举一致。 */
+/** Public harness names; the runtime translates native Herdr identifiers. */
 export const KINDS = [
   "claude", "codex", "gemini", "cursor", "devin", "opencode", "copilot",
   "grok", "kimi", "droid", "amp", "qwen", "cline", "kiro", "pi", "agy",
-  "omp", "mastracode", "hermes", "kilo", "qodercli", "letta", "maki", "muse",
+  "omp", "mastracode", "hermes", "kilo", "qoder", "letta", "maki", "muse",
 ] as const;
+
+export function canonicalKind(kind: string): string {
+  return kind === "qodercli" ? "qoder" : kind;
+}
 
 export const PRIORITIES = ["P0", "P1", "P2", "P3"] as const;
 export const STATUSES = ["todo", "doing", "review", "done", "blocked", "cancelled"] as const;

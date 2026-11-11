@@ -29,6 +29,8 @@ if(mode === "hang") {
  if(output >= 0 && mode !== "banner") writeFileSync(args[output+1],"HERDR_TEAM_OK");
  console.log("HERDR_TEAM_OK");
 }
+
+
 `;
   for (const name of ["codex", "claude", "grok", "kimi", "qoder", "acpc"]) {
     const file = join(bin, name); writeFileSync(file, source); chmodSync(file, 0o755);
@@ -38,6 +40,79 @@ if(mode === "hang") {
     process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "agents", ...args, "--root", root,
   ], { cwd: root, stdout: "pipe", stderr: "pipe" }) };
 }
+
+test("local CLI checks respect preset environments, deduplicate probes and keep credentials private", () => {
+  const f = makeProject();
+  try {
+    const fixture = probeFixture(f.root);
+    const script = `#!${process.execPath}
+import { appendFileSync } from "node:fs";
+const args=process.argv.slice(2), mode=process.env.TEST_MODE;
+appendFileSync(process.env.TEST_LOG,JSON.stringify(args)+"\\n");
+if(args[0]==="--version") console.log("fake-cli 1.2.3-beta.1");
+else if(args[0]==="login") {
+ console.error(mode==="out" ? "Not logged in" : "Logged in using API key: SECRET_TEST_CREDENTIAL");
+ process.exit(mode==="out" ? 1 : 0);
+} else if(args[0]==="auth" || args[0]==="status") console.log(mode==="broken" ? "SECRET_TEST_CREDENTIAL" : JSON.stringify({loggedIn:mode!=="out",logged_in:mode!=="out",apiKey:"SECRET_TEST_CREDENTIAL"}));
+else process.exit(9);
+`;
+    for (const name of ["codex", "claude", "grok", "qodercli"]) {
+      writeFileSync(join(f.root, "bin", name), script); chmodSync(join(f.root, "bin", name), 0o755);
+    }
+    rmSync(join(f.root, "bin/qoder"));
+    const config = (mode: string) => ({ env: { ...fixture.env, TEST_MODE: mode } });
+    const original = JSON.stringify({
+      codex: { a: config("in"), b: { ...config("in"), model: "different-model" }, c: config("out"), missing: { env: { PATH: join(f.root, "missing") } } },
+      claude: { in: config("in"), out: config("out"), broken: config("broken") },
+      grok: { default: config("in") }, qoder: { default: config("in") },
+    });
+    writeFileSync(join(f.root, "agents.json"), original);
+    expect(fixture.run("list", "--json").exitCode).toBe(0);
+    expect(existsSync(fixture.log)).toBe(false);
+    const output = fixture.run("check", "--json");
+    expect(output.exitCode).toBe(1);
+    expect(output.stderr.toString()).toBe("");
+    expect(output.stdout.toString()).not.toContain("SECRET_TEST_CREDENTIAL");
+    const rows = JSON.parse(output.stdout.toString());
+    const row = (kind: string, preset: string) => rows.find((r: { kind: string; preset: string }) => r.kind === kind && r.preset === preset);
+    expect(row("codex", "a").auth).toBe("logged-in");
+    expect(row("codex", "b").version).toBe("1.2.3-beta.1");
+    expect(row("codex", "c").auth).toBe("not-logged-in");
+    expect(row("codex", "missing").installed).toBe(false);
+    expect(row("claude", "in").auth).toBe("logged-in");
+    expect(row("claude", "out").auth).toBe("not-logged-in");
+    expect(row("claude", "broken").auth).toBe("unknown");
+    expect(row("claude", "broken").issues.length).toBeGreaterThan(0);
+    expect(row("grok", "default").auth).toBe("unknown");
+    expect(row("qoder", "default").executable).toBe(join(f.root, "bin/qodercli"));
+    expect(row("qoder", "default").auth).toBe("logged-in");
+    expect(readFileSync(fixture.log, "utf8").trim().split("\n")).toHaveLength(13);
+    expect(fixture.run("check", "--kind", "grok", "--json").exitCode).toBe(0);
+    expect(fixture.run("check", "codex/a", "--json").exitCode).toBe(0);
+    expect(fixture.run("check", "codex/a", "--kind", "codex").exitCode).toBe(2);
+    expect(fixture.run("check", "--all").exitCode).toBe(2);
+    expect(readFileSync(join(f.root, "agents.json"), "utf8")).toBe(original);
+    expect(existsSync(join(f.root, ".herdr/tasks"))).toBe(false);
+  } finally { f.cleanup(); }
+});
+
+test("local CLI check timeouts remain unknown and do not prevent checking other presets", () => {
+  const f = makeProject();
+  try {
+    const fixture = probeFixture(f.root);
+    writeFileSync(join(f.root, "agents.json"), JSON.stringify({ grok: {
+      hang: { env: { ...fixture.env, TEST_MODE: "hang" } }, missing: { env: { PATH: join(f.root, "missing") } },
+    } }));
+    const output = fixture.run("check", "--timeout-ms", "200", "--json");
+    expect(output.exitCode).toBe(1);
+    const rows = JSON.parse(output.stdout.toString());
+    expect(rows[0].installed).toBe(true);
+    expect(rows[0].auth).toBe("unknown");
+    expect(rows[0].issues[0]).toContain("timed out");
+    expect(rows[1].installed).toBe(false);
+    expect(rows[1].issues[0]).toContain("Executable not found");
+  } finally { f.cleanup(); }
+});
 
 test("batch response tests isolate checkouts, report failures, kill timed-out helpers and continue", async () => {
   const f = makeProject();
@@ -70,7 +145,7 @@ test("single and filtered probes use native response modes; run inherits the pre
   const f = makeProject();
   try {
     const fixture = probeFixture(f.root);
-    writeFileSync(join(f.root, "agents.json"), JSON.stringify(Object.fromEntries(["claude", "grok", "kimi", "qodercli"].map(kind => [kind, { custom: { env: fixture.env } }]))));
+    writeFileSync(join(f.root, "agents.json"), JSON.stringify(Object.fromEntries(["claude", "grok", "kimi", "qoder"].map(kind => [kind, { custom: { env: fixture.env } }]))));
     const one = fixture.run("test", "kimi/custom", "--json");
     expect(one.exitCode).toBe(0);
     expect(JSON.parse(one.stdout.toString()).map((row: { kind: string }) => row.kind)).toEqual(["kimi"]);
@@ -163,7 +238,7 @@ test("structured presets expand native harness options and leave default models 
       codex: { dev: { model: "project-model", reasoning_effort: "high", daemon: false, sandbox: "workspace-write", approval_policy: "on-request", env: { TEAM_OPTION: "value" } }, default: {} },
       claude: { review: { model: "sonnet", reasoning_effort: "high", permission_mode: "plan" } },
       acpc: { remote: { alias: "cc-remote" } },
-      qodercli: { default: { model: "default" } },
+      qoder: { default: { model: "default" } },
     }));
     const presets = readAgentPresets(f.root);
     expect(resolveAgentPreset(presets, "codex", "dev")).toEqual({
@@ -173,7 +248,29 @@ test("structured presets expand native harness options and leave default models 
     expect(resolveAgentPreset(presets, "codex", "default").args).toEqual([]);
     expect(resolveAgentPreset(presets, "claude", "review").args).toEqual(["--model", "sonnet", "--effort", "high", "--permission-mode", "plan"]);
     expect(resolveAgentPreset(presets, "acpc", "remote").args).toEqual(["--agent", "cc-remote"]);
-    expect(resolveAgentPreset(presets, "qodercli", "default").args).toEqual([]);
+    expect(resolveAgentPreset(presets, "qoder", "default").args).toEqual([]);
+  } finally { f.cleanup(); }
+});
+
+test("Qoder has one public name while old project presets and role inputs remain usable", () => {
+  const f = makeProject();
+  try {
+    const file = join(f.root, "agents.json");
+    const original = JSON.stringify({ qodercli: { custom: { model: "project-model" } } });
+    writeFileSync(file, original);
+    const presets = readAgentPresets(f.root);
+    expect(Object.keys(presets)).toEqual(["qoder"]);
+    expect(resolveAgentPreset(presets, "qodercli", "custom").args).toEqual(["--model", "project-model"]);
+    writeRole(f.root, "old-role", { kind: "qodercli", preset: "custom" });
+    addRole(loadProject(f.root), { name: "new-role", kind: "qoder", preset: "custom" });
+    expect(loadProject(f.root).roles.map(role => role.kind)).toEqual(["qoder", "qoder"]);
+    expect(validateProject(loadProject(f.root))).toEqual([]);
+    const query = Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "agents", "list", "--kind", "qodercli", "--root", f.root, "--json"]);
+    expect(query.exitCode).toBe(0);
+    expect(JSON.parse(query.stdout.toString())[0].kind).toBe("qoder");
+    expect(readFileSync(file, "utf8")).toBe(original);
+    writeFileSync(file, JSON.stringify({ qodercli: { default: {} }, qoder: { default: { model: "different" } } }));
+    expect(() => readAgentPresets(f.root)).toThrow(/Both qoder and qodercli define/);
   } finally { f.cleanup(); }
 });
 

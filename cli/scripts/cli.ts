@@ -7,6 +7,7 @@ import { findRoot, loadProject } from "./lib/team/project.ts";
 import { mergeRows, mergeTask, retryMerge } from "./lib/integration/merge.ts";
 import { handoff } from "./lib/tasks/handoff.ts";
 import { init, InitError, parseRoleSpecs, readRolesFile } from "./lib/team/init.ts";
+import { checkAgentPresets, formatAgentChecks } from "./lib/runtime/agent-check.ts";
 import { formatAgentTests, runAgentPreset, testAgentPresets } from "./lib/runtime/agent-test.ts";
 import { sanitize } from "./lib/shared/text.ts";
 import { formatAgentPresets, listAgentPresets } from "./lib/team/agents.ts";
@@ -23,7 +24,7 @@ import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/
 import { createTask, editTask, findTask, TaskError } from "./lib/tasks/cards.ts";
 import { formatProblems, validateProject } from "./lib/team/validate.ts";
 import { formatConsoleFrame, initialState, renderOnce, renderStatusLine } from "./lib/ui/console-model.ts";
-import { isTerminal, type Project } from "./lib/shared/types.ts";
+import { canonicalKind, isTerminal, type Project } from "./lib/shared/types.ts";
 
 /** 所有碰 herdr 的命令都从这里拿，测试时能替换。 */
 function herdrClient(): Herdr {
@@ -46,7 +47,7 @@ Usage:
   herdr-team <command> [arguments] [options]
 
 Agents:
-  agents <list|run|test>  List presets, launch one, or test model responses
+  agents <list|check|run|test>  Inspect presets and CLIs, launch or test agents
 
 Team:
   init                 Save team configuration
@@ -768,31 +769,33 @@ async function cmdAgents(args: string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === undefined || ["--help", "-h", "help"].includes(sub)) {
     process.stdout.write(
-      "Usage: herdr-team agents <list|run|test> [options]\n\n" +
+      "Usage: herdr-team agents <list|check|run|test> [options]\n\n" +
       "  list [--kind K] [--json]           List configured presets\n" +
+      "  check [kind/preset] [--kind K]     Check local CLI installation, version and login\n" +
       "  run <kind/preset>                 Start a preset interactively\n" +
       "  test <kind/preset> [--json]        Test one model response\n" +
       "  test --all [--kind K] [--json]     Test all matching presets\n\n" +
-      "Options: --root DIR, --timeout-ms MS (test only, default 60000)\n" +
-      "Uses repository-root agents.json. Tests perform real model requests in temporary directories.\n" +
+      "Options: --root DIR, --json (except run), --timeout-ms MS (check: 5000, test: 60000)\n" +
+      "Uses repository-root agents.json. Checks send no model requests; unknown login status is not a login failure.\nTests perform real model requests in temporary directories.\n" +
       "Unsupported response-test adapters are reported as skipped. No team tasks or workspaces are created.\n",
     );
     return sub === undefined ? 2 : 0;
   }
-  if (!["list", "run", "test"].includes(sub)) throw new UsageError(`Unknown agents subcommand "${sub}" (list / run / test)`);
+  if (!["list", "check", "run", "test"].includes(sub)) throw new UsageError(`Unknown agents subcommand "${sub}" (list / check / run / test)`);
   const parsed = parseArgs(rest, ["root", "kind", "timeout-ms"]);
   if (parsed.flags.has("help") || parsed.pos.includes("-h")) return cmdAgents(["--help"]);
-  const allowedFlags = sub === "test" ? ["json", "all"] : sub === "list" ? ["json"] : [];
+  const allowedFlags = sub === "test" ? ["json", "all"] : ["list", "check"].includes(sub) ? ["json"] : [];
   const allowedValues = sub === "run" ? ["root"] : sub === "list" ? ["root", "kind"] : ["root", "kind", "timeout-ms"];
   for (const flag of parsed.flags) if (!allowedFlags.includes(flag)) throw new UsageError(`Unknown option --${flag} for agents ${sub}`);
   for (const key of parsed.values.keys()) if (!allowedValues.includes(key)) throw new UsageError(`Unknown option --${key} for agents ${sub}`);
   const selector = parsed.pos[0];
   if (sub === "list" && parsed.pos.length) throw new UsageError("agents list does not accept positional arguments");
+  if (sub === "check" && parsed.pos.length > 1) throw new UsageError("agents check accepts at most one kind/preset");
   if (sub === "run" && parsed.pos.length !== 1) throw new UsageError("agents run requires one kind/preset");
   if (sub === "test" && (parsed.pos.length > 1 || Boolean(selector) === parsed.flags.has("all"))) throw new UsageError("Use agents test <kind/preset> or agents test --all");
-  if (selector && parsed.values.has("kind")) throw new UsageError("Use either kind/preset or --all --kind K");
+  if (selector && parsed.values.has("kind")) throw new UsageError("Use either kind/preset or --kind K");
   if (selector && (selector.indexOf("/") <= 0 || selector.endsWith("/"))) throw new UsageError("Expected kind/preset, for example codex/dev");
-  const timeout = Number(parsed.values.get("timeout-ms") ?? 60000);
+  const timeout = Number(parsed.values.get("timeout-ms") ?? (sub === "check" ? 5000 : 60000));
   if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 2_147_483_647) throw new UsageError("--timeout-ms must be a positive integer up to 2147483647");
   const root = resolveConfigRoot(parsed.values.get("root"));
   let rows: ReturnType<typeof listAgentPresets>;
@@ -800,7 +803,7 @@ async function cmdAgents(args: string[]): Promise<number> {
     rows = listAgentPresets(root, parsed.values.get("kind"));
     if (selector) {
       const split = selector.indexOf("/");
-      rows = rows.filter(row => row.kind === selector.slice(0, split) && row.preset === selector.slice(split + 1));
+      rows = rows.filter(row => row.kind === canonicalKind(selector.slice(0, split)) && row.preset === selector.slice(split + 1));
       if (!rows.length) throw new Error(`Unknown agent preset ${selector} in agents.json`);
     }
   } catch (error) { throw new UsageError(error instanceof Error ? error.message : String(error)); }
@@ -814,6 +817,11 @@ async function cmdAgents(args: string[]): Promise<number> {
   const cancel = () => controller.abort();
   process.on("SIGINT", cancel); process.on("SIGTERM", cancel);
   try {
+    if (sub === "check") {
+      const results = await checkAgentPresets(rows, timeout, controller.signal);
+      out(parsed, results, formatAgentChecks(results));
+      return controller.signal.aborted ? 130 : results.some(row => row.issues.length || row.auth === "not-logged-in") ? 1 : 0;
+    }
     const results = await testAgentPresets(rows, timeout, controller.signal, parsed.flags.has("json") ? undefined : row => {
       process.stderr.write(`Testing ${sanitize(`${row.kind}/${row.preset}`)}...\n`);
     });
