@@ -5,6 +5,7 @@ import type { Project, RoleCard } from "../shared/types.ts";
 import { rememberRoleSession, scopeForTaskSession } from "../runtime/sessions.ts";
 import { deliveryFor, waitingDelivery } from "../dispatch/delivery.ts";
 import { taskScoped } from "../tasks/verification.ts";
+import { agentHarnessLabel } from "../team/agents.ts";
 
 /** Keep display fields separate from the unique name used to address an agent. */
 export function reportRoleSidebar(
@@ -27,14 +28,17 @@ export function reportRoleSidebar(
   const label = roleAgentLabel(role.name, isolatedTaskId);
   const labels = slot < 0 ? {} : badgeTokens(badge!, slot, label);
   delete labels.team_workspace; // The badge registry owns the stable number.
+  // A changed role preset applies to future starts, not an already-running ACP session.
+  const preset = role.kind === "acp" ? agent?.tokens?.team_preset || role.preset : undefined;
   const tokens = {
     ...labels,
     team_project: projectKey(project),
     team_role: role.name,
     team_session: isolatedTaskId === undefined ? "resident" : "task",
     team_task_id: isolatedTaskId ?? null,
-    team_harness: role.kind,
-    team_model: role.model ?? "default",
+    team_preset: preset ?? null,
+    team_harness: agentHarnessLabel(role.kind, preset),
+    team_model: (role.kind === "acp" ? agent?.tokens?.team_model : undefined) ?? role.model ?? "default",
     team_task: tasks.length ? tasks.map((id) => `#${id}`).join(", ") : null,
   };
   if (agent?.display_agent === label && Object.entries(tokens).every(([key, value]) =>

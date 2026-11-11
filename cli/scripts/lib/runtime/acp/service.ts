@@ -7,6 +7,7 @@ import { acpEntry, readAcpLaunch } from "./client.ts";
 import { openAcpSession } from "./session.ts";
 import { processAlive, withTeamLock } from "../state.ts";
 import { sanitize } from "../../shared/text.ts";
+import { agentHarnessLabel } from "../../team/agents.ts";
 
 export async function serveAcp(file: string) {
   const config = readAcpLaunch(file);
@@ -40,6 +41,7 @@ export async function serveAcp(file: string) {
     if (result.exitCode !== 0) process.stderr.write("Herdr state report failed; ACP execution state is unchanged.\n");
   };
   const metadata = () => herdr(["pane", "report-metadata", config.paneId, "--source", "herdr-team-acp", "--display-agent", config.name,
+    "--token", `team_preset=${config.preset ?? ""}`, "--token", `team_harness=${agentHarnessLabel("acp", config.preset)}`, "--token", `team_model=${config.agent.model}`,
     "--token", `team_acp_launch=${config.launchId}`, "--token", `team_acp_session=${session ? createHash("sha256").update(session.sessionId).digest("hex") : ""}`]);
   const render = (event: AcpRuntimeEvent) => {
     if (event.type === "text_delta") process.stdout.write(sanitize(event.text, true));

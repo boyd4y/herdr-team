@@ -144,7 +144,8 @@ model 可选，default 不覆盖；具名模型由 agent 广告的模型能力�
 cc-remote 支持通过 ACP 选择模型，例如在预设设置 `"model": "sonnet"`；使用 server 实际返回的模型 ID。
 修改预设用于下次启动，不自动切换正在运行的角色；团队 runner 当前未提供会话内 `/model` 交互命令。
 
-每个 resident 或任务角色会话由自己的 Herdr pane 承载，进入原生 agents 列表，显示角色、acp 和所选模型。
+每个 resident 或任务角色会话由自己的 Herdr pane 承载，进入原生 agents 列表，显示角色、`acp(<preset>)`（例如 `acp(remote)`）和所选模型。
+runner 上报实际启动的 preset；修改角色配置后，已运行会话仍显示原来的 preset，直到下次启动。
 派活复用团队任务和 delivery 去重，通过经过认证的本机 IPC 提交给 ACP，不用 Herdr 原生 agent prompt 或终端按键模拟。
 pane 展示回答及工具事件，也可直接输入消息；/cancel 取消当前请求，/quit 退出实例。
 permission_mode 可选 approve-reads（默认）、approve-all、deny-all；默认模式中需要决策的权限会显示 blocked，

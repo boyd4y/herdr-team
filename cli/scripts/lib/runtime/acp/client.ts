@@ -11,6 +11,7 @@ export interface AcpLaunch {
   version: 1;
   root: string;
   role: string;
+  preset?: string;
   taskId?: string;
   cwd: string;
   name: string;
@@ -60,7 +61,7 @@ export function startAcpAgent(project: Project, herdr: Herdr, role: RoleCard, pa
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   const nonce = randomUUID(), file = acpLaunchPath(project, nonce);
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  const config: AcpLaunch = { version: 1, root: realpathSync(project.root), role: role.name, taskId: scope?.taskId,
+  const config: AcpLaunch = { version: 1, root: realpathSync(project.root), role: role.name, preset: role.preset, taskId: scope?.taskId,
     cwd, paneId, name, launchId: nonce, socket: `/tmp/ht-acp-${nonce}.sock`, token: randomUUID(), stateDir, fresh, agent: launch.acp! };
   writeFileSync(file, JSON.stringify(config), { flag: "wx", mode: 0o600 });
   const quote = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;

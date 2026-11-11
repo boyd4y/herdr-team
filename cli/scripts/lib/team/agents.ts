@@ -19,6 +19,11 @@ export interface AgentPreset {
 
 export type AgentPresets = Record<string, Record<string, AgentPreset>>;
 
+/** ACP's executable is selected by its preset; include that identity in displays. */
+export function agentHarnessLabel(kind: string, preset?: string): string {
+  return kind === "acp" && preset ? `acp(${preset})` : kind;
+}
+
 const fields: Record<string, readonly string[]> = {
   codex: ["reasoning_effort", "daemon", "sandbox", "approval_policy"],
   claude: ["reasoning_effort", "permission_mode"],

@@ -12,6 +12,7 @@ import { projectKey } from "../scripts/lib/dispatch/team-scope.ts";
 import { processAlive } from "../scripts/lib/runtime/state.ts";
 import { createTask } from "../scripts/lib/tasks/cards.ts";
 import { enqueueTasks, pumpQueue } from "../scripts/lib/dispatch/queue.ts";
+import { reportRoleSidebar } from "../scripts/lib/ui/sidebar.ts";
 
 function fixture(root: string) {
   const log = join(root, "acp-calls.jsonl"), command = join(root, "fake-acp");
@@ -142,6 +143,7 @@ writeFileSync(file,JSON.stringify(rows));console.log(JSON.stringify({result:{}})
     };
     h.reportMetadata = (pane, _source, label, tokens = {}) => {
       const rows = h.agentList(), agent = rows.find(a => a.pane_id === pane);
+      expect(agent?.tokens).toMatchObject({ team_harness: "acp(remote)", team_preset: "remote" });
       if (agent) { agent.display_agent = label; agent.tokens = { ...agent.tokens, ...Object.fromEntries(Object.entries(tokens).filter(([, v]) => v !== null)) } as Record<string,string>; }
       writeFileSync(live, JSON.stringify(rows));
     };
@@ -151,6 +153,10 @@ writeFileSync(file,JSON.stringify(rows));console.log(JSON.stringify({result:{}})
     project = loadProject(f.root);
     const agent = h.agentList()[0]!, launch = acpLaunchPath(project, agent.tokens!.team_acp_launch!);
     expect(agent.agent).toBe("acp"); expect(agent.display_agent).toBe(`story-${task.id}`);
+    expect(agent.tokens).toMatchObject({ team_harness: "acp(remote)", team_preset: "remote" });
+    expect(JSON.parse(readFileSync(launch, "utf8")).preset).toBe("remote");
+    reportRoleSidebar(project, h, agent.pane_id!, { ...project.roles[0]!, preset: "next-preset", model: "next-model" }, task.id, agent);
+    expect(h.agentList()[0]?.tokens).toMatchObject({ team_harness: "acp(remote)", team_preset: "remote", team_model: "default" });
     expect(agent.tokens!.team_project).toBe(projectKey(project));
     expect(agent.tokens!.team_acp_session).toBeTruthy();
     expect(h.calls.some(call => call.startsWith("agent start"))).toBe(false);
