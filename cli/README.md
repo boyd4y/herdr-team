@@ -84,8 +84,9 @@ herdr-team agents test --all --kind claude --timeout-ms 30000 --json
 帮助页 Agents 与 Team、Tasks 并列。run 使用真实终端；test 在临时目录发送固定短提示，支持超时和 Ctrl+C，
 不创建团队任务或 workspace。当前 codex、claude、grok、kimi、qoder、acp 支持响应测试，其他工具明确跳过。
 测试询问模型名称，DETAIL 显示模型自报，JSON 提供 reportedModel；自报不作为后端身份验证。
-团队 ACP 角色使用 `kind: acp` 和结构化 command/args 预设，
-随包 acpx 运行时处理协议，Herdr 自定义 agent 接口提供原生列表及状态展示，无需安装全局 acpx。
+团队 ACP 角色使用 `kind: acp` 和结构化 command/args 预设，需要本机安装 ACPC；ACPC 提供完整终端界面和 ACP 连接。
+适配器通过同一会话的结构化接口投递任务、观察执行和审批事件，再上报 Herdr；不打印协议状态日志或模拟按键发任务。
+独立响应测试使用随包 acpx 运行时，无需安装全局 acpx。
 cc-remote 的主机、权限、会话恢复和完整配置见 [ACP 接入](../skill/references/agents.md#acp-与-cc-remote)。
 
 文件变化通过 Console 原生监听刷新，后续启动使用最新配置，运行中会话不自动重启。

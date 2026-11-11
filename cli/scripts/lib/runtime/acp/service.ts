@@ -1,10 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
-import type { AcpPermissionDecision, AcpPermissionRequest, AcpRuntimeEvent } from "acpx/runtime";
 import { acpEntry, readAcpLaunch } from "./client.ts";
-import { openAcpSession } from "./session.ts";
+import { AcpcRequestError, openAcpcTui } from "./tui.ts";
 import { processAlive, withTeamLock } from "../state.ts";
 import { sanitize } from "../../shared/text.ts";
 import { agentHarnessLabel } from "../../team/agents.ts";
@@ -25,29 +23,27 @@ export async function serveAcp(file: string) {
     writeFileSync(owner, JSON.stringify({ pid: process.pid, token: config.token }), { flag: "wx", mode: 0o600 });
   });
   let state = "starting", error: string | undefined, seq = Date.now(), closing = false;
-  let session: Awaited<ReturnType<typeof openAcpSession>> | undefined;
-  let opening: ReturnType<typeof openAcpSession> | undefined;
+  let session: Awaited<ReturnType<typeof openAcpcTui>> | undefined;
+  let opening: ReturnType<typeof openAcpcTui> | undefined;
   const startup = new AbortController();
-  let permission: { resolve: (value: AcpPermissionDecision) => void; request: AcpPermissionRequest } | undefined;
+  const log = (message: string) => appendFileSync(join(config.stateDir, "client.log"), `${new Date().toISOString()} ${sanitize(message)}\n`, { mode: 0o600 });
   const herdr = (args: string[]) => Bun.spawnSync([process.env.HERDR_BIN_PATH || "herdr", ...args], { stdout: "pipe", stderr: "pipe", timeout: 2000 });
   const report = (next: string, message?: string) => {
     state = next;
+    if (next === "ready") error = undefined;
+    else if (message) error = message;
     const semantic = next === "ready" ? "idle" : ["failed", "blocked"].includes(next) ? "blocked" : "working";
     const args = ["pane", "report-agent", config.paneId, "--source", "herdr-team:acp", "--agent", "acp", "--state", semantic, "--seq", String(++seq)];
     if (message) args.push("--message", sanitize(message).slice(0, 300));
     const resume = ["bun", acpEntry, "serve", file];
     if (session && resume.every(arg => !/[\x00-\x1f\x7f']/.test(arg))) args.push("--agent-session-id", session.sessionId, "--", ...resume);
     const result = herdr(args);
-    if (result.exitCode !== 0) process.stderr.write("Herdr state report failed; ACP execution state is unchanged.\n");
+    if (result.exitCode !== 0) log("Herdr state report failed; ACP execution state is unchanged.");
+    if (session) metadata();
   };
   const metadata = () => herdr(["pane", "report-metadata", config.paneId, "--source", "herdr-team-acp", "--display-agent", config.name,
-    "--token", `team_preset=${config.preset ?? ""}`, "--token", `team_harness=${agentHarnessLabel("acp", config.preset)}`, "--token", `team_model=${config.agent.model}`,
+    "--token", `team_preset=${config.preset ?? ""}`, "--token", `team_harness=${agentHarnessLabel("acp", config.preset)}`, "--token", `team_model=${session?.model ?? config.agent.model}`,
     "--token", `team_acp_launch=${config.launchId}`, "--token", `team_acp_session=${session ? createHash("sha256").update(session.sessionId).digest("hex") : ""}`]);
-  const render = (event: AcpRuntimeEvent) => {
-    if (event.type === "text_delta") process.stdout.write(sanitize(event.text, true));
-    else if (event.type === "tool_call") process.stdout.write(`\n[tool] ${sanitize(event.title ?? event.text)} (${sanitize(event.status ?? "running")})\n`);
-    else if (event.type === "status" && event.text) process.stdout.write(`\n[status] ${sanitize(event.text)}\n`);
-  };
   const submit = async (id: string, text: string) => {
     const receipt = join(config.stateDir, `delivery-${createHash("sha256").update(id).digest("hex")}.json`);
     const hash = createHash("sha256").update(text).digest("hex");
@@ -60,27 +56,29 @@ export async function serveAcp(file: string) {
     const save = (value: string) => writeFileSync(receipt, JSON.stringify({ id, hash, state: value }), { mode: 0o600 });
     writeFileSync(receipt, JSON.stringify({ id, hash, state: "sending" }), { flag: "wx", mode: 0o600 });
     report("working");
-    process.stdout.write(`\n[request ${sanitize(id)}]\n`);
-    let turn: ReturnType<typeof session.start>;
-    try { turn = session.start(text, id, render); }
-    catch (failure) { error = failure instanceof Error ? failure.message : String(failure); report("blocked", error); return { ok: false, code: "acp_submission_uncertain", error }; }
+    let turn: Awaited<ReturnType<typeof session.start>>;
+    try { turn = await session.start(text); }
+    catch (failure) {
+      error = failure instanceof Error ? failure.message : String(failure);
+      if (failure instanceof AcpcRequestError) {
+        unlinkSync(receipt); report(/already running/.test(error) ? "working" : "blocked", error);
+        return { ok: false, code: "agent_not_ready", error };
+      }
+      report("blocked", error); return { ok: false, code: "acp_submission_uncertain", error };
+    }
     // Start consuming immediately; prompt admission and turn completion are separate.
     const finished = turn.done.then(result => {
-      if (result.status === "completed") { save("finished"); error = undefined; report("ready"); }
-      else { error = result.status === "failed" ? result.error.message : "Turn cancelled; verify task state before continuing"; report("blocked", error); }
-      process.stdout.write(`\n[${result.status}]${error ? ` ${sanitize(error)}` : ""}\n> `);
-    }).catch(failure => { error = failure instanceof Error ? failure.message : String(failure); report("blocked", error); process.stderr.write(`${sanitize(error)}\n`); });
+      if (result.status === "completed") { save("finished"); error = undefined; }
+      else { error = result.error?.message ?? "Turn cancelled; verify task state before continuing"; log(error); }
+    }).catch(failure => { error = failure instanceof Error ? failure.message : String(failure); report("blocked", error); log(error); });
     void finished;
-    try { await turn.started; if (!existsSync(receipt) || JSON.parse(readFileSync(receipt, "utf8")).state !== "finished") save("submitted"); return { ok: true }; }
-    catch (failure) { return { ok: false, code: "acp_submission_uncertain", error: failure instanceof Error ? failure.message : String(failure) }; }
+    if (JSON.parse(readFileSync(receipt, "utf8")).state !== "finished") save("submitted");
+    return { ok: true };
   };
-  const lines = createInterface({ input: process.stdin, terminal: false });
   const shutdown = async () => {
     if (closing) return;
     closing = true;
     startup.abort();
-    permission?.resolve({ outcome: "cancel" }); permission = undefined;
-    lines.close();
     server.stop(true);
     const deadline = setTimeout(() => process.exit(1), 5000); deadline.unref();
     try { if (opening) await opening.then(value => value.close(), () => {}); }
@@ -109,37 +107,21 @@ export async function serveAcp(file: string) {
   });
   chmodSync(config.socket, 0o600);
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => void shutdown());
-  lines.on("line", line => {
-    if (permission) {
-      const pending = permission, option = pending.request.raw.options[Number(line.trim()) - 1];
-      permission = undefined;
-      report("working");
-      pending.resolve(option ? { outcome: "selected", optionId: option.optionId } : { outcome: "cancel" });
-    } else if (line.trim() === "/quit") void shutdown();
-    else if (line.trim() === "/cancel") void session?.cancel();
-    else if (line.trim()) void submit(`manual-${randomUUID()}`, line).then(result => { if (!result.ok) process.stderr.write(`${sanitize(result.error ?? "Request refused")}\n`); });
-  });
-  lines.on("close", () => { if (!closing) void shutdown(); });
   report("starting"); metadata();
   try {
-    opening = openAcpSession({ ...config, fresh: config.fresh && !existsSync(`${file}.started`) }, async (request, context) => {
-      if (config.agent.permissionMode === "approve-all" || config.agent.permissionMode === "deny-all" || request.inferredKind === "read" || request.inferredKind === "search") return undefined;
-      if (permission) return { outcome: "cancel" };
-      report("blocked", request.raw.toolCall.title ?? undefined);
-      process.stdout.write(`\nPermission: ${sanitize(request.raw.toolCall.title ?? "Agent action")}\n${request.raw.options.map((o, i) => `${i + 1}. ${sanitize(o.name)}`).join("\n")}\nChoose a number (anything else cancels): `);
-      return new Promise<AcpPermissionDecision>(resolve => {
-        const cancel = () => { if (permission?.request === request) permission = undefined; resolve({ outcome: "cancel" }); };
-        context.signal.addEventListener("abort", cancel, { once: true });
-        permission = { request, resolve: value => { context.signal.removeEventListener("abort", cancel); resolve(value); } };
-        if (context.signal.aborted) cancel();
-      });
-    }, startup.signal);
+    opening = openAcpcTui({ ...config, fresh: config.fresh && !existsSync(`${file}.started`) }, report, startup.signal);
     session = await opening;
     if (closing) return;
     writeFileSync(`${file}.started`, "confirmed", { mode: 0o600 });
     metadata();
-    report("ready");
+    report(state);
     herdr(["agent", "rename", config.paneId, config.name]);
-    process.stdout.write(`ACP · ${sanitize(config.name)} · ${session.resumed ? "resumed" : "connected"}\nSession: ${sanitize(session.sessionId)}\n${session.resumable ? "" : "Agent does not advertise session resume; the next start opens a new session.\n"}Type a message, /cancel or /quit.\n> `);
-  } catch (failure) { if (closing) return; error = failure instanceof Error ? failure.message : String(failure); report("failed", error); process.stderr.write(`ACP startup failed: ${sanitize(error)}\nType /quit to leave this pane.\n`); }
+    void session.exit.then(shutdown);
+  } catch (failure) {
+    if (closing) return;
+    error = failure instanceof Error ? failure.message : String(failure);
+    report("failed", error); writeFileSync(`${file}.error`, error, { mode: 0o600 });
+    process.stderr.write(`ACP startup failed: ${sanitize(error)}\n`);
+    void shutdown();
+  }
 }

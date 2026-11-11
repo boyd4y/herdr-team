@@ -1,12 +1,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline/promises";
 import type { PresetRow } from "../agent-command.ts";
 import { agentLaunch } from "../agent-command.ts";
 import { resolveAgentPreset } from "../../team/agents.ts";
-import { openAcpSession } from "./session.ts";
-import { sanitize } from "../../shared/text.ts";
+import { openAcpcTui } from "./tui.ts";
+import { agentHarnessLabel } from "../../team/agents.ts";
+import { realHerdr } from "../herdr.ts";
 
 export async function runAcpInteractive(root: string, row: PresetRow): Promise<number> {
   const settings = resolveAgentPreset({ acp: { [row.preset]: row.config } }, "acp", row.preset);
@@ -15,40 +15,35 @@ export async function runAcpInteractive(root: string, row: PresetRow): Promise<n
   // A separate process applies preset environment overrides without mutating this CLI.
   const { spawn } = await import("node:child_process");
   const { acpEntry } = await import("./client.ts");
-  const child = spawn(process.execPath, [acpEntry, "interactive", root, JSON.stringify({ ...settings.acp, command: executable })], { cwd: root, env: { ...process.env, ...settings.env }, stdio: "inherit" });
+  const child = spawn(process.execPath, [acpEntry, "interactive", root, JSON.stringify({ ...settings.acp, command: executable, preset: row.preset })], { cwd: root, env: { ...process.env, ...settings.env }, stdio: "inherit" });
   const cancel = () => child.kill("SIGINT");
   process.on("SIGINT", cancel);
   try { return await new Promise<number>((resolve, reject) => { child.once("error", reject); child.once("close", code => resolve(code ?? 1)); }); }
   finally { process.off("SIGINT", cancel); }
 }
 
-export async function interactiveAcp(cwd: string, agent: Parameters<typeof openAcpSession>[0]["agent"]): Promise<number> {
+export async function interactiveAcp(cwd: string, settings: Parameters<typeof openAcpcTui>[0]["agent"] & { preset?: string }): Promise<number> {
+  const { preset, ...agent } = settings;
   const stateDir = mkdtempSync(join(tmpdir(), "herdr-team-acp-run-"));
-  const input = createInterface({ input: process.stdin, output: process.stdout });
-  let session: Awaited<ReturnType<typeof openAcpSession>> | undefined;
+  let session: Awaited<ReturnType<typeof openAcpcTui>> | undefined;
   const startup = new AbortController();
-  const close = () => { startup.abort(); input.close(); void session?.close(); };
+  const close = () => { startup.abort(); void session?.close(); };
+  const pane = process.env.HERDR_ENV === "1" ? process.env.HERDR_PANE_ID : undefined;
+  let seq = Date.now();
+  const report = (state: string) => {
+    if (!pane) return;
+    Bun.spawnSync([process.env.HERDR_BIN_PATH || "herdr", "pane", "report-agent", pane, "--source", "herdr-team:acp-manual", "--agent", "acp", "--state", state === "ready" ? "idle" : ["blocked", "failed"].includes(state) ? "blocked" : "working", "--seq", String(++seq)], { stdout: "ignore", stderr: "ignore", timeout: 2000 });
+    try { realHerdr().reportMetadata(pane, "herdr-team-acp-manual", agentHarnessLabel("acp", preset), { team_harness: agentHarnessLabel("acp", preset), team_preset: preset ?? null, team_model: session?.model ?? agent.model }); } catch { /* Keep the TUI's terminal intact if Herdr reporting fails. */ }
+  };
   process.on("SIGINT", close); process.on("SIGTERM", close);
   try {
-    session = await openAcpSession({ cwd, agent, stateDir, fresh: true }, async (request) => {
-      if (agent.permissionMode !== "approve-reads" || ["read", "search"].includes(request.inferredKind ?? "")) return undefined;
-      const answer = await input.question(`\n${sanitize(request.raw.toolCall.title ?? "Permission required")}\n${request.raw.options.map((o, i) => `${i + 1}. ${sanitize(o.name)}`).join("\n")}\nChoose: `);
-      const option = request.raw.options[Number(answer) - 1];
-      return option ? { outcome: "selected", optionId: option.optionId } : { outcome: "cancel" };
-    }, startup.signal);
-    process.stdout.write(`ACP connected: ${sanitize(session.sessionId)}. Type /quit to exit.\n`);
-    while (true) {
-      const text = await input.question("> ");
-      if (text.trim() === "/quit") break;
-      if (!text.trim()) continue;
-      const turn = session.start(text, crypto.randomUUID(), event => {
-        if (event.type === "text_delta") process.stdout.write(sanitize(event.text, true));
-        else if (event.type === "tool_call") process.stdout.write(`\n[tool] ${sanitize(event.title ?? event.text)}\n`);
-      });
-      await turn.started;
-      const result = await turn.done;
-      process.stdout.write(`\n[${result.status}]\n`);
-    }
+    report("starting");
+    session = await openAcpcTui({ cwd, agent, preset, stateDir, fresh: true, bound: false }, report, startup.signal);
+    await session.exit;
     return 0;
-  } finally { input.close(); await session?.close(); rmSync(stateDir, { recursive: true, force: true }); process.off("SIGINT", close); process.off("SIGTERM", close); }
+  } finally {
+    await session?.close();
+    if (pane) Bun.spawnSync([process.env.HERDR_BIN_PATH || "herdr", "pane", "release-agent", pane, "--source", "herdr-team:acp-manual", "--agent", "acp", "--seq", String(++seq)], { stdout: "ignore", stderr: "ignore", timeout: 2000 });
+    rmSync(stateDir, { recursive: true, force: true }); process.off("SIGINT", close); process.off("SIGTERM", close);
+  }
 }

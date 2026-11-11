@@ -11,6 +11,8 @@ lead 创建/调整任务、管理角色和会话、dispatch、处理 queue retry
 不同任务各有 worktree/workspace 和角色会话；同一任务所有角色共用 checkout，逐棒执行。
 常驻对话不占任务执行槽，lead 是唯一常驻串行编排者。测试/审查接手后，开发者暂停写入。
 显示名称可能与内部 agent 名不同，使用任务给出的 delivery ID 和团队 root，不用裸角色名跨项目发送。
+任务消息在对应的 `<role>-<task-id>` 会话中显示，常驻角色 tab 不占任务执行槽，也不会收到该任务的派活消息。
+ACP 角色也由 team dispatch/handoff 投递到对应的 ACPC 界面；不要用 Herdr 原生 agent prompt 或复制终端输入来替代。
 
 ## 拆分与分配
 

@@ -133,19 +133,24 @@ official sources and refreshing presets; CLI never fetches models. Read project
 presets on the next start without reinstalling, while preserving running sessions,
 custom role prompts and active task records. Presets do not grant native Herdr
 support to an unsupported harness. Do not masquerade custom agents as Codex or bypass Herdr.
-ACP roles are an explicit supported backend: use kind acp with command/args presets,
-the bundled acpx runtime for protocol, and Herdr's custom-agent reporting API for
-identity, state and restore. Keep one foreground runner per scoped session. Send
-assignments through its authenticated local channel, never native agent prompt or
-terminal keystrokes. Reuse existing task/delivery records and preserve uncertain
-submission handling. Exact resume failures must not silently create a conversation.
+ACP roles use kind acp with command/args presets. ACPC owns their complete terminal
+UI and ACP connection; the adapter observes its structured app-server events and
+submits tasks through that same session. Keep one client per scoped session, use
+Herdr's custom-agent reporting API, and retain the authenticated local delivery
+channel. Do not build another chat UI, print protocol updates as transcript lines,
+or submit assignments through terminal keystrokes or native agent prompt. Keep
+bundled acpx for isolated headless response tests. Reuse existing task/delivery
+records and preserve uncertain submission handling. Exact resume failures must
+not silently create a conversation.
 Keep credentials in native user configuration or external environment, not shared
 presets. Existing explicit role launch settings remain readable; migrate them only
 when requested, preserving custom flags, environment and prompt contents.
 
 Standalone `agents check`, `agents run` and `agents test` are explicit local preset checks, separate
 from team orchestration. They may invoke native binaries directly for interactive
-diagnostics. ACPC is a standalone manual client, not a team harness or preset type.
+diagnostics. ACPC is the internal ACP UI client and can also be used manually; it
+is not a team harness or preset type. Inside Herdr, standalone ACP runs may report
+their own display identity and lifecycle without acquiring a team assignment.
 Do not use standalone diagnostics as a dispatch fallback, bind them to
 roles or save team resume references. Response tests use isolated temporary working
 directories, bounded subprocess output, timeouts and cancellation cleanup; report

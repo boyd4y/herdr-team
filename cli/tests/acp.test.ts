@@ -13,6 +13,8 @@ import { processAlive } from "../scripts/lib/runtime/state.ts";
 import { createTask } from "../scripts/lib/tasks/cards.ts";
 import { enqueueTasks, pumpQueue } from "../scripts/lib/dispatch/queue.ts";
 import { reportRoleSidebar } from "../scripts/lib/ui/sidebar.ts";
+import { fakeAcpc } from "./fixtures/acpc.ts";
+import { openAcpcTui } from "../scripts/lib/runtime/acp/tui.ts";
 
 function fixture(root: string) {
   const log = join(root, "acp-calls.jsonl"), command = join(root, "fake-acp");
@@ -114,6 +116,7 @@ test("ACP task delivery registers a visible Herdr agent, deduplicates requests a
   try {
     process.env.HERDR_PLUGIN_STATE_DIR = join(f.root, "runtime");
     const server = fixture(f.root), native = join(f.root, "fake-herdr"), live = join(f.root, "live.json");
+    const tui = fakeAcpc(f.root);
     writeFileSync(live, "[]");
     writeFileSync(native, `#!${process.execPath}
 import {readFileSync,writeFileSync} from "node:fs";
@@ -139,7 +142,7 @@ writeFileSync(file,JSON.stringify(rows));console.log(JSON.stringify({result:{}})
     h.worktreeList = () => h.branches.size ? [...h.branches].map(([id, branch]) => ({ branch, path: checkout, open_workspace_id: id })) : [];
     h.paneRun = (pane, command) => {
       children.push(Bun.spawn(["/bin/sh", "-c", `exec ${command}`], { cwd: f.root,
-        env: { ...process.env, HERDR_ENV: "1", HERDR_PANE_ID: pane, HERDR_BIN_PATH: native }, stdin: "pipe", stdout: "pipe", stderr: "pipe" }));
+        env: { ...process.env, ...tui.env, HERDR_ENV: "1", HERDR_PANE_ID: pane, HERDR_BIN_PATH: native }, stdin: "pipe", stdout: "pipe", stderr: "pipe" }));
     };
     h.reportMetadata = (pane, _source, label, tokens = {}) => {
       const rows = h.agentList(), agent = rows.find(a => a.pane_id === pane);
@@ -161,22 +164,26 @@ writeFileSync(file,JSON.stringify(rows));console.log(JSON.stringify({result:{}})
     expect(agent.tokens!.team_acp_session).toBeTruthy();
     expect(h.calls.some(call => call.startsWith("agent start"))).toBe(false);
     const delivery = project.tasks[0]!.meta.delivery as { id: string };
-    const promptsBefore = server.rows().filter(r => r.method === "prompt").length;
+    const promptsBefore = tui.rows().filter(r => r.method === "prompt").length;
     // A repeated accepted delivery acknowledges the same request, never resubmits it.
     expect(requestAcp(launch, "prompt", { id: delivery.id, text: "different prompt" }).code).toBe("acp_delivery_uncertain");
     const ready = async () => { for (let i=0;i<40;i++) { if (requestAcp(launch,"status").state==="ready") return; await Bun.sleep(50); } throw new Error("ACP did not become ready"); };
     await ready();
     expect(() => startAcpAgent(project,h,project.roles[0]!,"w101:p2","duplicate",{taskId:task.id,cwd:checkout})).toThrow("live owner");
     expect(() => promptAcpAgent(project,project.roles[0]!,h.agentList()[0]!,"9999","wrong-scope","wrong task")).toThrow("does not match");
-    expect(server.rows().filter(r => r.method === "prompt")).toHaveLength(promptsBefore);
+    expect(tui.rows().filter(r => r.method === "prompt")).toHaveLength(promptsBefore);
     promptAcpAgent(project, project.roles[0]!, h.agentList()[0]!, task.id, "permission-test", "permission");
     for(let i=0;i<40&&requestAcp(launch,"status").state!=="blocked";i++)await Bun.sleep(25);
     expect(h.agentList()[0]!.agent_status).toBe("blocked");
     children[0]!.stdin!.write("1\n");
     await ready();
-    expect(server.rows().find(r => r.method === "permission").params.outcome.optionId).toBe("allow");
+    expect(tui.rows().find(r => r.method === "permission").params.option).toBe("1");
     expect(requestAcp(launch,"prompt",{id:"permission-test",text:"permission"}).ok).toBe(true);
-    expect(server.rows().filter(r => r.method === "prompt")).toHaveLength(promptsBefore+1);
+    expect(tui.rows().filter(r => r.method === "prompt")).toHaveLength(promptsBefore+1);
+    children[0]!.stdin!.write("new-session\n");
+    for(let i=0;i<40&&requestAcp(launch,"status").state!=="blocked";i++)await Bun.sleep(25);
+    expect(requestAcp(launch,"prompt",{id:"wrong-conversation",text:"Do not submit"}).code).toBe("agent_not_ready");
+    expect(tui.rows().filter(r => r.method === "prompt")).toHaveLength(promptsBefore+1);
     requestAcp(launch,"stop");
     await children[0]!.exited;
     expect(h.agentList()).toHaveLength(0);
@@ -186,3 +193,44 @@ writeFileSync(file,JSON.stringify(rows));console.log(JSON.stringify({result:{}})
     f.cleanup();
   }
 }, 20000);
+
+test("ACPC keeps exact resume, scoped config and immediate task acknowledgements", async () => {
+  const f = makeProject(), oldPath = process.env.PATH;
+  let session: Awaited<ReturnType<typeof openAcpcTui>> | undefined;
+  try {
+    const tui = fakeAcpc(f.root); process.env.PATH = tui.env.PATH;
+    const config = { cwd: realpathSync(f.root), stateDir: join(f.root, "tui-state"), fresh: false, preset: "remote", agent: { command: "cc-remote", args: ["--host", "ssh-host"], model: "sonnet", permissionMode: "deny-all" } };
+    const states: string[] = [];
+    session = await openAcpcTui(config, state => states.push(state));
+    const id = session.sessionId;
+    expect(session.model).toBe("sonnet");
+    const launch = tui.rows().find(row => row.method === "launch");
+    expect(launch.params.config.agents[0]).toMatchObject({ command: "cc-remote", args: ["--host", "ssh-host"] });
+    expect(launch.params.home).not.toBe(process.env.ACPC_HOME);
+    const turn = await session.start("immediate");
+    expect((await turn.done).status).toBe("completed");
+    const permission = await session.start("permission");
+    expect((await permission.done).status).toBe("completed");
+    expect(tui.rows().find(row => row.method === "permission").params.decision).toBe("decline");
+    expect(states).toContain("blocked");
+    await session.close(); session = undefined;
+    expect(existsSync(launch.params.home)).toBe(false);
+    session = await openAcpcTui(config, () => {});
+    expect(session.resumed).toBe(true); expect(session.sessionId).toBe(id);
+    expect(tui.rows().filter(row => row.method === "launch").at(-1).params.args).toContain(id);
+    await session.close(); session = undefined;
+    writeFileSync(join(config.stateDir, "session.json"), JSON.stringify({ cwd: config.cwd, agent: config.agent, sessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", resumable: true }));
+    session = await openAcpcTui(config, () => {});
+    expect(session.resumed).toBe(true);
+    expect(session.sessionId).toBe("f1443311-1375-5eb9-a531-54796482cfa1");
+    await session.close(); session = undefined;
+    const saved = readFileSync(join(config.stateDir, "session.json"), "utf8");
+    await expect(openAcpcTui({ ...config, agent: { ...config.agent, model: "invalid" } }, () => {})).rejects.toThrow("scope changed");
+    await expect(openAcpcTui({ ...config, fresh: true, agent: { ...config.agent, model: "invalid" } }, () => {})).rejects.toThrow("Unsupported model");
+    writeFileSync(join(f.root, "reject-tui-resume"), "yes");
+    await expect(openAcpcTui(config, () => {})).rejects.toThrow("ACPC exited");
+    expect(readFileSync(join(config.stateDir, "session.json"), "utf8")).toBe(saved);
+  } finally {
+    await session?.close(); if (oldPath === undefined) delete process.env.PATH; else process.env.PATH = oldPath; f.cleanup();
+  }
+});

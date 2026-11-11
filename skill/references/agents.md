@@ -43,6 +43,7 @@ herdr-team agents test --all --kind claude --timeout-ms 30000 --json
 
 run 在当前终端交互启动预设，使用项目根为工作目录，保留原生登录与交互；需要真实终端，不接受 JSON 输出。
 这是独立的预设调试，不绑定角色、不创建团队任务或 workspace，也不保存 team resume 引用。
+ACP run 使用 ACPC 完整界面；在 Herdr 内运行时上报自己的 `acp(<preset>)` 身份和状态，在普通终端内则只运行界面。
 
 响应测试会真实调用所选模型，按预设串行询问使用的模型，要求一行回复确认标记及模型名称；不知道时允许回答 unknown。
 MODEL 列保留预设选择，DETAIL 显示 Self-reported model；JSON 另有 reportedModel 字段。模型自报仅供参考，不作为实际后端身份验证。
@@ -115,8 +116,10 @@ default 跟随工具本身的账号与本机设置；不要添加模型覆盖变
 
 ## ACP 与 cc-remote
 
-团队通过 `acp` 类型直接接入 ACP agent，使用随插件打包的 acpx 运行时，无需全局安装 acpx，也不需要修改 Herdr。
-ACPC 仅供用户独立手动使用，不属于团队预设或角色类型。已有项目如包含 acpc 预设，按用户意图替换为明确的 ACP server command/args；不自动将 alias 转成命令，也不读取或修改 ACPC 配置。
+团队通过 `acp` 类型接入 ACP agent，由本机 [ACPC](https://github.com/AkaraChen/acpc) 提供完整 TUI；先安装 ACPC 并确保 `acpc` 在 PATH 上。
+ACPC 是内部界面客户端，也能独立手动使用，不属于团队预设或角色类型。已有项目如包含 acpc 预设，按用户意图替换为明确的 ACP server command/args；不自动将 alias 转成命令。
+每次启动从项目预设生成隔离的 ACPC 配置，不改用户的 ACPC 配置。身份、工作/空闲、审批阻塞及模型变化按结构化事件上报 Herdr。
+独立响应测试仍使用随插件打包的 acpx，无需全局安装 acpx，也不需要修改 Herdr。
 项目 agents.json 添加结构化预设，再注册角色：
 
 ```json
@@ -142,19 +145,21 @@ command 是可执行文件名或路径，args 中每项是独立参数，不在 
 CLI 预设校验不连接 SSH；check 检查 ACP server 的安装和版本，登录显示 unknown；test 才实际发起 ACP 请求。
 model 可选，default 不覆盖；具名模型由 agent 广告的模型能力校验，不硬编码列表。
 cc-remote 支持通过 ACP 选择模型，例如在预设设置 `"model": "sonnet"`；使用 server 实际返回的模型 ID。
-修改预设用于下次启动，不自动切换正在运行的角色；团队 runner 当前未提供会话内 `/model` 交互命令。
+修改预设用于下次启动，不自动切换正在运行的角色；运行中的 ACPC 界面可通过 `/model` 和 `/options` 使用 agent 广告的设置。
 
 每个 resident 或任务角色会话由自己的 Herdr pane 承载，进入原生 agents 列表，显示角色、`acp(<preset>)`（例如 `acp(remote)`）和所选模型。
 runner 上报实际启动的 preset；修改角色配置后，已运行会话仍显示原来的 preset，直到下次启动。
-派活复用团队任务和 delivery 去重，通过经过认证的本机 IPC 提交给 ACP，不用 Herdr 原生 agent prompt 或终端按键模拟。
-pane 展示回答及工具事件，也可直接输入消息；/cancel 取消当前请求，/quit 退出实例。
+派活复用团队任务和 delivery 去重，通过经过认证的本机 IPC 进入 ACPC 当前会话的结构化接口，不用 Herdr 原生 agent prompt 或终端按键模拟。
+Markdown、流式输出、工具和 diff、上下文状态及审批交互均由 ACPC 展示；不要把 usage/commands 等协议更新打印成聊天正文。
+启动只做一次无工具的就绪确认，不自动开展项目任务。之后按 ACPC 的输入、取消和退出方式交互。
 permission_mode 可选 approve-reads（默认）、approve-all、deny-all；默认模式中需要决策的权限会显示 blocked，
-在该 pane 输入选项编号后继续，未选择不会自动批准。未支持的认证或交互形式会明确失败，不能伪装成任务完成。
+在 ACPC 的审批界面选择后继续，未选择不会自动批准。未支持的认证或交互形式会明确失败，不能伪装成任务完成。
 
-启动确认超时为 30 秒，不把这个期限用于长时间任务。仅保存 ACP server 已确认的会话 ID，并按项目、角色、任务、cwd 和启动预设隔离。
-server 声明支持 load/resume 时恢复精确 ID；失败保留原记录并停止，不改成新会话。确认需要丢弃上下文后由用户明确 fresh 启动；
-`up --fresh` 只影响尚未运行的 resident 实例。server 未声明恢复能力时，后续启动明确创建新会话。
-实例退出会取消本实例的活动请求、回收其协议连接并释放 Herdr 身份；任务是否交棒、结束、清理仍由 Skill 和既有 CLI 操作决定。
+启动确认超时为 30 秒，不把这个期限用于长时间任务。仅保存 ACPC 确认的会话 ID，并按项目、角色、任务、cwd 和启动预设隔离。
+恢复精确会话需要 agent 支持 ACPC 所需的 session/list 与 load/resume；失败保留原记录并停止，不改成新会话。
+旧 headless runner 已确认的 ACP 会话 ID 按 ACPC 的确定性映射恢复；不猜最近会话。需要丢弃上下文时由用户明确 fresh 启动；
+`up --fresh` 只影响尚未运行的 resident 实例。绑定任务的界面手动切到另一会话后会暂停自动派活，重启原实例恢复原会话；不会把任务送进其他对话。
+实例退出会回收本实例的客户端、协议连接并释放 Herdr 身份；任务是否交棒、结束、清理仍由 Skill 和既有 CLI 操作决定。
 恢复状态及本机 IPC 记录属于机器本地运行数据，不提交 Git；不与其他 ACP 客户端的会话记录互通。
 
 ## 生效与已有项目

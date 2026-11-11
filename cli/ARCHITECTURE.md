@@ -41,8 +41,10 @@ CLI 不依赖原始 checkout 或 agent 已安装的 Skill 路径；Skill 安装�
 模块互相使用明确的函数和类型，不导入 CLI 命令入口。不要增加旧路径 re-export、兼容 workflow 引擎或通用 helpers 桶。
 项目目录归属核对和失败恢复属于现行可靠性机制，不是可因清理旧格式而移除的逻辑。
 
-`runtime/acp/` 是显式 ACP 后端：client 定位 scoped 实例并提交 delivery；service 在 Herdr pane 内承载生命周期及权限输入；
-session 使用随包 acpx 运行时处理协议与精确恢复；interactive 提供独立预设调试。`scripts/acp-agent.ts` 只是内部进程入口。
+`runtime/acp/` 是显式 ACP 后端：client 定位 scoped 实例并提交 delivery；service 管本机认证通道、回执和 Herdr 上报；
+tui 启动真实 ACPC，通过其同一个 app-server 会话投递任务并观察状态，ACPC 负责终端、渲染、输入、工具展示和审批。
+session 使用随包 acpx 运行时提供独立无界面响应测试；interactive 提供 ACPC 预设调试及可选 Herdr 状态上报。
+不保留第二套 readline 聊天界面。`scripts/acp-agent.ts` 只是内部进程入口。
 原生 agent 仍走 Herdr API；ACP 在自己的传输上派活，通过官方自定义 agent 接口上报 UI 状态，不增加工作流或隐式切换后端。
 
 ## 当前 TUI 实现

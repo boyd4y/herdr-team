@@ -1,6 +1,6 @@
 {
   "name": "herdr-team",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "Coordinate Herdr agent teams with shared TEAM.md and agent presets, plus local .herdr/ role and task records.",
   "type": "module",
   "bin": {
@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/ws": "8.18.2",
     "typescript": "^5.9.3"
   },
   "engines": {
@@ -27,6 +28,9 @@
   "private": true,
   "dependencies": {
     "@opentui/core": "0.6.6",
-    "acpx": "0.22.0"
+    "acpx": "0.22.0",
+    "smol-toml": "1.9.1",
+    "uuid": "14.0.3",
+    "ws": "8.22.2"
   }
 }
