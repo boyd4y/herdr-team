@@ -26,13 +26,14 @@ if(mode === "hang") {
  setInterval(()=>{},1000);
 } else if(mode !== "interactive") {
  const output = args.indexOf("--output-last-message");
- if(output >= 0 && mode !== "banner") writeFileSync(args[output+1],"HERDR_TEAM_OK");
- console.log("HERDR_TEAM_OK");
+ const reply = mode === "malformed" ? "HERDR_TEAM_OK" : "HERDR_TEAM_OK model: " + (mode === "unknown" ? "unknown" : "fixture-model");
+ if(output >= 0 && mode !== "banner") writeFileSync(args[output+1],reply);
+ console.log(reply);
 }
 
 
 `;
-  for (const name of ["codex", "claude", "grok", "kimi", "qoder", "acpc"]) {
+  for (const name of ["codex", "claude", "grok", "kimi", "qoder"]) {
     const file = join(bin, name); writeFileSync(file, source); chmodSync(file, 0o755);
   }
   const env = { PATH: bin, TEST_LOG: log, TEST_ORPHAN: join(root, "orphan.txt") };
@@ -119,17 +120,22 @@ test("batch response tests isolate checkouts, report failures, kill timed-out he
   try {
     const fixture = probeFixture(f.root), file = join(f.root, "agents.json");
     const config = (mode: string) => ({ model: "project-model", daemon: false, approval_policy: "on-request", env: { ...fixture.env, TEST_MODE: mode } });
-    const original = JSON.stringify({ codex: { "a-pass": config("pass"), "b-auth": config("auth"), "c-banner": config("banner"), "d-timeout": config("hang"), "z-pass": config("pass") }, acpc: { remote: { alias: "cc-remote" } } });
+    const original = JSON.stringify({ codex: { "a-pass": config("pass"), "b-auth": config("auth"), "c-banner": config("banner"), "d-timeout": config("hang"), "e-malformed": config("malformed"), "f-unknown": config("unknown"), "z-pass": config("pass") }, amp: { default: {} } });
     writeFileSync(file, original);
     const result = fixture.run("test", "--all", "--timeout-ms", "1000", "--json");
     expect(result.exitCode).toBe(1);
     expect(result.stderr.toString()).toBe("");
     const rows = JSON.parse(result.stdout.toString());
-    expect(rows.map((row: { status: string }) => row.status)).toEqual(["skipped", "passed", "failed", "failed", "failed", "passed"]);
+    expect(rows.map((row: { status: string }) => row.status)).toEqual(["skipped", "passed", "failed", "failed", "failed", "failed", "passed", "passed"]);
+    expect(rows[1].model).toBe("project-model");
+    expect(rows[1].reportedModel).toBe("fixture-model");
+    expect(rows[1].detail).toContain("Self-reported model: fixture-model");
+    expect(rows.find((row: { preset: string }) => row.preset === "e-malformed").detail).toContain("Unexpected response");
+    expect(rows.find((row: { preset: string }) => row.preset === "f-unknown").reportedModel).toBe("unknown");
     expect(rows.find((row: { preset: string }) => row.preset === "b-auth").detail).toContain("Authentication failed");
     expect(rows.find((row: { preset: string }) => row.preset === "d-timeout").detail).toContain("Timed out");
     const calls = readFileSync(fixture.log, "utf8").trim().split("\n").map(line => JSON.parse(line));
-    expect(calls).toHaveLength(5);
+    expect(calls).toHaveLength(7);
     expect(calls[0].args).toContain('approval_policy="on-request"');
     expect(calls[0].args).toContain("project-model");
     expect(calls[0].args[0]).toBe("--no-daemon");
@@ -159,11 +165,11 @@ test("single and filtered probes use native response modes; run inherits the pre
     expect(fixture.run("test", "kimi/custom", "--timeout-ms", "0").exitCode).toBe(2);
     expect(fixture.run("run", "kimi/custom").exitCode).toBe(2); // Inherited CLI pipes are not a TTY.
     const before = process.listenerCount("SIGINT");
-    const exit = await runAgentPreset(f.root, { kind: "acpc", preset: "remote", config: { alias: "cc-remote", env: { ...fixture.env, TEST_MODE: "interactive" } } });
+    const exit = await runAgentPreset(f.root, { kind: "qoder", preset: "custom", config: { model: "project-model", env: { ...fixture.env, TEST_MODE: "interactive" } } });
     expect(exit).toBe(0);
     expect(process.listenerCount("SIGINT")).toBe(before);
     const call = JSON.parse(readFileSync(fixture.log, "utf8").trim().split("\n").at(-1)!);
-    expect(call.args).toEqual(["--agent", "cc-remote"]);
+    expect(call.args).toEqual(["--model", "project-model"]);
     expect(call.cwd).toBe(realpathSync(f.root));
   } finally { f.cleanup(); }
 });
@@ -203,19 +209,19 @@ test("agents list reads project presets without local task state and preserves s
     mkdirSync(join(f.root, "src"));
     const file = join(f.root, "agents.json");
     const config = { model: "project-model", reasoning_effort: "high", daemon: false };
-    const original = JSON.stringify({ codex: { z: {}, dev: config }, acpc: { remote: { alias: "cc-remote" } } });
+    const original = JSON.stringify({ codex: { z: {}, dev: config }, acp: { remote: { command: "cc-remote", args: ["--host", "ssh-alias"] } } });
     writeFileSync(file, original);
     const result = cli("list", "--json");
     expect(result.code).toBe(0);
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toEqual([
-      { kind: "acpc", preset: "remote", config: { alias: "cc-remote" } },
+      { kind: "acp", preset: "remote", config: { command: "cc-remote", args: ["--host", "ssh-alias"] } },
       { kind: "codex", preset: "dev", config }, { kind: "codex", preset: "z", config: {} },
     ]);
     const filtered = cli("list", "--kind", "codex", "--root", f.root, "--json");
     expect(filtered.code).toBe(0);
     expect(JSON.parse(filtered.stdout)).toEqual(JSON.parse(result.stdout).filter((row: { kind: string }) => row.kind === "codex"));
-    expect(cli("list", "--kind", "acpc").stdout).toContain("cc-remote");
+    expect(cli("list", "--kind", "acp").stdout).toContain("cc-remote");
     expect(readFileSync(file, "utf8")).toBe(original);
     expect(existsSync(join(f.root, ".herdr"))).toBe(false);
     expect(cli("list", "--kind", "missing").code).toBe(2);
@@ -237,7 +243,6 @@ test("structured presets expand native harness options and leave default models 
     writeFileSync(join(f.root, "agents.json"), JSON.stringify({
       codex: { dev: { model: "project-model", reasoning_effort: "high", daemon: false, sandbox: "workspace-write", approval_policy: "on-request", env: { TEAM_OPTION: "value" } }, default: {} },
       claude: { review: { model: "sonnet", reasoning_effort: "high", permission_mode: "plan" } },
-      acpc: { remote: { alias: "cc-remote" } },
       qoder: { default: { model: "default" } },
     }));
     const presets = readAgentPresets(f.root);
@@ -247,7 +252,6 @@ test("structured presets expand native harness options and leave default models 
     });
     expect(resolveAgentPreset(presets, "codex", "default").args).toEqual([]);
     expect(resolveAgentPreset(presets, "claude", "review").args).toEqual(["--model", "sonnet", "--effort", "high", "--permission-mode", "plan"]);
-    expect(resolveAgentPreset(presets, "acpc", "remote").args).toEqual(["--agent", "cc-remote"]);
     expect(resolveAgentPreset(presets, "qoder", "default").args).toEqual([]);
   } finally { f.cleanup(); }
 });
@@ -279,7 +283,7 @@ test("invalid presets fail explicitly without falling back to the seed", () => {
   try {
     const file = join(f.root, "agents.json");
     for (const value of [[], { codex: { dev: { daemon: "false" } } }, { codex: { dev: { args: ["-m", "x"] } } },
-      { claude: { dev: { alias: "wrong-harness" } } }, { acpc: { remote: { model: "unsupported-override" } } },
+      { claude: { dev: { alias: "wrong-harness" } } }, { acpc: { remote: {} } },
       { codex: { dev: { env: { OPTION: 42 } } } }]) {
       writeFileSync(file, JSON.stringify(value));
       expect(() => readAgentPresets(f.root)).toThrow(/Invalid agent presets/);

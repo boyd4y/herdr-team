@@ -122,8 +122,8 @@ and prompts. Initialize repository-root `agents.json` only when missing; preserv
 even with force and plugin updates. Users may maintain this shared file manually.
 Group complete presets under native harness names such as codex and claude; a role
 references kind + preset. Keep model, reasoning_effort, native permission settings,
-and acpc alias structured. Do not duplicate preset launch settings in role metadata
-or require users to concatenate model/alias arguments. CLI adapters translate fields
+and ACP command/args structured. Do not duplicate preset launch settings in role metadata
+or require users to concatenate model or command arguments. CLI adapters translate fields
 to native options; unknown fields and unresolved references fail explicitly.
 
 Codex/Claude seed entries use their own official model IDs or aliases, without
@@ -132,7 +132,7 @@ Model names live in preset data, not a hardcoded CLI allowlist. Skill owns check
 official sources and refreshing presets; CLI never fetches models. Read project
 presets on the next start without reinstalling, while preserving running sessions,
 custom role prompts and active task records. Presets do not grant native Herdr
-support to an unsupported harness. Do not masquerade acpc as Codex or bypass Herdr.
+support to an unsupported harness. Do not masquerade custom agents as Codex or bypass Herdr.
 ACP roles are an explicit supported backend: use kind acp with command/args presets,
 the bundled acpx runtime for protocol, and Herdr's custom-agent reporting API for
 identity, state and restore. Keep one foreground runner per scoped session. Send
@@ -144,8 +144,9 @@ presets. Existing explicit role launch settings remain readable; migrate them on
 when requested, preserving custom flags, environment and prompt contents.
 
 Standalone `agents check`, `agents run` and `agents test` are explicit local preset checks, separate
-from team orchestration. They may invoke native binaries directly, including acpc
-for interactive diagnostics. Do not use them as a dispatch fallback, bind them to
+from team orchestration. They may invoke native binaries directly for interactive
+diagnostics. ACPC is a standalone manual client, not a team harness or preset type.
+Do not use standalone diagnostics as a dispatch fallback, bind them to
 roles or save team resume references. Response tests use isolated temporary working
 directories, bounded subprocess output, timeouts and cancellation cleanup; report
 unsupported response adapters as skipped rather than a passing model response.

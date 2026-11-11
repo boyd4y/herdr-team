@@ -43,7 +43,7 @@ Skill 提供四个工作入口：**setup（onboard）**、**handoff**、**agents
 初始化会在项目根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件，`--force` 也不覆盖正文或 agent 预设。
 已跟踪的文件用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件。可复用默认模板保存在插件的 `skill/assets/`，各机器分别初始化并登录所选工具。
 
-agent 完整预设保存在根 `agents.json`，按原生 harness 名称分组；模型、推理强度、原生权限设置及 acpc alias 都用结构化字段维护。用户可直接编辑并提交 Git。角色通过 kind + preset 引用，例如 `herdr-team role add dev --kind codex --preset dev`。下次启动读取新配置，不自动重启已有会话；旧角色显式配置在迁移前保持原样。字段和原生工具支持限制见 [agent 预设参考](skill/references/agents.md)。
+agent 完整预设保存在根 `agents.json`，按 harness 名称分组；模型、推理强度、原生权限设置及 ACP command/args 都用结构化字段维护。用户可直接编辑并提交 Git。角色通过 kind + preset 引用，例如 `herdr-team role add dev --kind codex --preset dev`。下次启动读取新配置，不自动重启已有会话；旧角色显式配置在迁移前保持原样。字段和工具支持限制见 [agent 预设参考](skill/references/agents.md)。
 
 运行 `herdr-team role list` 查看角色；用 `herdr-team role add <name> --kind <kind>` 添加角色；用 `herdr-team role add <name> --force --body <text>` 或 `--body-file <file>` 更新现有角色职责；用 `herdr-team role rm <name>` 移除角色。添加角色后运行 `herdr-team up`，让新角色启动并上报信息。
 

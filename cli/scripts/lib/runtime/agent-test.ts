@@ -11,13 +11,14 @@ export interface AgentTestResult {
   kind: string;
   preset: string;
   model: string;
+  reportedModel?: string;
   status: "passed" | "failed" | "skipped";
   elapsedMs: number;
   detail: string;
 }
 
 const responseToken = "HERDR_TEAM_OK";
-const prompt = `Reply with exactly ${responseToken}. Do not use tools, read files or make changes.`;
+const prompt = `Which model are you? Reply with one short line: ${responseToken} model: <your model name>. If you do not know, use unknown. Do not use tools, read files or make changes.`;
 function launch(row: PresetRow) {
   const result = agentLaunch(row);
   if (!result.executable) throw new Error(`Executable not found on PATH: ${result.candidates.join(" / ")}`);
@@ -78,7 +79,11 @@ async function responseTest(row: PresetRow, cwd: string, timeoutMs: number, sign
     if (code !== 0) return result("failed", sanitize((stderr || stdout).trim(), true).slice(-4000) || `Exited with code ${code}`);
     if (row.kind === "codex" && statSync(answer).size > agentOutputLimit) return result("failed", "Response exceeds test output limit");
     const response = row.kind === "codex" ? readFileSync(answer, "utf8").trim() : stdout.trim();
-    return response === responseToken ? result("passed", "Model responded") : result("failed", `Unexpected response: ${sanitize(response).slice(0, 400) || "(empty)"}`);
+    const match = /^HERDR_TEAM_OK model: ([^\r\n]+)$/u.exec(response);
+    const reportedModel = match?.[1] && sanitize(match[1]).trim().slice(0, 200);
+    return reportedModel
+      ? { ...result("passed", `Self-reported model: ${reportedModel}`), reportedModel }
+      : result("failed", `Unexpected response: ${sanitize(response).slice(0, 400) || "(empty)"}`);
   } catch (error) { return result("failed", error instanceof Error ? error.message : String(error)); }
 }
 

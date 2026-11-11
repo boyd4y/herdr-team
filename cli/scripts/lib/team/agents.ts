@@ -9,7 +9,6 @@ export interface AgentPreset {
   args?: string[];
   model?: string;
   reasoning_effort?: string;
-  alias?: string;
   daemon?: boolean;
   trust?: boolean;
   sandbox?: string;
@@ -24,7 +23,6 @@ const fields: Record<string, readonly string[]> = {
   codex: ["reasoning_effort", "daemon", "sandbox", "approval_policy"],
   claude: ["reasoning_effort", "permission_mode"],
   grok: ["trust"],
-  acpc: ["alias"],
   acp: ["command", "args", "permission_mode"],
 };
 
@@ -48,7 +46,7 @@ export function readAgentPresets(root?: string): AgentPresets {
       delete presets.qodercli;
     }
     for (const [kind, entries] of Object.entries(presets)) {
-      if (kind !== "acpc" && !(KINDS as readonly string[]).includes(kind)) throw new Error(`Unsupported harness ${kind}`);
+      if (!(KINDS as readonly string[]).includes(kind)) throw new Error(`Unsupported harness ${kind}`);
       if (!mapping(entries)) throw new Error(`Harness ${kind} must contain a preset mapping`);
       for (const [name, preset] of Object.entries(entries)) {
         if (!name || !mapping(preset)) throw new Error(`Invalid preset ${kind}/${name}`);
@@ -102,7 +100,6 @@ function expandPreset(kind: string, preset: AgentPreset) {
     if (preset.permission_mode) args.push("--permission-mode", preset.permission_mode);
   }
   if (kind === "grok" && preset.trust) args.push("--trust");
-  if (kind === "acpc" && preset.alias) args.push("--agent", preset.alias);
   return { model, args, env: preset.env };
 }
 

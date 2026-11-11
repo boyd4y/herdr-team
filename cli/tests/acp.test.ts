@@ -33,7 +33,7 @@ new AgentSideConnection(connection=>({
    const answer=await connection.requestPermission({sessionId:params.sessionId,toolCall:{toolCallId:"edit-1",title:"Edit fixture",kind:"edit",status:"pending"},options:[{optionId:"allow",name:"Allow once",kind:"allow_once"},{optionId:"deny",name:"Reject",kind:"reject_once"}]});record("permission",answer);
   }
   await new Promise(r=>setTimeout(r,150));
-  await connection.sessionUpdate({sessionId:params.sessionId,update:{sessionUpdate:"agent_message_chunk",content:{type:"text",text:"HERDR_TEAM_OK"}}});
+  await connection.sessionUpdate({sessionId:params.sessionId,update:{sessionUpdate:"agent_message_chunk",content:{type:"text",text:"HERDR_TEAM_OK model: fixture-acp"}}});
   return {stopReason:"end_turn"};
  },async cancel(params){record("cancel",params);}
 }),ndJsonStream(Writable.toWeb(process.stdout),Readable.toWeb(process.stdin)));
@@ -56,6 +56,7 @@ test("ACP roles validate structured presets and native response tests use actual
     const result = Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "agents", "test", "acp/remote", "--root", f.root, "--json"], { stdout: "pipe", stderr: "pipe" });
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout.toString())[0].status).toBe("passed");
+    expect(JSON.parse(result.stdout.toString())[0].reportedModel).toBe("fixture-acp");
     expect(server.rows().map(r => r.method)).toEqual(["initialize", "new", "prompt"]);
     expect(server.rows()[1].params.cwd).not.toBe(realpathSync(f.root));
     writeFileSync(join(f.root,"slow-start"),"yes");

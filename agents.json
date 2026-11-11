@@ -53,9 +53,6 @@
       "model": "default"
     }
   },
-  "acpc": {
-    "default": {}
-  },
   "acp": {
     "remote": {
       "command": "cc-remote",

@@ -44,12 +44,12 @@ herdr-team agents test --all --kind claude --timeout-ms 30000 --json
 run 在当前终端交互启动预设，使用项目根为工作目录，保留原生登录与交互；需要真实终端，不接受 JSON 输出。
 这是独立的预设调试，不绑定角色、不创建团队任务或 workspace，也不保存 team resume 引用。
 
-响应测试会真实调用所选模型，按预设串行发送固定短提示，要求只回复确认标记；不只是检查进程能否启动。
+响应测试会真实调用所选模型，按预设串行询问使用的模型，要求一行回复确认标记及模型名称；不知道时允许回答 unknown。
+MODEL 列保留预设选择，DETAIL 显示 Self-reported model；JSON 另有 reportedModel 字段。模型自报仅供参考，不作为实际后端身份验证。
 在临时目录运行，保留本机原生认证和预设环境；测试结束或超时回收子进程和临时文件，不改项目配置或任务记录。
 默认每项超时 60000 毫秒，Ctrl+C 取消当前项及后续测试。原生工具仍可能按自己的行为保存用户级会话日志。
 
-当前 codex、claude、grok、kimi、qoder、acp 支持响应测试。无响应测试适配的工具标为 skipped，不能当作通过；
-acpc 可用 run 交互检查 alias 和底层 agent，暂不实现第二套 ACP 客户端来批量请求。
+当前 codex、claude、grok、kimi、qoder、acp 支持响应测试。无响应测试适配的工具标为 skipped，不能当作通过。
 输出汇总 passed/failed/skipped、耗时和失败原因；JSON 为结果数组。
 有失败返回 1，参数/配置错误或全部跳过返回 2，取消返回 130。
 帮助页 Agents 与 Team、Tasks 并列；这是本地 agent 配置操作，不是团队任务调度。
@@ -70,8 +70,8 @@ acpc 可用 run 交互检查 alias 和底层 agent，暂不实现第二套 ACP �
     "default": { "model": "default" },
     "review": { "model": "sonnet", "reasoning_effort": "high" }
   },
-  "acpc": {
-    "remote": { "alias": "cc-remote" }
+  "acp": {
+    "remote": { "command": "cc-remote", "args": [], "model": "default" }
   }
 }
 ```
@@ -90,13 +90,13 @@ herdr-team role add test --kind claude --preset review
 
 | 字段 | 适用 harness | 含义 |
 | --- | --- | --- |
-| `model` | codex、claude、qoder 支持具名模型；其他暂仅 default | 模型 ID 或原生别名；省略或 default 不传模型覆盖参数 |
+| `model` | codex、claude、qoder、acp 支持具名模型；其他暂仅 default | 模型 ID 或原生别名；省略或 default 不传模型覆盖参数；ACP 由 server 声明可用模型 |
 | `reasoning_effort` | codex、claude | 原生推理强度；取值与可用性取决于对应客户端和模型 |
 | `daemon` | codex | false 时使用 --no-daemon；省略时跟随客户端 |
 | `sandbox`、`approval_policy` | codex | 原生沙箱、审批设置；省略时跟随客户端 |
-| `permission_mode` | claude | 原生权限模式 |
+| `permission_mode` | claude、acp | 原生权限模式；ACP 取 approve-reads、approve-all 或 deny-all |
 | `trust` | grok | true 时使用 --trust |
-| `alias` | acpc | ~/.config/acpc/config.toml 中已有 agent 的 slug；不是模型名 |
+| `command`、`args` | acp | ACP server 可执行文件和参数数组 |
 | `env` | 全部 | 非敏感环境变量字符串映射；凭证留在本机工具配置或外部环境，不提交 Git |
 
 CLI 校验配置并转换原生参数，不抓取模型，不推导工作流。拼错字段、错误类型或不存在的引用明确报错。
@@ -108,9 +108,7 @@ CLI 校验配置并转换原生参数，不抓取模型，不推导工作流。�
 [Qoder CLI](https://docs.qoder.com/cli/cli-reference)。Codex/Claude 种子只使用各自官方模型 ID 或别名，不混入第三方后端映射。
 default 跟随工具本身的账号与本机设置；不要添加模型覆盖变量来假装默认模型。
 
-预设存在不代表本机已安装、登录或 Herdr 已支持该工具。当前 Herdr 原生 kind 不含 acpc：
-可以维护其 alias 预设，但暂不能给角色指定 kind acpc 启动；不要伪装成 codex 或绕过 Herdr 向 shell 注入命令。
-acpc 的具名模型选择由底层 ACP agent 配置，当前不转换为并不存在的 --model 参数。
+预设存在不代表本机已安装、登录或 Herdr 已支持该工具，不要伪装成 codex 或绕过 Herdr 向 shell 注入命令。
 项目配置与命令统一使用 qoder，例如 `agents run qoder/default`。Herdr 适配层转换为其原生 kind qodercli，原生 session 来源保持不变。
 旧 qodercli 配置与选择器可继续读取，但列表统一显示 qoder；若新旧键中存在同名预设，需合并为一份，CLI 不覆盖用户定义。
 启动时优先查找 qoder，也兼容旧可执行文件名。
@@ -118,7 +116,7 @@ acpc 的具名模型选择由底层 ACP agent 配置，当前不转换为并不�
 ## ACP 与 cc-remote
 
 团队通过 `acp` 类型直接接入 ACP agent，使用随插件打包的 acpx 运行时，无需全局安装 acpx，也不需要修改 Herdr。
-ACPC 是独立交互客户端，其 alias 不会自动变成团队预设。不要把 ACPC 或 acpx 冒充原生 Codex。
+ACPC 仅供用户独立手动使用，不属于团队预设或角色类型。已有项目如包含 acpc 预设，按用户意图替换为明确的 ACP server command/args；不自动将 alias 转成命令，也不读取或修改 ACPC 配置。
 项目 agents.json 添加结构化预设，再注册角色：
 
 ```json
@@ -140,9 +138,11 @@ herdr-team up
 ```
 
 command 是可执行文件名或路径，args 中每项是独立参数，不在 command 中拼 shell 命令；env 沿用一般预设约定。
-省略 host 参数时跟随 cc-remote 的 CC_REMOTE_HOST 或 ~/.config/cc-remote/host，不能根据 ACPC alias 猜测目标。
+省略 host 参数时跟随 cc-remote 的 CC_REMOTE_HOST 或 ~/.config/cc-remote/host，不能根据预设名猜测目标。
 CLI 预设校验不连接 SSH；check 检查 ACP server 的安装和版本，登录显示 unknown；test 才实际发起 ACP 请求。
 model 可选，default 不覆盖；具名模型由 agent 广告的模型能力校验，不硬编码列表。
+cc-remote 支持通过 ACP 选择模型，例如在预设设置 `"model": "sonnet"`；使用 server 实际返回的模型 ID。
+修改预设用于下次启动，不自动切换正在运行的角色；团队 runner 当前未提供会话内 `/model` 交互命令。
 
 每个 resident 或任务角色会话由自己的 Herdr pane 承载，进入原生 agents 列表，显示角色、acp 和所选模型。
 派活复用团队任务和 delivery 去重，通过经过认证的本机 IPC 提交给 ACP，不用 Herdr 原生 agent prompt 或终端按键模拟。
@@ -154,7 +154,7 @@ permission_mode 可选 approve-reads（默认）、approve-all、deny-all；默�
 server 声明支持 load/resume 时恢复精确 ID；失败保留原记录并停止，不改成新会话。确认需要丢弃上下文后由用户明确 fresh 启动；
 `up --fresh` 只影响尚未运行的 resident 实例。server 未声明恢复能力时，后续启动明确创建新会话。
 实例退出会取消本实例的活动请求、回收其协议连接并释放 Herdr 身份；任务是否交棒、结束、清理仍由 Skill 和既有 CLI 操作决定。
-恢复状态及本机 IPC 记录属于机器本地运行数据，不提交 Git；不与 ACPC 的会话记录互通。
+恢复状态及本机 IPC 记录属于机器本地运行数据，不提交 Git；不与其他 ACP 客户端的会话记录互通。
 
 ## 生效与已有项目
 
