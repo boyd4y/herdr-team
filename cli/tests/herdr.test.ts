@@ -103,6 +103,19 @@ describe("herdr 客户端 —— 参数拼装", () => {
     ]);
   });
 
+  test("pane metadata batches token writes and clears within Herdr's limit", () => {
+    const { fn, calls } = recordingSpawn(WRAP({}));
+    const tokens = Object.fromEntries(Array.from({ length: 19 }, (_, index) => [`field_${index}`, index % 2 ? null : `value_${index}`]));
+    realHerdr(fn).reportMetadata("w1:p1", "herdr-team", "dev", tokens);
+    expect(calls).toHaveLength(2);
+    const updates = calls.flatMap(args => {
+      expect(args.slice(0, 7)).toEqual(["pane", "report-metadata", "w1:p1", "--source", "herdr-team", "--display-agent", "dev"]);
+      expect(args.filter(arg => arg === "--token" || arg === "--clear-token").length).toBeLessThanOrEqual(16);
+      return args.flatMap((arg, index) => arg === "--token" || arg === "--clear-token" ? [args[index + 1]] : []);
+    });
+    expect(updates).toEqual(Object.entries(tokens).map(([key, value]) => value === null ? key : `${key}=${value}`));
+  });
+
   test("workspace close 用 workspace_id", () => {
     const { fn, calls } = recordingSpawn(WRAP({}));
     realHerdr(fn).workspaceClose("w1");

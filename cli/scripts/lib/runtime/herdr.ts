@@ -334,14 +334,20 @@ export function realHerdr(spawn: SpawnFn = defaultSpawn): Herdr {
         value === null ? ["--clear-token", key] : ["--token", `${key}=${value}`]),
     ]),
 
-    reportMetadata: (paneId, source, displayAgent, tokens = {}) =>
-      void run([
-        "pane", "report-metadata", paneId,
-        "--source", source,
-        "--display-agent", displayAgent,
-        "--clear-state-labels",
-        ...Object.entries(tokens).flatMap(([key, value]) =>
-          value === null ? ["--clear-token", key] : ["--token", `${key}=${value}`]),
-      ]),
+    reportMetadata: (paneId, source, displayAgent, tokens = {}) => {
+      const entries = Object.entries(tokens);
+      // Herdr patches metadata and accepts at most 16 token updates per report,
+      // including clears. Repeated batches are safe after a partial failure.
+      for (let offset = 0; offset < Math.max(entries.length, 1); offset += 16) {
+        run([
+          "pane", "report-metadata", paneId,
+          "--source", source,
+          "--display-agent", displayAgent,
+          "--clear-state-labels",
+          ...entries.slice(offset, offset + 16).flatMap(([key, value]) =>
+            value === null ? ["--clear-token", key] : ["--token", `${key}=${value}`]),
+        ]);
+      }
+    },
   };
 }
