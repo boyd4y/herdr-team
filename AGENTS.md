@@ -136,3 +136,10 @@ support to an unsupported harness. Do not masquerade acpc as Codex or bypass Her
 Keep credentials in native user configuration or external environment, not shared
 presets. Existing explicit role launch settings remain readable; migrate them only
 when requested, preserving custom flags, environment and prompt contents.
+
+Standalone `agents run` and `agents test` are explicit local preset checks, separate
+from team orchestration. They may invoke native binaries directly, including acpc
+for interactive diagnostics. Do not use them as a dispatch fallback, bind them to
+roles or save team resume references. Response tests use isolated temporary working
+directories, bounded subprocess output, timeouts and cancellation cleanup; report
+unsupported response adapters as skipped rather than a passing model response.

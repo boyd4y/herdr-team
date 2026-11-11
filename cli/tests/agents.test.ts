@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readAgentPresets, resolveAgentPreset } from "../scripts/lib/team/agents.ts";
 import { init } from "../scripts/lib/team/init.ts";
@@ -10,6 +10,110 @@ import { up } from "../scripts/lib/dispatch/launch.ts";
 import { taskAgent } from "../scripts/lib/dispatch/task-agent.ts";
 import { createTask } from "../scripts/lib/tasks/cards.ts";
 import { fakeHerdr, makeProject, writeRole } from "./helpers.ts";
+import { runAgentPreset } from "../scripts/lib/runtime/agent-test.ts";
+
+function probeFixture(root: string) {
+  const bin = join(root, "bin"), log = join(root, "calls.jsonl");
+  mkdirSync(bin);
+  const source = `#!${process.execPath}
+import {appendFileSync, writeFileSync} from "node:fs";
+import {spawn} from "node:child_process";
+const args = process.argv.slice(2), mode = process.env.TEST_MODE;
+appendFileSync(process.env.TEST_LOG, JSON.stringify({args,cwd:process.cwd(),mode})+"\\n");
+if(mode === "auth") { console.error("Authentication failed"); process.exit(3); }
+if(mode === "hang") {
+ spawn(process.execPath,["-e",'setTimeout(()=>require("fs").writeFileSync(process.env.TEST_ORPHAN,"orphan"),2000)'],{stdio:"inherit"});
+ setInterval(()=>{},1000);
+} else if(mode !== "interactive") {
+ const output = args.indexOf("--output-last-message");
+ if(output >= 0 && mode !== "banner") writeFileSync(args[output+1],"HERDR_TEAM_OK");
+ console.log("HERDR_TEAM_OK");
+}
+`;
+  for (const name of ["codex", "claude", "grok", "kimi", "qoder", "acpc"]) {
+    const file = join(bin, name); writeFileSync(file, source); chmodSync(file, 0o755);
+  }
+  const env = { PATH: bin, TEST_LOG: log, TEST_ORPHAN: join(root, "orphan.txt") };
+  return { log, env, run: (...args: string[]) => Bun.spawnSync([
+    process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "agents", ...args, "--root", root,
+  ], { cwd: root, stdout: "pipe", stderr: "pipe" }) };
+}
+
+test("batch response tests isolate checkouts, report failures, kill timed-out helpers and continue", async () => {
+  const f = makeProject();
+  try {
+    const fixture = probeFixture(f.root), file = join(f.root, "agents.json");
+    const config = (mode: string) => ({ model: "project-model", daemon: false, approval_policy: "on-request", env: { ...fixture.env, TEST_MODE: mode } });
+    const original = JSON.stringify({ codex: { "a-pass": config("pass"), "b-auth": config("auth"), "c-banner": config("banner"), "d-timeout": config("hang"), "z-pass": config("pass") }, acpc: { remote: { alias: "cc-remote" } } });
+    writeFileSync(file, original);
+    const result = fixture.run("test", "--all", "--timeout-ms", "1000", "--json");
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.toString()).toBe("");
+    const rows = JSON.parse(result.stdout.toString());
+    expect(rows.map((row: { status: string }) => row.status)).toEqual(["skipped", "passed", "failed", "failed", "failed", "passed"]);
+    expect(rows.find((row: { preset: string }) => row.preset === "b-auth").detail).toContain("Authentication failed");
+    expect(rows.find((row: { preset: string }) => row.preset === "d-timeout").detail).toContain("Timed out");
+    const calls = readFileSync(fixture.log, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    expect(calls).toHaveLength(5);
+    expect(calls[0].args).toContain('approval_policy="on-request"');
+    expect(calls[0].args).toContain("project-model");
+    expect(calls[0].args[0]).toBe("--no-daemon");
+    expect(calls.every(call => !call.cwd.startsWith(realpathSync(f.root)) && !existsSync(call.cwd))).toBe(true);
+    await Bun.sleep(1200);
+    expect(existsSync(fixture.env.TEST_ORPHAN)).toBe(false);
+    expect(readFileSync(file, "utf8")).toBe(original);
+    expect(existsSync(join(f.root, ".herdr/tasks"))).toBe(false);
+  } finally { f.cleanup(); }
+}, 10000);
+
+test("single and filtered probes use native response modes; run inherits the preset without team state", async () => {
+  const f = makeProject();
+  try {
+    const fixture = probeFixture(f.root);
+    writeFileSync(join(f.root, "agents.json"), JSON.stringify(Object.fromEntries(["claude", "grok", "kimi", "qodercli"].map(kind => [kind, { custom: { env: fixture.env } }]))));
+    const one = fixture.run("test", "kimi/custom", "--json");
+    expect(one.exitCode).toBe(0);
+    expect(JSON.parse(one.stdout.toString()).map((row: { kind: string }) => row.kind)).toEqual(["kimi"]);
+    const all = fixture.run("test", "--all", "--json");
+    expect(all.exitCode).toBe(0);
+    expect(JSON.parse(all.stdout.toString()).every((row: { status: string }) => row.status === "passed")).toBe(true);
+    const filtered = fixture.run("test", "--all", "--kind", "claude", "--json");
+    expect(JSON.parse(filtered.stdout.toString()).map((row: { kind: string }) => row.kind)).toEqual(["claude"]);
+    expect(fixture.run("test").exitCode).toBe(2);
+    expect(fixture.run("test", "kimi/custom", "--all").exitCode).toBe(2);
+    expect(fixture.run("test", "kimi/custom", "--timeout-ms", "0").exitCode).toBe(2);
+    expect(fixture.run("run", "kimi/custom").exitCode).toBe(2); // Inherited CLI pipes are not a TTY.
+    const before = process.listenerCount("SIGINT");
+    const exit = await runAgentPreset(f.root, { kind: "acpc", preset: "remote", config: { alias: "cc-remote", env: { ...fixture.env, TEST_MODE: "interactive" } } });
+    expect(exit).toBe(0);
+    expect(process.listenerCount("SIGINT")).toBe(before);
+    const call = JSON.parse(readFileSync(fixture.log, "utf8").trim().split("\n").at(-1)!);
+    expect(call.args).toEqual(["--agent", "cc-remote"]);
+    expect(call.cwd).toBe(realpathSync(f.root));
+  } finally { f.cleanup(); }
+});
+
+test("cancelling response tests stops the current process and leaves remaining presets unstarted", async () => {
+  const f = makeProject();
+  try {
+    const fixture = probeFixture(f.root);
+    writeFileSync(join(f.root, "agents.json"), JSON.stringify({ codex: {
+      first: { env: { ...fixture.env, TEST_MODE: "hang" } }, second: { env: fixture.env },
+    } }));
+    const child = Bun.spawn([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "agents", "test", "--all", "--json", "--root", f.root], { stdout: "pipe", stderr: "pipe" });
+    try {
+      const deadline = Date.now() + 3000;
+      while (!existsSync(fixture.log) && Date.now() < deadline) await Bun.sleep(10);
+      expect(existsSync(fixture.log)).toBe(true);
+      child.kill("SIGINT");
+      expect(await child.exited).toBe(130);
+      const results = JSON.parse(await new Response(child.stdout).text());
+      expect(results.map((row: { status: string }) => row.status)).toEqual(["failed", "skipped"]);
+      expect(results[0].detail).toBe("Cancelled");
+      expect(readFileSync(fixture.log, "utf8").trim().split("\n")).toHaveLength(1);
+    } finally { child.kill("SIGKILL"); await child.exited; }
+  } finally { f.cleanup(); }
+});
 
 test("agents list reads project presets without local task state and preserves structured JSON", () => {
   const f = makeProject();

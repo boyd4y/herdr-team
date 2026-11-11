@@ -15,6 +15,28 @@ herdr-team agents list --json
 每项包含 kind、preset、config，JSON 保留结构化配置。--root 可显式指定项目；未知 harness、缺失或损坏文件明确报错，不退回模板。
 查询后通过 role add --preset 选择，直接编辑 agents.json 维护内容。
 
+## 启动与响应测试
+
+```sh
+herdr-team agents run codex/dev
+herdr-team agents test codex/dev
+herdr-team agents test --all
+herdr-team agents test --all --kind claude --timeout-ms 30000 --json
+```
+
+run 在当前终端交互启动预设，使用项目根为工作目录，保留原生登录与交互；需要真实终端，不接受 JSON 输出。
+这是独立的预设调试，不绑定角色、不创建团队任务或 workspace，也不保存 team resume 引用。
+
+响应测试会真实调用所选模型，按预设串行发送固定短提示，要求只回复确认标记；不只是检查进程能否启动。
+在临时目录运行，保留本机原生认证和预设环境；测试结束或超时回收子进程和临时文件，不改项目配置或任务记录。
+默认每项超时 60000 毫秒，Ctrl+C 取消当前项及后续测试。原生工具仍可能按自己的行为保存用户级会话日志。
+
+当前 codex、claude、grok、kimi、qodercli 支持响应测试。无响应测试适配的工具标为 skipped，不能当作通过；
+acpc 可用 run 交互检查 alias 和底层 agent，暂不实现第二套 ACP 客户端来批量请求。
+输出汇总 passed/failed/skipped、耗时和失败原因；JSON 为结果数组。
+有失败返回 1，参数/配置错误或全部跳过返回 2，取消返回 130。
+帮助页 Agents 与 Team、Tasks 并列；这是本地 agent 配置操作，不是团队任务调度。
+
 ## 配置与引用
 
 每个预设是一套启动设置，模型只是一个字段。不为同一个 harness 另起 local-codex 等名称，

@@ -10,7 +10,7 @@
 | `scripts/lib/team/` | 项目配置、初始化、角色维护、模板/模型方案读取、校验 | `project.ts` 读取 .herdr；`init.ts` 建配置；`roles.ts` 改角色；`templates.ts` 读职责；`agents.ts` 读取并展开 agent 预设；`plans.ts` 引用预设；`validate.ts` 校验引用 |
 | `scripts/lib/tasks/` | 任务卡、交付历史、交棒、版本验收 | `cards.ts` 建卡/修改；`handoff.ts` 记录结果并交接；`verification.ts` 管提交记录、checkout 校验和测试资源；`records.ts` 写历史 |
 | `scripts/lib/dispatch/` | 排队投递、任务会话启动、团队起停与清理、项目归属 | `queue.ts` 驱动投递；`delivery.ts` 定义投递记录；`assignment.ts` 组装输入；`task-agent.ts` 定位任务会话；`launch.ts` 起停团队；`team-scope.ts` 防跨项目误用；`cleanup.ts` 回收 worktree |
-| `scripts/lib/runtime/` | Herdr 适配、持久化锁与本机状态、原生会话、Console 所有权 | `herdr.ts` 是可替换 API 边界；`state.ts` 管状态目录与锁；`sessions.ts` 管原生会话记录；`console.ts` 保证一个调度 Console；`plugin.ts` 解析 Action 上下文并打开原生插件 pane |
+| `scripts/lib/runtime/` | Herdr 适配、持久化锁与本机状态、原生会话、Console 所有权 | `herdr.ts` 是可替换 API 边界；`agent-test.ts` 管独立预设启动、临时响应测试与子进程回收；`state.ts` 管状态目录与锁；`sessions.ts` 管原生会话记录；`console.ts` 保证一个调度 Console；`plugin.ts` 解析 Action 上下文并打开原生插件 pane |
 | `scripts/lib/integration/` | 已有 PR 的核对、决定记录、显式合并 | `pull-request.ts` 对接 GitHub；`merge.ts` 校验批准并串行合并/同步 |
 | `scripts/lib/ui/` | 只读状态、终端画面、侧栏与 workspace 元数据 | `status.ts` 生成状态；`console-model.ts` 生成数据及本地筛选；`console-view.ts` 组装 OpenTUI 组件；`sidebar.ts`、`workspace-badges.ts`、`workspace-git.ts` 更新展示数据 |
 | `scripts/lib/shared/` | 通用数据类型、YAML、终端文字排版 | `types.ts`；`yaml.ts` 薄封装 Bun.YAML 的字段排序与映射校验；`text.ts` 格式化纯文本；不放角色或工作流策略 |

@@ -72,6 +72,17 @@ herdr-team role add dev --kind codex --preset dev --worktree
 herdr-team role add dev --force --preset fast
 ```
 
+```sh
+herdr-team agents run codex/dev          # 交互启动指定预设
+herdr-team agents test codex/dev         # 单个预设的真实响应测试
+herdr-team agents test --all             # 全部预设，串行汇总
+herdr-team agents test --all --kind claude --timeout-ms 30000 --json
+```
+
+帮助页 Agents 与 Team、Tasks 并列。run 使用真实终端；test 在临时目录发送固定短提示，支持超时和 Ctrl+C，
+不创建团队任务或 workspace。当前 codex、claude、grok、kimi、qodercli 支持响应测试，其他工具明确跳过。
+测试调用本机工具和真实模型；acpc 可交互启动调试，团队角色启动仍依赖 Herdr 原生支持。
+
 文件变化通过 Console 原生监听刷新，后续启动使用最新配置，运行中会话不自动重启。
 模型名维护在数据里，不需要修改代码，也不要求手动拼接模型或 alias 参数。
 

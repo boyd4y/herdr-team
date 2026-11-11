@@ -90,6 +90,8 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
   assert.equal(fs.readFileSync(path.join(f.dir, 'TEAM.md'), 'utf8'), expectedTeam);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.dir, 'agents.json'), 'utf8')), presets);
   assert.deepEqual(JSON.parse(f.cli('agents', 'list', '--kind', 'codex', '--json')).find(row => row.preset === 'dev').config, presets.codex.dev);
+  fs.writeFileSync(path.join(f.bin, 'codex'), '#!/usr/bin/env bun\nconst args = process.argv.slice(2); await Bun.write(args[args.indexOf("--output-last-message") + 1], "HERDR_TEAM_OK");\n', { mode: 0o755 });
+  assert.equal(JSON.parse(f.cli('agents', 'test', 'codex/dev', '--json', '--timeout-ms', '1000'))[0].status, 'passed');
   const configured = JSON.parse(f.cli('role', 'list', '--json'));
   assert(configured.find(role => role.name === 'dev').args.includes('model_reasoning_effort=\"low\"'));
   assert.equal(configured.find(role => role.name === 'dev').preset, 'dev');
