@@ -93,6 +93,15 @@ export function resolveAgentPreset(presets: AgentPresets, kind: string, name: st
   return expandPreset(kind, preset);
 }
 
+/** Project configuration only: listing does not inspect live agents or task state. */
+export function listAgentPresets(root: string, kind?: string) {
+  const presets = readAgentPresets(root);
+  if (kind !== undefined && !Object.hasOwn(presets, kind)) throw new Error(`Unknown harness ${kind} in agents.json`);
+  return (kind === undefined ? Object.keys(presets).sort() : [kind]).flatMap(harness =>
+    Object.keys(presets[harness]!).sort().map(name => ({ kind: harness, preset: name, config: presets[harness]![name]! })),
+  );
+}
+
 /** Only init/plan preview may use the seed before the project file exists. */
 export function initialAgentPresets(root: string): AgentPresets {
   return readAgentPresets(existsSync(join(root, "agents.json")) ? root : undefined);

@@ -7,6 +7,7 @@ import { findRoot, loadProject } from "./lib/team/project.ts";
 import { mergeRows, mergeTask, retryMerge } from "./lib/integration/merge.ts";
 import { handoff } from "./lib/tasks/handoff.ts";
 import { init, InitError, parseRoleSpecs, readRolesFile } from "./lib/team/init.ts";
+import { listAgentPresets } from "./lib/team/agents.ts";
 import { describePlan, isPlanName, PLAN_NAMES, planRoles } from "./lib/team/plans.ts";
 import { addRole, describeRole, removeRole, RoleError } from "./lib/team/roles.ts";
 import { realHerdr, type Herdr } from "./lib/runtime/herdr.ts";
@@ -45,6 +46,7 @@ Usage:
 Team:
   init                 Save team configuration
   role <list|add|rm>    Read or update roles
+  agents list          List configured agent presets
   validate             Validate team configuration and references
   up                   Start or resume the team and Console
   status               Show task and live agent status
@@ -295,8 +297,8 @@ function cmdEdit(args: string[]): number {
   return out(parsed, result, `✓ Updated ${result.dir}`);
 }
 
-/** init 可能在没有 .herdr/ 的目录里跑，所以不能用 resolveRoot。 */
-function resolveInitRoot(explicit?: string): string {
+/** Configuration commands do not require local task/runtime state. */
+function resolveConfigRoot(explicit?: string): string {
   if (explicit !== undefined) return resolve(explicit);
   return findRoot(process.cwd()) ?? resolve(process.cwd());
 }
@@ -316,7 +318,7 @@ function cmdInit(args: string[]): number {
   const file = parsed.values.get("roles-file");
   const plan = parsed.values.get("plan");
   if (["workflow", "workflow-file"].some((name) => parsed.flags.has(name) || parsed.values.has(name))) throw new UsageError("Workflow configuration belongs to the skill; save the agreement in root TEAM.md");
-  const root = resolveInitRoot(parsed.values.get("root"));
+  const root = resolveConfigRoot(parsed.values.get("root"));
   const project = loadProject(root);
   const given = [inline, file, plan].filter((v) => v !== undefined);
   if (given.length > 1) {
@@ -758,6 +760,28 @@ function pairs(value: string | undefined): Record<string, string> {
   return out;
 }
 
+function cmdAgents(args: string[]): number {
+  const [sub, ...rest] = args;
+  if (sub === undefined || ["--help", "-h", "help"].includes(sub)) {
+    process.stdout.write(
+      "Usage: herdr-team agents list [--kind K] [--json] [--root DIR]\n\n" +
+      "List configured presets from repository-root agents.json.\n" +
+      "Shows harness, preset name and structured settings; no live agent or task queries.\n",
+    );
+    return sub === undefined ? 2 : 0;
+  }
+  if (sub !== "list") throw new UsageError(`Unknown agents subcommand \"${sub}\" (list)`);
+  const parsed = parseArgs(rest, ["root", "kind"]);
+  if (parsed.flags.has("help") || parsed.pos.includes("-h")) return cmdAgents(["--help"]);
+  if (parsed.pos.length) throw new UsageError("agents list does not accept positional arguments");
+  for (const flag of parsed.flags) if (flag !== "json") throw new UsageError(`Unknown option --${flag}`);
+  for (const key of parsed.values.keys()) if (!["root", "kind"].includes(key)) throw new UsageError(`Unknown option --${key}`);
+  let rows: ReturnType<typeof listAgentPresets>;
+  try { rows = listAgentPresets(resolveConfigRoot(parsed.values.get("root")), parsed.values.get("kind")); }
+  catch (error) { throw new UsageError(error instanceof Error ? error.message : String(error)); }
+  return out(parsed, rows, rows.length ? rows.map(row => `${JSON.stringify(`${row.kind}/${row.preset}`)}  ${JSON.stringify(row.config)}`).join("\n") : "(no agent presets)");
+}
+
 function cmdRole(args: string[]): number {
   const [sub, ...rest] = args;
 
@@ -863,6 +887,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdHandoff(rest);
     case "role":
       return cmdRole(rest);
+    case "agents":
+      return cmdAgents(rest);
     case "tasks":
       return cmdTasks(rest);
     case "status":

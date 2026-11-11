@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readAgentPresets, resolveAgentPreset } from "../scripts/lib/team/agents.ts";
 import { init } from "../scripts/lib/team/init.ts";
@@ -10,6 +10,47 @@ import { up } from "../scripts/lib/dispatch/launch.ts";
 import { taskAgent } from "../scripts/lib/dispatch/task-agent.ts";
 import { createTask } from "../scripts/lib/tasks/cards.ts";
 import { fakeHerdr, makeProject, writeRole } from "./helpers.ts";
+
+test("agents list reads project presets without local task state and preserves structured JSON", () => {
+  const f = makeProject();
+  const cli = (...args: string[]) => {
+    const result = Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "agents", ...args], {
+      cwd: join(f.root, "src"), stdout: "pipe", stderr: "pipe",
+    });
+    return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+  };
+  try {
+    rmSync(join(f.root, ".herdr"), { recursive: true });
+    mkdirSync(join(f.root, "src"));
+    const file = join(f.root, "agents.json");
+    const config = { model: "project-model", reasoning_effort: "high", daemon: false };
+    const original = JSON.stringify({ codex: { z: {}, dev: config }, acpc: { remote: { alias: "cc-remote" } } });
+    writeFileSync(file, original);
+    const result = cli("list", "--json");
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toEqual([
+      { kind: "acpc", preset: "remote", config: { alias: "cc-remote" } },
+      { kind: "codex", preset: "dev", config }, { kind: "codex", preset: "z", config: {} },
+    ]);
+    const filtered = cli("list", "--kind", "codex", "--root", f.root, "--json");
+    expect(filtered.code).toBe(0);
+    expect(JSON.parse(filtered.stdout)).toEqual(JSON.parse(result.stdout).filter((row: { kind: string }) => row.kind === "codex"));
+    expect(cli("list", "--kind", "acpc").stdout).toContain("cc-remote");
+    expect(readFileSync(file, "utf8")).toBe(original);
+    expect(existsSync(join(f.root, ".herdr"))).toBe(false);
+    expect(cli("list", "--kind", "missing").code).toBe(2);
+    expect(cli("list", "--knd", "codex").code).toBe(2);
+    expect(cli("unknown").code).toBe(2);
+    writeFileSync(file, "{}");
+    expect(JSON.parse(cli("list", "--json").stdout)).toEqual([]);
+    writeFileSync(file, "{broken");
+    expect(cli("list", "--json").stdout).toBe("");
+    expect(cli("list", "--json").code).toBe(2);
+    rmSync(file);
+    expect(cli("list", "--root", f.root).code).toBe(2);
+  } finally { f.cleanup(); }
+});
 
 test("structured presets expand native harness options and leave default models alone", () => {
   const f = makeProject();

@@ -62,6 +62,7 @@ herdr-team tasks
 ### Agent 配置预设
 
 直接维护根 `agents.json`，按 codex、claude 等 harness 分组，每个预设保存完整启动设置。
+用 `herdr-team agents list` 查看全部预设，`--kind codex` 筛选 harness，`--json` 返回 kind/preset/config 数组；查询只读取项目 agents.json，不要求 .herdr/ 或运行中的 agent。
 角色通过 `kind + preset` 引用，不同时保存 model/args/env；已有显式角色不自动迁移。
 预设字段与原生支持限制见 [agents 参考](../skill/references/agents.md)。
 

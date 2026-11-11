@@ -83,12 +83,13 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
   assert.equal(f.cli('--version').trim(), version);
   assert.match(f.cli('--help'), /herdr-team <command>/);
   assert(!f.cli('--help').includes('bunx'));
-  for (const command of ['init', 'validate', 'add', 'edit', 'handoff', 'role', 'tasks', 'status', 'console', 'claim', 'queue', 'up', 'dispatch', 'clean', 'down']) {
+  for (const command of ['init', 'validate', 'add', 'edit', 'handoff', 'role', 'agents', 'tasks', 'status', 'console', 'claim', 'queue', 'up', 'dispatch', 'clean', 'down']) {
     assert(f.cli(command, '--help').includes(`Usage: herdr-team ${command}`));
   }
   f.cli('init', '--plan', 'balanced');
   assert.equal(fs.readFileSync(path.join(f.dir, 'TEAM.md'), 'utf8'), expectedTeam);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.dir, 'agents.json'), 'utf8')), presets);
+  assert.deepEqual(JSON.parse(f.cli('agents', 'list', '--kind', 'codex', '--json')).find(row => row.preset === 'dev').config, presets.codex.dev);
   const configured = JSON.parse(f.cli('role', 'list', '--json'));
   assert(configured.find(role => role.name === 'dev').args.includes('model_reasoning_effort=\"low\"'));
   assert.equal(configured.find(role => role.name === 'dev').preset, 'dev');

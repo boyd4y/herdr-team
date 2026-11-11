@@ -3,6 +3,18 @@
 选择或调整 agent 启动配置时读取。项目根 `agents.json` 按 harness 保存完整预设，纳入 Git，用户可手动维护。
 [assets/agents.json](../assets/agents.json) 只提供初始化版本；`init` 仅复制缺失文件，即使 `--force` 也不覆盖项目预设。
 
+## 查询预设
+
+```sh
+herdr-team agents list
+herdr-team agents list --kind codex
+herdr-team agents list --json
+```
+
+列表读取主项目根 agents.json，按 harness、预设名排序；无需启动 Herdr 或初始化本地任务。
+每项包含 kind、preset、config，JSON 保留结构化配置。--root 可显式指定项目；未知 harness、缺失或损坏文件明确报错，不退回模板。
+查询后通过 role add --preset 选择，直接编辑 agents.json 维护内容。
+
 ## 配置与引用
 
 每个预设是一套启动设置，模型只是一个字段。不为同一个 harness 另起 local-codex 等名称，
