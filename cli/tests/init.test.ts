@@ -51,8 +51,8 @@ test("init tracks the root agreement while keeping local configuration and artif
     }
     git(root, "init", "-b", "main");
     git(root, "add", ".");
-    expect(git(root, "ls-files").split("\n")).toEqual([".gitignore", "TEAM.md"]);
-    expect(git(root, "check-ignore", ".herdr/models.json", ".herdr/roles/dev/prompt.md", ".herdr/local-validation/local.txt").split("\n")).toHaveLength(3);
+    expect(git(root, "ls-files").split("\n")).toEqual([".gitignore", "TEAM.md", "agents.json"]);
+    expect(git(root, "check-ignore", ".herdr/tasks/0001-local-task/task.md", ".herdr/roles/dev/prompt.md", ".herdr/local-validation/local.txt").split("\n")).toHaveLength(3);
     init(loadProject(root), [], true);
     expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe(ignore);
     expect(loadProject(root).roles).toHaveLength(1);

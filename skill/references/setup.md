@@ -9,7 +9,7 @@ onboard 是 Skill 对话，不是 CLI 向导。复用已确认的选择与授权
 
 直接用同一张表确认实际角色的核心工作步骤、harness、模型和启动方式，不增加 workflow 选择环节，
 不把职责与模型拆成两轮确认。辅助 docs、research/search 按需要提出；模型方案不能决定固定角色名单。
-模型配置按需读 [models.md](models.md)。角色名描述职责，不用 agent 类型命名。
+模型配置按需读 [agents.md](agents.md)。角色名描述职责，不用 agent 类型命名。
 
 ## 团队约定 TEAM.md
 
@@ -36,9 +36,9 @@ Skill 按已确认角色维护 TEAM.md 中对应的简短步骤，不写跨角�
 不复制 TEAM.md 已有步骤或命令清单、claim/handoff/PR 操作流程。角色 prompt 默认英文，TEAM.md 模板及生成内容使用中文；用户自带正文保留原语言。
 可复用职责模板按角色保存在 [assets/roles](../assets/roles)：lead、dev、test、search、docs、review；
 每个目录只有 `prompt.md`，通用职责放在 default。按当前职责选择、阅读并调整所需模板，不整套加载。
-模型初始目录是 [assets/models.json](../assets/models.json)，init 只在缺失时复制到项目 `.herdr/models.json`。
-项目文件优先，用户可在本地修改；已有内容即使 --force 也保留。角色方案在 [assets/plans.json](../assets/plans.json) 中引用 harness/model。
-选择与刷新步骤只见 [models.md](models.md)，不在职责模板内复制模型列表。
+agent 预设模板是 [assets/agents.json](../assets/agents.json)，init 仅在项目根 agents.json 缺失时复制。
+项目预设纳入 Git，用户可手动修改；已有内容即使 --force 也保留。角色方案在 [assets/plans.json](../assets/plans.json) 引用 kind/preset。
+角色优先选择一套完整预设，模型、推理强度、alias 等在预设中维护；选择、更新和旧配置迁移只见 [agents.md](agents.md)。
 CLI init 只在根 TEAM.md 缺失时复制模板，不解释角色步骤；已有旧文件的项目先由 Skill 完成上述选择和必要迁移，再初始化本地执行配置；CLI 不迁移或删除旧文件。
 CLI 对未提供 body 的新角色按同名模板初始化，未知角色用 default；已有正文不随模板更新自动改写。
 例如临时 `roles.json` 的输入形状：
@@ -48,16 +48,15 @@ CLI 对未提供 body 的新角色按同名模板初始化，未知角色用 def
   {
     "name": "builder",
     "kind": "codex",
-    "model": "gpt-6.1-sol",
+    "preset": "dev",
     "worktree": true,
-    "args": ["--no-daemon", "-m", "gpt-6.1-sol"],
     "body": "Read the installed herdr-team skill before starting. Implement and self-test the assigned change. Stay within the task checkout; lead owns team configuration and branch lifecycle."
   }
 ]
 ```
 
 数组应包含已确认的全部角色，而非只复制此示例。PR 方案应明确对应测试、审查职责及谁执行发布/合并。
-`name`、`kind` 必填；其余可用 `model`、`worktree`、`cwd`、`args`、`env`、`body`，见 [格式规范](herdr-format.md)。
+`name`、`kind` 必填；其余可用 `preset`、`worktree`、`cwd`、`body`；引用预设时不再写 model/args/env，见 [格式规范](herdr-format.md)。
 
 ```sh
 herdr-team init --roles-file roles.json
@@ -100,11 +99,11 @@ CLI 输出、错误和生成的默认指令保持英文，无需多语言支持�
 
 ## 本地文件与 Git
 
-根 `TEAM.md` 应纳入 Git，跨机器共享角色工作步骤。`.herdr/` 整体忽略，包括本地角色配置、任务、报告和临时产物；不要强制添加这些文件到 Git。
+根 `TEAM.md` 与 `agents.json` 应纳入 Git，跨机器共享角色工作步骤与 agent 预设。`.herdr/` 整体忽略，包括本地角色配置、任务、报告和临时产物；不要强制添加这些文件到 Git。
 `init` 在根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件。已有项目运行 init 即可补上规则。
 已跟踪的目录用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件；先检查差异，不删除本地配置。
 
-可复用默认模板在插件的 `skill/assets/`，各机器读取已共享的 TEAM.md，再独立初始化角色启动配置、选择模型并登录所选工具。
+可复用默认模板在插件的 `skill/assets/`，各机器读取已共享的 TEAM.md 和 agents.json，再独立初始化角色引用并登录所选工具。
 任务、会话和本机 worktree 不跨机器恢复；只有用户明确要求时才另外安排配置复制。
 
 ## 更新插件
@@ -146,5 +145,5 @@ herdr-team --version
 核对插件与 CLI 是否匹配选定源码/版本，并确认安装输出中 Skill 安装成功；失败时保留原错误，不将部分成功报为全部更新完成。
 更新后的 Skill 文件要重新读取；当前 agent 已加载的上下文不会自动刷新。已运行的 Console 需要在其 tab 按 q 退出，
 再按 `prefix+t` 打开，以加载新运行时；不要用 down 重启整个团队或关闭其他 agent。
-`herdr-team init --force` 用于项目角色元数据，不更新插件。插件更新保留 TEAM.md 和项目 .herdr/ 的自定义内容；
+`herdr-team init --force` 用于项目角色元数据，不更新插件。插件更新保留 TEAM.md、agents.json 和项目 .herdr/ 的自定义内容；
 若用户改过已安装 Skill，更新前先保留这些修改，不编辑冻结的 CLI 缓存来代替源码更新。

@@ -307,7 +307,7 @@ function cmdInit(args: string[]): number {
     process.stdout.write(
       `Usage: herdr-team init [--plan ${PLAN_NAMES.join("|")} | --roles-file F | --roles JSON] [--force] [--root DIR]\n\n` +
         PLAN_NAMES.map((p) => `  --plan ${p.padEnd(10)}${describePlan(p)}`).join("\n") +
-        "\nProject .herdr/models.json preferences override plan model suggestions.\n--force rewrites role metadata and preserves existing prompt.md; use role add <name> --force --body T to update responsibilities.\n",
+        "\nProject root agents.json defines the agent presets referenced by role plans.\n--force rewrites role metadata and preserves existing prompt.md; use role add <name> --force --body T to update responsibilities.\n",
     );
     return 0;
   }
@@ -765,17 +765,18 @@ function cmdRole(args: string[]): number {
     process.stdout.write(
       "Usage: herdr-team role <list|add|rm> [options]\n\n" +
         "  list [--json]                     List roles (JSON omits body)\n" +
-        "  add <name> [--kind K] [--model M] [--worktree] [--cwd C]\n" +
+        "  add <name> [--kind K] [--preset P | --model M] [--worktree] [--cwd C]\n" +
         "             [--args a,b] [--env K=V,K=V] [--body T | --body-file F] [--force]\n" +
         "  rm <name> [--force]               Remove a role; reject active task references\n\n" +
         "New roles require --kind; updates require --force and preserve omitted metadata.\n" +
+        "Agent settings: --preset P references root agents.json; use --preset \"\" to return to explicit model/args/env.\n" +
         "Update responsibilities: role add <name> --force --body T (or --body-file F); omitted body preserves prompt.md.\n" +
         "Run `herdr-team up` after adding roles to start them and report metadata.\n",
     );
     return sub === undefined ? 2 : 0;
   }
 
-  const parsed = parseArgs(rest, ["root", "kind", "model", "cwd", "args", "env", "body", "body-file"]);
+  const parsed = parseArgs(rest, ["root", "kind", "preset", "model", "cwd", "args", "env", "body", "body-file"]);
   if (parsed.flags.has("help")) return cmdRole(["--help"]);
 
   const root = resolveRoot(parsed.values.get("root"));
@@ -798,6 +799,7 @@ function cmdRole(args: string[]): number {
     const result = addRole(project, {
       name,
       kind,
+      preset: parsed.values.get("preset"),
       model: parsed.values.get("model"),
       worktree: parsed.flags.has("worktree") ? true : undefined,
       cwd: parsed.values.get("cwd"),

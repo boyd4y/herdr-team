@@ -66,6 +66,10 @@ test("task file changes invalidate snapshots; Herdr notices and reports do not r
     renameSync(join(f.root, "team-save.tmp"), agreement);
     await until(() => events.load().hasTeamFile);
     changed = events.load();
+    writeFileSync(join(f.root, "agents-save.tmp"), JSON.stringify({ codex: { default: { model: "default" } } }));
+    renameSync(join(f.root, "agents-save.tmp"), join(f.root, "agents.json"));
+    await until(() => events.load() !== changed);
+    changed = events.load();
     writeFileSync(join(f.root, "unrelated.txt"), "Not team state");
     await Bun.sleep(180);
     expect(events.load()).toBe(changed);

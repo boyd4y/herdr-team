@@ -16,7 +16,7 @@ export function sampleConsole(state: ConsoleState, elapsedMs = 0) {
     id, slug: "sample", dir: `tasks/${id}-sample`, title, priority: "P1", status, role, handoff,
     dependsOn: [], repo: ".", body: "", meta: { title, role, status, priority: "P1", handoff, repo: ".", execution: "task" },
   });
-  const main = card("0083", "Share project model preferences", owner, phase === 9 ? "done" : owner === "dev" ? "doing" : "review",
+  const main = card("0083", "Share project agent presets", owner, phase === 9 ? "done" : owner === "dev" ? "doing" : "review",
     owner === "dev" ? ["test", "doc"] : owner === "test" ? ["doc"] : []);
   const now = new Date(Date.UTC(2026, 9, 18, 10, 32) + elapsedMs);
   const queued = new Date(now.getTime() - (elapsedMs % 5000) - 2000).toISOString();
@@ -25,7 +25,7 @@ export function sampleConsole(state: ConsoleState, elapsedMs = 0) {
     state: sending ? "submitted" : "claimed", queued_at: queued, sent_at: queued };
   if (owner !== "dev") main.meta.review = { commit, developer: "dev", reviewer: owner,
     reviewers: owner === "test" ? ["test"] : ["test", "doc"] };
-  main.body = "Persist each project's model catalog and preferred selections.\n\nAcceptance\n"
+  main.body = "Persist each project's complete agent presets.\n\nAcceptance\n"
     + "• Preserve customer changes during initialization.\n• Follow the harness configuration for default.\n• Verify the packaged CLI without a source checkout.\n\n## History\n"
     + "- 10:32  dev started implementation\n"
     + (phase > 0 ? "- 10:33  dev → test · submitted a81e6b4\n" : "")

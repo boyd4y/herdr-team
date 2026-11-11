@@ -137,12 +137,12 @@ describe("findRoot —— 区分 Herdr 数据目录和团队项目", () => {
     });
   });
 
-  for (const marker of ["TEAM.md", "models.json", "roles", "tasks"]) {
+  for (const marker of ["TEAM.md", "agents.json", "roles", "tasks"]) {
     test(`只有 ${marker} 的半成品仍可从子目录找到`, () => {
       withHerdrData((_base, project) => {
         const herdr = join(project, ".herdr");
         mkdirSync(herdr);
-        if (marker.endsWith(".md") || marker.endsWith(".json")) writeFileSync(join(marker === "TEAM.md" ? project : herdr, marker), marker.endsWith(".json") ? "{}" : "# Identity\n");
+        if (marker.endsWith(".md") || marker.endsWith(".json")) writeFileSync(join(["TEAM.md", "agents.json"].includes(marker) ? project : herdr, marker), marker.endsWith(".json") ? "{}" : "# Identity\n");
         else mkdirSync(join(herdr, marker));
         const nested = join(project, "src", "nested");
         mkdirSync(nested, { recursive: true });

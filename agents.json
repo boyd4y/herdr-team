@@ -1,0 +1,59 @@
+{
+  "codex": {
+    "default": {
+      "model": "default",
+      "daemon": false
+    },
+    "dev": {
+      "model": "gpt-6.1-sol",
+      "daemon": false
+    },
+    "fast": {
+      "model": "gpt-6-luna",
+      "daemon": false
+    },
+    "strong": {
+      "model": "gpt-6-astra",
+      "daemon": false
+    }
+  },
+  "claude": {
+    "default": {
+      "model": "default"
+    },
+    "sonnet": {
+      "model": "sonnet"
+    },
+    "opus": {
+      "model": "opus"
+    },
+    "haiku": {
+      "model": "haiku"
+    },
+    "fable": {
+      "model": "fable"
+    },
+    "best": {
+      "model": "best"
+    }
+  },
+  "grok": {
+    "default": {
+      "model": "default",
+      "trust": true
+    }
+  },
+  "kimi": {
+    "default": {
+      "model": "default"
+    }
+  },
+  "qodercli": {
+    "default": {
+      "model": "default"
+    }
+  },
+  "acpc": {
+    "default": {}
+  }
+}

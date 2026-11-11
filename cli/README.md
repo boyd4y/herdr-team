@@ -4,8 +4,8 @@
 
 需要 Bun 1.3.14 或更新版本；启动团队还需要已安装的 Herdr 和对应角色使用的 agent CLI。
 
-实现按职责划分，先看 [模块导航](ARCHITECTURE.md)；角色模板源在 [skill/assets/roles](../skill/assets/roles)，模型目录在 [models.json](../skill/assets/models.json)，角色方案在 [plans.json](../skill/assets/plans.json) 中引用它。
-初始化将模型模板复制到项目 `.herdr/models.json`（只补缺，--force 也不覆盖）。用户可直接修改目录与 preferred，项目文件优先，下一次选择直接生效。
+实现按职责划分，先看 [模块导航](ARCHITECTURE.md)；角色模板源在 [skill/assets/roles](../skill/assets/roles)，agent 预设在 [agents.json](../skill/assets/agents.json)，角色方案在 [plans.json](../skill/assets/plans.json) 中引用它。
+初始化将 agent 预设复制到项目根 `agents.json`（只补缺，--force 也不覆盖），可提交 Git。用户直接维护 model、推理强度、alias 等结构化设置，角色通过 kind + preset 引用；下次启动读取新配置。
 选择和刷新由 Skill 引导；`default` 跟随 harness 本地配置，团队不添加模型覆盖参数。
 
 ## 开发验证
@@ -54,10 +54,25 @@ herdr-team add "Implement login" --role dev --handoff test,review
 herdr-team tasks
 ```
 
-`.herdr/` 整体属于本机状态，不纳入 Git，包括本地模型、角色启动配置和任务记录；角色工作步骤保存在纳入 Git 的根 TEAM.md。
+`.herdr/` 整体属于本机状态，不纳入 Git，包括角色引用和任务记录；角色工作步骤保存在根 TEAM.md，共享 agent 预设保存在根 agents.json，两者纳入 Git。
 `init` 在根 `.gitignore` 追加 `/.herdr/`，保留已有规则；重复执行不重复添加。
 已有 `.herdr/.gitignore` 原样保留，不再生成内部忽略文件或 `.gitkeep`。
 已跟踪的目录用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件；各机器独立初始化。
+
+### Agent 配置预设
+
+直接维护根 `agents.json`，按 codex、claude 等 harness 分组，每个预设保存完整启动设置。
+角色通过 `kind + preset` 引用，不同时保存 model/args/env；已有显式角色不自动迁移。
+预设字段与原生支持限制见 [agents 参考](../skill/references/agents.md)。
+
+```sh
+herdr-team role add dev --kind codex --preset dev --worktree
+# 已有角色切换预设，保留 prompt.md 和任务记录：
+herdr-team role add dev --force --preset fast
+```
+
+文件变化通过 Console 原生监听刷新，后续启动使用最新配置，运行中会话不自动重启。
+模型名维护在数据里，不需要修改代码，也不要求手动拼接模型或 alias 参数。
 
 ### 角色步骤与任务分配
 
@@ -102,7 +117,7 @@ herdr-team tasks 0001 --json
 人类可读输出区分元数据写入、正文写入与正文保留；`init --json` 用
 `roleMetadataWritten`、`roleBodiesWritten`、`roleBodiesPreserved` 三个文件路径数组替代原来的
 `rolesWritten`，不再把只换元数据报告成整张角色已写。保留的正文也列入 `skipped`。
-根 `TEAM.md` 和 `.herdr/models.json` 即使加 `--force` 也始终保留；init 只复制缺失模板，角色步骤由 Skill 用中文填写。
+根 `TEAM.md` 和 `agents.json` 即使加 `--force` 也始终保留；init 只复制缺失模板，角色步骤由 Skill 用中文填写。
 
 由 lead 更新已有角色职责：
 
@@ -385,7 +400,7 @@ cwd 是服务器启动时的目录（通常是你家目录），从那儿往上�
 在 linked worktree 里跑会读**主检出**的 `.herdr/`（`findRoot` 的既有行为，见
 `scripts/lib/team/project.ts`）—— 那才是活的卡片，worktree 里那份是切出去时的过期副本。
 
-自动查找项目根时，根 `TEAM.md` 或 `.herdr/` 中的 `models.json`、`roles`、`tasks` 任一存在即可；
+自动查找项目根时，根 `TEAM.md`、`agents.json` 或 `.herdr/` 中的 `roles`、`tasks` 任一存在即可；
 只有 `projects/`、`worktrees/` 的 Herdr 数据目录不会被当成团队项目。
 子目录仍可向上找到项目，只建了一部分配置的项目也能被识别。
 找不到时普通命令提示用 `--root` 指定，`console --line` 静默退出；

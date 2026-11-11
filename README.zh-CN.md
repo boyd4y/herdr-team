@@ -35,13 +35,15 @@ Skill 每次运行先读取根 `TEAM.md`，缺失时初始化。模板与生成�
 
 onboard 由 Skill 对话引导；CLI 的 `init` 只保存已确认的本地配置。Skill 用 `role list --json` 和 `validate` 核对配置再启动派活，保留已有角色和用户自定义正文。
 
-Skill 提供四个工作入口：**setup（onboard）**、**handoff**、**models** 和 **feedback**。例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。feedback 从已有记录检查慢任务、重复工作、职责交叉和环境阻塞，保存本地报告，并分别给出上游 GitHub issue 草稿与当前仓库改进建议；缺失的耗时数据明确标注。先完成并查看本地报告，确认插件问题且决定提交后，才查询上游同类 issue。实施修复按用户请求范围执行。详见 [feedback 参考](skill/references/feedback.md)。这些是 agent 的 Skill 工作入口，不是 CLI 命令。
+Skill 提供四个工作入口：**setup（onboard）**、**handoff**、**agents** 和 **feedback**。例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。feedback 从已有记录检查慢任务、重复工作、职责交叉和环境阻塞，保存本地报告，并分别给出上游 GitHub issue 草稿与当前仓库改进建议；缺失的耗时数据明确标注。先完成并查看本地报告，确认插件问题且决定提交后，才查询上游同类 issue。实施修复按用户请求范围执行。详见 [feedback 参考](skill/references/feedback.md)。这些是 agent 的 Skill 工作入口，不是 CLI 命令。
 
 根 `TEAM.md` 纳入 Git，跨机器共享角色步骤。每次创建或重建时，Skill 检查旧 `.herdr/identity.md` 与 `.herdr/workflow.md`，展示拟迁移内容并提示是否迁移清理；确认后先保存核对 TEAM.md，再只删除同意清理的旧文件。选择保留或暂不迁移时，旧文件不作为执行依据。普通读取不重复询问。检查 `TEAM.md`、`.herdr/roles/<role>/.role.yaml` 中的角色元数据，以及 `.herdr/roles/<role>/prompt.md` 中的角色说明，并按项目需要编辑。
 
-`.herdr/` 整体保留在本地并由 Git 忽略，包括模型、本地角色配置、任务、报告和临时产物；根 TEAM.md 位于忽略目录外，`init --force` 也不会覆盖。
-初始化会在项目根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件，`--force` 也不覆盖正文或模型目录。
+`.herdr/` 整体保留在本地并由 Git 忽略，包括本地角色引用、任务、报告和临时产物；根 TEAM.md 与 agents.json 位于忽略目录外，`init --force` 也不会覆盖。
+初始化会在项目根 `.gitignore` 追加 `/.herdr/`，保留已有规则和团队文件，`--force` 也不覆盖正文或 agent 预设。
 已跟踪的文件用 `git rm -r --cached -- .herdr` 取消跟踪，保留磁盘文件。可复用默认模板保存在插件的 `skill/assets/`，各机器分别初始化并登录所选工具。
+
+agent 完整预设保存在根 `agents.json`，按原生 harness 名称分组；模型、推理强度、原生权限设置及 acpc alias 都用结构化字段维护。用户可直接编辑并提交 Git。角色通过 kind + preset 引用，例如 `herdr-team role add dev --kind codex --preset dev`。下次启动读取新配置，不自动重启已有会话；旧角色显式配置在迁移前保持原样。字段和原生工具支持限制见 [agent 预设参考](skill/references/agents.md)。
 
 运行 `herdr-team role list` 查看角色；用 `herdr-team role add <name> --kind <kind>` 添加角色；用 `herdr-team role add <name> --force --body <text>` 或 `--body-file <file>` 更新现有角色职责；用 `herdr-team role rm <name>` 移除角色。添加角色后运行 `herdr-team up`，让新角色启动并上报信息。
 

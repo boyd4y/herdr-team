@@ -61,10 +61,10 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
   const f = fixture(t);
   const checkout = path.join(f.dir, 'build-checkout');
   fs.cpSync(root, checkout, { recursive: true, filter: (file) => !['tests', 'node_modules'].includes(path.basename(file)) });
-  const modelsFile = path.join(checkout, 'skill/assets/models.json');
-  const models = JSON.parse(fs.readFileSync(modelsFile, 'utf8'));
-  models.harnesses.codex.args.push('--test-catalog-flag');
-  fs.writeFileSync(modelsFile, JSON.stringify(models));
+  const presetsFile = path.join(checkout, 'skill/assets/agents.json');
+  const presets = JSON.parse(fs.readFileSync(presetsFile, 'utf8'));
+  presets.codex.dev.reasoning_effort = 'low';
+  fs.writeFileSync(presetsFile, JSON.stringify(presets));
   const leadTemplate = path.join(checkout, 'skill/assets/roles/lead/prompt.md');
   fs.appendFileSync(leadTemplate, '\nProject-specific template change.\n');
   const expectedLead = fs.readFileSync(leadTemplate, 'utf8');
@@ -88,13 +88,17 @@ test('standalone CLI works after build checkout moves and disappears; uninstall 
   }
   f.cli('init', '--plan', 'balanced');
   assert.equal(fs.readFileSync(path.join(f.dir, 'TEAM.md'), 'utf8'), expectedTeam);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.dir, '.herdr/models.json'), 'utf8')), models);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.dir, 'agents.json'), 'utf8')), presets);
   const configured = JSON.parse(f.cli('role', 'list', '--json'));
-  assert(configured.find(role => role.name === 'dev').args.includes('--test-catalog-flag'));
+  assert(configured.find(role => role.name === 'dev').args.includes('model_reasoning_effort=\"low\"'));
+  assert.equal(configured.find(role => role.name === 'dev').preset, 'dev');
   assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/roles/lead/prompt.md'), 'utf8'), expectedLead);
   f.cli('role', 'add', 'docs', '--kind', 'codex');
   assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/roles/docs/prompt.md'), 'utf8'), expectedDocs);
-  f.cli('role', 'add', 'helper', '--kind', 'codex');
+  f.cli('role', 'add', 'helper', '--kind', 'codex', '--preset', 'fast');
+  assert.equal(JSON.parse(f.cli('role', 'list', '--json')).find(role => role.name === 'helper').preset, 'fast');
+  f.cli('role', 'add', 'helper', '--force', '--preset', '', '--model', 'default', '--args', '');
+  assert.equal(JSON.parse(f.cli('role', 'list', '--json')).find(role => role.name === 'helper').preset, undefined);
   assert.equal(fs.readFileSync(path.join(f.dir, '.herdr/roles/helper/prompt.md'), 'utf8'), expectedDefault);
   assert.equal(JSON.parse(f.cli('validate', '--json')).ok, true);
   const herdr = path.join(f.bin, 'herdr');

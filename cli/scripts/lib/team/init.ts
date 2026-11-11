@@ -2,18 +2,19 @@ import { readAsset, rolePrompt } from "./templates.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { KINDS, NAME_RE, ROLE_BODY, ROLE_META, type Project } from "../shared/types.ts";
+import { checkPresetRole, initialAgentPresets } from "./agents.ts";
 import { emitYaml } from "../shared/yaml.ts";
 
 /** 角色元数据里键的顺序。**不含 `name`** —— 角色名就是目录名，不重复存。 */
-export const ROLE_FIELD_ORDER = ["kind", "model", "worktree", "cwd", "args", "env"];
+export const ROLE_FIELD_ORDER = ["kind", "preset", "model", "worktree", "cwd", "args", "env"];
 
 export class InitError extends Error {}
 
 export interface RoleSpec {
   name: string;
   kind: string;
+  preset?: string;
   model?: string;
-  /** 显示短名和启动参数分开写着 —— 这里只放 `kind` / `args` / `env`。 */
   /** Skip the resident conversation tab; dispatched work is always task-scoped. */
   worktree?: boolean;
   cwd?: string;
@@ -89,6 +90,7 @@ export function parseRoleSpecs(input: string): RoleSpec[] {
     return {
       name,
       kind,
+      preset: optionalString(rec, "preset"),
       model: optionalString(rec, "model"),
       worktree: worktreeRaw === true,
       cwd: optionalString(rec, "cwd"),
@@ -112,6 +114,10 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
   const created: string[] = [];
   const skipped: string[] = [];
 
+  const presets = initialAgentPresets(project.root);
+  for (const spec of roleSpecs) {
+    if (force || !existsSync(join(project.herdrDir, "roles", spec.name, ROLE_META))) checkPresetRole(spec, presets);
+  }
   mkdirSync(project.herdrDir, { recursive: true });
 
   const ignorePath = join(project.root, ".gitignore");
@@ -123,13 +129,13 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
     created.push(".gitignore");
   }
 
-  const modelsPath = join(project.herdrDir, "models.json");
+  const agentsPath = join(project.root, "agents.json");
   try {
-    writeFileSync(modelsPath, readAsset("models.json"), { flag: "wx" });
-    created.push("models.json");
+    writeFileSync(agentsPath, readAsset("agents.json"), { flag: "wx" });
+    created.push("agents.json");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    skipped.push("models.json");
+    skipped.push("agents.json");
   }
 
   try {
@@ -158,6 +164,7 @@ export function init(project: Project, roleSpecs: RoleSpec[], force = false): In
     mkdirSync(dir, { recursive: true });
 
     const meta: Record<string, unknown> = { kind: spec.kind };
+    if (spec.preset !== undefined) meta["preset"] = spec.preset;
     if (spec.model !== undefined) meta["model"] = spec.model;
     if (spec.worktree === true) meta["worktree"] = true;
     if (spec.cwd !== undefined) meta["cwd"] = spec.cwd;

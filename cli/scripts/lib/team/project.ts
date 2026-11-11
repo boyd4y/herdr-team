@@ -12,11 +12,12 @@ import {
   type RoleCard,
   type TaskCard,
 } from "../shared/types.ts";
+import { checkPresetRole, readAgentPresets, resolveAgentPreset, type AgentPresets } from "./agents.ts";
 import { parseYaml } from "../shared/yaml.ts";
 
 /** 项目至少有一个团队配置标记；Herdr 自己的 projects/、worktrees/ 不算。 */
 function hasTeamConfig(root: string): boolean {
-  return existsSync(join(root, "TEAM.md")) || ["models.json", "roles", "tasks"].some((name) => existsSync(join(root, ".herdr", name)));
+  return existsSync(join(root, "TEAM.md")) || existsSync(join(root, "agents.json")) || ["roles", "tasks"].some((name) => existsSync(join(root, ".herdr", name)));
 }
 
 /** 从 start 向上找含团队配置的目录；找不到返回 null。 */
@@ -147,7 +148,7 @@ function readMeta(
   return meta;
 }
 
-function loadRoles(herdrDir: string, problems: Problem[]): RoleCard[] {
+function loadRoles(herdrDir: string, problems: Problem[], presets?: AgentPresets): RoleCard[] {
   const base = join(herdrDir, "roles");
   const out: RoleCard[] = [];
 
@@ -157,15 +158,25 @@ function loadRoles(herdrDir: string, problems: Problem[]): RoleCard[] {
     const meta = readMeta(itemDir, ROLE_META, rel, "3", problems);
     if (meta === null) continue;
 
+    let launch: ReturnType<typeof resolveAgentPreset> | undefined;
+    if (meta.preset !== undefined) {
+      try {
+        if (!presets) throw new Error("A preset role requires a valid root agents.json; run init if it is missing");
+        launch = checkPresetRole(meta, presets);
+      } catch (error) {
+        problems.push({ file: rel, rule: "1", message: error instanceof Error ? error.message : String(error) });
+      }
+    }
     out.push({
       dir: rel,
       name,
       meta,
+      preset: asString(meta["preset"]),
       kind: asString(meta["kind"]) ?? "",
-      model: asString(meta["model"]),
+      model: launch?.model ?? asString(meta["model"]),
       cwd: asString(meta["cwd"]),
-      args: asStringList(meta["args"]),
-      env: asStringMap(meta["env"]),
+      args: launch?.args ?? asStringList(meta["args"]),
+      env: launch?.env ?? asStringMap(meta["env"]),
       worktree: meta["worktree"] === true,
       body: readBody(join(itemDir, ROLE_BODY)),
     });
@@ -215,11 +226,16 @@ export function loadRetiredIds(herdrDir: string): string[] {
 export function loadProject(root: string): Project {
   const herdrDir = join(root, ".herdr");
   const problems: Problem[] = [];
+  let presets: AgentPresets | undefined;
+  if (existsSync(join(root, "agents.json"))) {
+    try { presets = readAgentPresets(root); }
+    catch (error) { problems.push({ file: "agents.json", rule: "1", message: error instanceof Error ? error.message : String(error) }); }
+  }
   return {
     root,
     herdrDir,
     hasTeamFile: existsSync(join(root, "TEAM.md")) && statSync(join(root, "TEAM.md")).isFile(),
-    roles: loadRoles(herdrDir, problems),
+    roles: loadRoles(herdrDir, problems, presets),
     tasks: loadTasks(herdrDir, problems),
     retiredIds: loadRetiredIds(herdrDir),
     problems,

@@ -10,8 +10,8 @@
 ```
 <project>/
 ├── TEAM.md                     各角色的简短中文步骤，纳入 Git
+├── agents.json                 按 harness 保存完整配置预设，纳入 Git
 └── .herdr/                     以下为本地执行数据
-    ├── models.json                 项目模型目录与 preferred，用户可改，优先于 Skill 模板
     ├── .retired-ids                已删除任务的 id，一行一个，只追加
     ├── roles/
     │   └── <name>/
@@ -37,7 +37,7 @@
 
 `.retired-ids` 首次 `rm` 时才创建。扫描跳过以 `.` 开头的条目。
 
-`.herdr/` 整体保留在本机，不纳入 Git，包括模型、角色启动配置、任务和临时产物；根 TEAM.md 不在忽略范围。
+`.herdr/` 整体保留在本机，不纳入 Git，包括角色引用、任务和临时产物；根 TEAM.md 与 agents.json 不在忽略范围。
 `init` 在项目根 `.gitignore` 追加 `/.herdr/`；已有内部忽略文件保留，不再新建。
 可复用默认模板位于插件的 `skill/assets/`，不通过提交项目 `.herdr/` 分享。
 
@@ -56,7 +56,8 @@ AGENTS.md 维护工程约束；交棒、协作、PR、队列与收尾属于 Skil
 | 键 | 必填 | 类型 | 约束 |
 | --- | :--: | --- | --- |
 | `kind` | ✅ | enum | 见 [kind 枚举](#kind-枚举)。**agent 类型** —— 是属性，不是身份 |
-| `model` | | str | **只用于显示的短名**（`gpt-6.1-sol` / `sonnet` / `default`）。真正的模型由 `args` / `env` 决定 |
+| `preset` | | str | 引用根 agents.json 中 kind 下的预设；与 model/args/env 互斥 |
+| `model` | | str | 不使用 preset 时的**显示短名**（`gpt-6.1-sol` / `sonnet` / `default`）。真正的模型由 `args` / `env` 决定 |
 | `worktree` | | bool | `true` = 不预起常驻对话 tab；任务执行始终按任务隔离。见 [隔离与常驻](#隔离与常驻) |
 | `cwd` | | str | 相对项目根；**禁止 `..` 逃逸项目根** |
 | `args` | | list[str] | 透传给该 agent 的可执行文件 |
@@ -64,12 +65,11 @@ AGENTS.md 维护工程约束；交棒、协作、PR、队列与收尾属于 Skil
 
 **没有 `name`。** 角色名就是目录名。
 
-`args` 与 `env` 是显式启动配置。模型选择从 项目 `.herdr/models.json` 取值，缺失时才读 [初始模板](../assets/models.json)；
-Claude/Codex 只提供各自官方模型选项或 harness default。default 不增加模型覆盖参数，
-跟随 harness 的本地配置与账号设置。切换选择时核对旧 args/env，见 [models.md](models.md)。
+推荐使用 `kind + preset`。读取时解析主项目根的 agents.json，得到实际 model/args/env，常驻与任务会话共用。
+预设字段与选择、生效规则见 [agents.md](agents.md)。职责和隔离设置仍属于角色，不放入 agent 预设。
 
-`model` **不参与启动**，只用来拼侧边栏显示名（`dev (gpt-6.1-sol)`）。两者写得不一致不会报错，
-但会误导人，所以**改启动方式时记得同步改 `model`**。
+不带 preset 的已有角色继续使用显式 args/env，model 仅用于显示；修改这些旧配置时要保持显示与实际启动一致。
+升级不会静默改写角色或已有会话。
 
 ### `prompt.md`
 

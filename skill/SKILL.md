@@ -1,11 +1,11 @@
 ---
 name: herdr-team
-description: 用项目根 TEAM.md 的团队约定和 .herdr/ 的角色卡、任务卡驱动 Herdr agent 团队：初始化骨架、按角色拉起 agent 并按优先级和依赖派活、以任务卡为载体在角色间交接，并复盘执行耗时、重复工作和职责交叉、提出上游反馈与项目改进。适用于需要多 agent 分工或执行复盘的本地开发；不绑定具体项目、仓库名或 agent 类型。
+description: 用项目根 TEAM.md 的团队约定、agents.json 的 agent 预设及 .herdr/ 的角色卡、任务卡驱动 Herdr agent 团队：初始化骨架、按角色拉起 agent 并按优先级和依赖派活、以任务卡为载体在角色间交接，并复盘执行耗时、重复工作和职责交叉、提出上游反馈与项目改进。适用于需要多 agent 分工或执行复盘的本地开发；不绑定具体项目、仓库名或 agent 类型。
 ---
 
 # Herdr Team
 
-项目根 `TEAM.md` 只按角色保存简短的中文工作步骤，`.herdr/` 保存本地执行配置和任务，Herdr 承载 agent 会话。
+项目根 `TEAM.md` 保存角色的中文工作步骤，`agents.json` 保存可共享的 agent 预设；`.herdr/` 保存本地角色、任务与运行状态，Herdr 承载会话。
 每次运行任何入口，先按派活给出的绝对 root 或 Git 主检出定位团队项目，读取 AGENTS.md 和根目录 TEAM.md。
 TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队约定-teammd) 初始化，再继续当前工作；
 每次创建或重建都按该节检查旧 identity/workflow，并提示迁移与清理选择。
@@ -27,7 +27,7 @@ TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队�
 | --- | --- | --- |
 | setup（onboard） | 初始化、调整角色与本地配置、按用户要求更新插件 | [setup.md](references/setup.md) |
 | handoff | 拆任务、领取、协作交付、PR、合并、收尾与会话恢复 | [handoff.md](references/handoff.md) |
-| models | 选择模型或修改 harness 启动配置 | [models.md](references/models.md) |
+| agents | 选择或维护完整 agent 配置预设 | [agents.md](references/agents.md) |
 | feedback | 回顾指定时间的执行，分析耗时、重复与职责交叉，生成报告、上游 issue 草稿和仓库改进建议 | [feedback.md](references/feedback.md) |
 
 例如：“使用 herdr-team skill 的 feedback，复盘最近 7 天”。用户询问有哪些入口时列出上表。

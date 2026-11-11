@@ -2,70 +2,70 @@
   "cheap": [
     {
       "name": "lead",
-      "model": "haiku",
-      "kind": "claude"
+      "kind": "claude",
+      "preset": "haiku"
     },
     {
       "name": "dev",
-      "model": "haiku",
       "worktree": true,
-      "kind": "claude"
+      "kind": "claude",
+      "preset": "haiku"
     },
     {
       "name": "test",
-      "model": "haiku",
-      "kind": "claude"
+      "kind": "claude",
+      "preset": "haiku"
     },
     {
       "name": "search",
-      "model": "default",
-      "kind": "grok"
+      "kind": "grok",
+      "preset": "default"
     }
   ],
   "balanced": [
     {
       "name": "lead",
-      "model": "haiku",
-      "kind": "claude"
+      "kind": "claude",
+      "preset": "haiku"
     },
     {
       "name": "dev",
-      "model": "gpt-6.1-sol",
       "worktree": true,
-      "kind": "codex"
+      "kind": "codex",
+      "preset": "dev"
     },
     {
       "name": "test",
-      "model": "sonnet",
-      "kind": "claude"
+      "kind": "claude",
+      "preset": "sonnet"
     },
     {
       "name": "search",
-      "model": "default",
-      "kind": "grok"
+      "kind": "grok",
+      "preset": "default"
     }
   ],
   "strong": [
     {
       "name": "lead",
-      "model": "gpt-6.1-sol",
-      "kind": "codex"
+      "kind": "codex",
+      "preset": "dev"
     },
     {
       "name": "dev",
-      "model": "gpt-6.1-sol",
       "worktree": true,
-      "kind": "codex"
+      "kind": "codex",
+      "preset": "dev"
     },
     {
       "name": "test",
-      "model": "gpt-6.1-sol",
-      "kind": "codex"
+      "kind": "codex",
+      "preset": "dev"
     },
     {
       "name": "search",
-      "model": "default",
-      "kind": "grok"
+      "kind": "grok",
+      "preset": "default"
     }
   ]
 }

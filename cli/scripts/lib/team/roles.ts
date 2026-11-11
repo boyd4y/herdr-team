@@ -1,4 +1,5 @@
 import { rolePrompt } from "./templates.ts";
+import { checkPresetRole, readAgentPresets } from "./agents.ts";
 import { reviewFor } from "../tasks/verification.ts";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import { KINDS, NAME_RE, ROLE_BODY, ROLE_META, isTerminal, type Project, type Ro
 import { emitYaml, parseYaml } from "../shared/yaml.ts";
 
 /** 角色元数据里键的顺序。**不含 `name`** —— 角色名就是目录名。 */
-export const ROLE_FIELD_ORDER = ["kind", "model", "worktree", "cwd", "args", "env"];
+export const ROLE_FIELD_ORDER = ["kind", "preset", "model", "worktree", "cwd", "args", "env"];
 
 export class RoleError extends Error {}
 
@@ -14,6 +15,7 @@ export interface AddRoleOptions {
   name: string;
   /** 新角色必填；--force 更新时省略则保留。 */
   kind?: string;
+  preset?: string;
   model?: string;
   worktree?: boolean;
   cwd?: string;
@@ -62,6 +64,12 @@ export function addRole(project: Project, opts: AddRoleOptions): AddRoleResult {
     throw new RoleError(`Unsupported kind "${kind}"`);
   }
   meta["kind"] = kind;
+  if (opts.preset !== undefined) {
+    if (opts.preset) {
+      meta["preset"] = opts.preset;
+      for (const key of ["model", "args", "env"]) delete meta[key];
+    } else delete meta["preset"];
+  }
   if (opts.model !== undefined) meta["model"] = opts.model;
   if (opts.worktree !== undefined) meta["worktree"] = opts.worktree;
   if (opts.cwd !== undefined) meta["cwd"] = opts.cwd;
@@ -70,6 +78,7 @@ export function addRole(project: Project, opts: AddRoleOptions): AddRoleResult {
     if (Object.keys(opts.env).length > 0) meta["env"] = opts.env;
     else delete meta["env"];
   }
+  if (meta.preset !== undefined) checkPresetRole(meta, readAgentPresets(project.root));
   mkdirSync(dir, { recursive: true });
   // 只改职责时连元数据的格式与注释也保留。
   if (!existed || ROLE_FIELD_ORDER.some((key) => opts[key as keyof AddRoleOptions] !== undefined)) {
@@ -133,7 +142,7 @@ export function removeRole(project: Project, name: string, force = false): Remov
 
 /** 给人看的一行：角色名、类型、模型、是否隔离。 */
 export function describeRole(role: RoleCard): string {
-  const bits = [role.kind, role.model ?? "default"];
+  const bits = [role.kind, ...(role.preset ? [`preset:${role.preset}`] : []), role.model ?? "default"];
   if (role.worktree) bits.push("worktree");
   return `${role.name.padEnd(10)}${bits.join("  ")}`;
 }

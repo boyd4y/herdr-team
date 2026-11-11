@@ -38,6 +38,7 @@ export interface RoleCard {
   name: string;
   meta: Record<string, unknown>;
   kind: string;
+  preset?: string;
   model?: string;
   cwd?: string;
   args?: string[];

@@ -53,7 +53,7 @@ recover from errors; inspect existing state before retrying an uncertain operati
 # Role prompts and shared context
 
 - Maintain reusable role prompts in `skill/assets/roles/<role>/prompt.md` and the
-  harness model catalog in `skill/assets/models.json`; role plans reference it from
+  agent preset seed in `skill/assets/agents.json`; role plans reference it from
   `skill/assets/plans.json`, and the shared team agreement template in
   `skill/assets/TEAM.md`; do not embed these texts or catalogs in code.
 - Role `prompt.md`: define the role's responsibilities, allowed scope, boundaries,
@@ -62,7 +62,7 @@ recover from errors; inspect existing state before retrying an uncertain operati
 - `TEAM.md`: keep only short Chinese numbered work steps under each actual role.
   Do not add identity, preferences, Workflow or Completion sections. Handoff,
   collaboration, task routing, PR/merge and cleanup procedures belong in the skill,
-  not TEAM.md. Engineering constraints stay in AGENTS.md; startup settings stay local.
+  not TEAM.md. Engineering constraints stay in AGENTS.md; shared agent presets belong in root agents.json; role references stay local.
   Skill owns migration from old identity/workflow files. When creating or rebuilding
   TEAM.md, present the proposed migration and exact old paths and ask whether to
   migrate and clean them, unless this operation is already explicitly authorized.
@@ -80,8 +80,8 @@ recover from errors; inspect existing state before retrying an uncertain operati
 
 # Local team state
 
-Keep root `TEAM.md` in Git. Keep the entire project `.herdr/` directory out of Git,
-including local roles, models, tasks, reports, and temporary artifacts.
+Keep root `TEAM.md` and `agents.json` in Git. Keep the entire project `.herdr/` directory out of Git,
+including local role references, tasks, reports, and temporary artifacts.
 Initialization adds a root `.gitignore` entry without replacing existing rules. Reusable templates stay
 in `skill/assets/`; do not force-add local team files to share them.
 
@@ -115,16 +115,24 @@ fields and checks the document shape. Do not add a custom YAML writer. Use
 `Bun.stringWidth` and `Intl.Segmenter` for plain table text instead of hand-maintained
 Unicode width ranges; interactive text layout stays with OpenTUI.
 
-# Harness model catalog
+# Agent configuration presets
 
-Keep the initial model catalog in `skill/assets/models.json`, separate from role
-plans and prompts. Initialize `.herdr/models.json` only when missing, preserve it
-even with force, and prefer the project catalog and its optional per-harness
-`preferred` choices. Customers may edit that local file. Codex and Claude entries use their respective official model IDs or
-native aliases; do not bundle third-party backend mappings. Every harness offers
-`default` without model override arguments or environment variables. Keep general
-launch flags separate from model flags. Skill owns checking official sources and
-refreshing the catalog/date; CLI expands explicit inputs without fetching models.
-Refreshing the skill seed never overwrites project catalogs. Project catalog
-changes are read on the next selection without reinstalling; they do not silently
-rewrite existing project roles or running sessions.
+Keep the initial preset data in `skill/assets/agents.json`, separate from role plans
+and prompts. Initialize repository-root `agents.json` only when missing; preserve it
+even with force and plugin updates. Users may maintain this shared file manually.
+Group complete presets under native harness names such as codex and claude; a role
+references kind + preset. Keep model, reasoning_effort, native permission settings,
+and acpc alias structured. Do not duplicate preset launch settings in role metadata
+or require users to concatenate model/alias arguments. CLI adapters translate fields
+to native options; unknown fields and unresolved references fail explicitly.
+
+Codex/Claude seed entries use their own official model IDs or aliases, without
+third-party backend mappings. Every harness offers default with no model override.
+Model names live in preset data, not a hardcoded CLI allowlist. Skill owns checking
+official sources and refreshing presets; CLI never fetches models. Read project
+presets on the next start without reinstalling, while preserving running sessions,
+custom role prompts and active task records. Presets do not grant native Herdr
+support to an unsupported harness. Do not masquerade acpc as Codex or bypass Herdr.
+Keep credentials in native user configuration or external environment, not shared
+presets. Existing explicit role launch settings remain readable; migrate them only
+when requested, preserving custom flags, environment and prompt contents.
