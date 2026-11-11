@@ -20,7 +20,7 @@ export function processAlive(pid: number): boolean {
 }
 
 /** Serialize task changes, including Herdr's bounded agent startup. */
-export function withTeamLock<T>(project: Project, name: string, action: () => T): T {
+export function withTeamLock<T>(project: Pick<Project, "root">, name: string, action: () => T): T {
   const file = runtimePath(project, `${name}.lock`);
   mkdirSync(dirname(file), { recursive: true });
   const deadline = Date.now() + 45_000;

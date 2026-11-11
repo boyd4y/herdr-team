@@ -8,6 +8,7 @@ import { basename, join } from "node:path";
 import { HerdrError, type Herdr } from "../runtime/herdr.ts";
 import { reportRoleSidebar } from "../ui/sidebar.ts";
 import { forgetRoleSession, scopeForTaskSession, rememberRoleSession, savedResumeArgs } from "../runtime/sessions.ts";
+import { startAcpAgent } from "../runtime/acp/client.ts";
 import { availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents, resolveProjectWorkspace, roleAssignment } from "./team-scope.ts";
 import { findTask } from "../tasks/cards.ts";
 import {
@@ -147,9 +148,13 @@ export function up(project: Project, herdr: Herdr, options: { fresh?: boolean } 
     let sessionWarning: string | undefined;
     if (!alreadyLive) {
       try {
-        const resume = options.fresh ? undefined : savedResumeArgs(project, role);
-        resumed = resume !== undefined;
-        herdr.agentStart(availableAgentName(project, herdr, role), role.kind, paneId, [...(resume ?? []), ...(role.args ?? [])]);
+        const name = availableAgentName(project, herdr, role);
+        if (role.kind === "acp") resumed = startAcpAgent(project, herdr, role, paneId, name, undefined, options.fresh);
+        else {
+          const resume = options.fresh ? undefined : savedResumeArgs(project, role);
+          resumed = resume !== undefined;
+          herdr.agentStart(name, role.kind, paneId, [...(resume ?? []), ...(role.args ?? [])]);
+        }
       } catch (error) {
         failure = `${resumed ? "Session resume failed (use up --fresh to start a new session): " : ""}${error instanceof Error ? error.message : String(error)}`;
       }
@@ -158,7 +163,7 @@ export function up(project: Project, herdr: Herdr, options: { fresh?: boolean } 
     if (failure === undefined) {
       try {
         // Clear only after a fresh process starts successfully; keep running agents intact.
-        if (options.fresh && !alreadyLive) forgetRoleSession(project, role);
+        if (options.fresh && !alreadyLive && role.kind !== "acp") forgetRoleSession(project, role);
         const agent = alreadyLive ? existingAgent : herdr.agentList().find((a) => a.pane_id === paneId);
         if (agent) rememberRoleSession(project, role, agent);
       } catch (error) {

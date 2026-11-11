@@ -80,7 +80,7 @@ export function addRole(project: Project, opts: AddRoleOptions): AddRoleResult {
     if (Object.keys(opts.env).length > 0) meta["env"] = opts.env;
     else delete meta["env"];
   }
-  if (meta.preset !== undefined) checkPresetRole(meta, readAgentPresets(project.root));
+  if (meta.preset !== undefined || kind === "acp") checkPresetRole(meta, readAgentPresets(project.root));
   mkdirSync(dir, { recursive: true });
   // 只改职责时连元数据的格式与注释也保留。
   if (!existed || ROLE_FIELD_ORDER.some((key) => opts[key as keyof AddRoleOptions] !== undefined)) {

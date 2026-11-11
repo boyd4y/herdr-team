@@ -5,6 +5,8 @@ import { formatColumns } from "../shared/text.ts";
 import { readAsset } from "./templates.ts";
 
 export interface AgentPreset {
+  command?: string;
+  args?: string[];
   model?: string;
   reasoning_effort?: string;
   alias?: string;
@@ -23,6 +25,7 @@ const fields: Record<string, readonly string[]> = {
   claude: ["reasoning_effort", "permission_mode"],
   grok: ["trust"],
   acpc: ["alias"],
+  acp: ["command", "args", "permission_mode"],
 };
 
 function mapping(value: unknown): value is Record<string, unknown> {
@@ -56,6 +59,8 @@ export function readAgentPresets(root?: string): AgentPresets {
             if (!mapping(value) || Object.values(value).some(v => typeof v !== "string")) {
               throw new Error(`Preset ${kind}/${name} env must map strings to strings`);
             }
+          } else if (key === "args") {
+            if (!Array.isArray(value) || value.some(v => typeof v !== "string" || /[\x00-\x1f\x7f]/.test(v))) throw new Error(`Preset ${kind}/${name} args must be a list of strings without control characters`);
           } else if (key === "daemon" || key === "trust") {
             if (typeof value !== "boolean") throw new Error(`Preset ${kind}/${name} ${key} must be a boolean`);
           } else if (typeof value !== "string" || !value.trim()) {
@@ -76,6 +81,11 @@ export function readAgentPresets(root?: string): AgentPresets {
 function expandPreset(kind: string, preset: AgentPreset) {
   const args: string[] = [];
   const model = preset.model ?? "default";
+  if (kind === "acp") {
+    if (!preset.command || /[\x00-\x1f\x7f]/.test(preset.command)) throw new Error("ACP presets require a command executable; put arguments in args");
+    if (preset.permission_mode && !["approve-reads", "approve-all", "deny-all"].includes(preset.permission_mode)) throw new Error("ACP permission_mode must be approve-reads, approve-all or deny-all");
+    return { model, args: [], env: preset.env, acp: { command: preset.command, args: preset.args ?? [], model, permissionMode: preset.permission_mode ?? "approve-reads" } };
+  }
   if (model !== "default") {
     if (kind === "codex") args.push("-m", model);
     else if (kind === "claude" || kind === "qoder") args.push("--model", model);
@@ -121,7 +131,7 @@ export function formatAgentPresets(rows: ReturnType<typeof listAgentPresets>): s
     ...rows.map(({ kind, preset, config }) => [
       kind, preset, config.model ?? "default",
       Object.entries(config).filter(([key]) => key !== "model").map(([key, value]) =>
-        `${key}=${typeof value === "object" ? Object.entries(value).map(([name, item]) => `${name}=${item}`).join(",") : value}`,
+        `${key}=${Array.isArray(value) ? JSON.stringify(value) : typeof value === "object" ? Object.entries(value).map(([name, item]) => `${name}=${item}`).join(",") : value}`,
       ).join("  "),
     ]),
   ]);
@@ -136,6 +146,7 @@ export function checkPresetRole(
   meta: { kind?: unknown; preset?: unknown; model?: unknown; args?: unknown; env?: unknown },
   presets: AgentPresets,
 ) {
+  if (meta.kind === "acp" && meta.preset === undefined) throw new Error("ACP roles require a preset in root agents.json");
   if (meta.preset === undefined) return;
   if (typeof meta.preset !== "string" || !meta.preset) throw new Error("preset must be a nonempty string");
   if ([meta.model, meta.args, meta.env].some(value => value !== undefined)) {

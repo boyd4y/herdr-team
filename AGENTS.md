@@ -133,6 +133,12 @@ official sources and refreshing presets; CLI never fetches models. Read project
 presets on the next start without reinstalling, while preserving running sessions,
 custom role prompts and active task records. Presets do not grant native Herdr
 support to an unsupported harness. Do not masquerade acpc as Codex or bypass Herdr.
+ACP roles are an explicit supported backend: use kind acp with command/args presets,
+the bundled acpx runtime for protocol, and Herdr's custom-agent reporting API for
+identity, state and restore. Keep one foreground runner per scoped session. Send
+assignments through its authenticated local channel, never native agent prompt or
+terminal keystrokes. Reuse existing task/delivery records and preserve uncertain
+submission handling. Exact resume failures must not silently create a conversation.
 Keep credentials in native user configuration or external environment, not shared
 presets. Existing explicit role launch settings remain readable; migrate them only
 when requested, preserving custom flags, environment and prompt contents.

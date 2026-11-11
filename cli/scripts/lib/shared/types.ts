@@ -2,7 +2,7 @@
 export const KINDS = [
   "claude", "codex", "gemini", "cursor", "devin", "opencode", "copilot",
   "grok", "kimi", "droid", "amp", "qwen", "cline", "kiro", "pi", "agy",
-  "omp", "mastracode", "hermes", "kilo", "qoder", "letta", "maki", "muse",
+  "omp", "mastracode", "hermes", "kilo", "qoder", "letta", "maki", "muse", "acp",
 ] as const;
 
 export function canonicalKind(kind: string): string {

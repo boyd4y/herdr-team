@@ -62,6 +62,7 @@ function validateRole(r: RoleCard, seen: Set<string>, out: Problem[]): void {
   seen.add(r.name);
 
   checkString(r, "kind", r.kind, "2", at);
+  if (r.kind === "acp" && !r.preset) at("1", "ACP roles require a preset in root agents.json");
   if (r.kind !== "" && !(KINDS as readonly string[]).includes(r.kind)) {
     at("2", `Unsupported kind "${r.kind}"`);
   }

@@ -224,6 +224,8 @@ letta maki muse
 ```
 
 qoder 由适配层转换为 Herdr 原生 qodercli；配置与 CLI 始终使用 qoder。
+另支持团队 `acp` 类型，必须引用 agents.json 中的结构化 command/args 预设；这是团队的 ACP 运行适配，
+使用 Herdr 自定义 agent 上报接口，不把 acp 传给原生 agent start。配置与恢复规则见 [agents.md](agents.md#acp-与-cc-remote)。
 Herdr 更新后支持范围可能变化，原生调用以本机 `herdr agent start --kind` 实际接受值为准。
 
 ### `priority` 枚举

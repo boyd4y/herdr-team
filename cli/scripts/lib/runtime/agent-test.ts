@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentLaunch, agentOutputLimit, captureAgentCommand, type PresetRow } from "./agent-command.ts";
 import { formatColumns, sanitize, truncate } from "../shared/text.ts";
+import { acpEntry } from "./acp/client.ts";
+import { resolveAgentPreset } from "../team/agents.ts";
 
 export interface AgentTestResult {
   kind: string;
@@ -24,6 +26,10 @@ function launch(row: PresetRow) {
 
 /** Explicit standalone setup operation; does not create team agents or workspaces. */
 export async function runAgentPreset(root: string, row: PresetRow): Promise<number> {
+  if (row.kind === "acp") {
+    const { runAcpInteractive } = await import("./acp/interactive.ts");
+    return runAcpInteractive(root, row);
+  }
   const { executable, env, args } = launch(row);
   const child = spawn(executable, args, { cwd: root, env, stdio: "inherit" });
   const interrupt = () => { child.kill("SIGINT"); };
@@ -59,11 +65,13 @@ async function responseTest(row: PresetRow, cwd: string, timeoutMs: number, sign
   });
   const answer = join(cwd, "answer.txt");
   // Unsupported automation is a visible skip, never a claimed model response.
-  if (!responseCommand(row, [], answer)) return result("skipped", `No response-test adapter; use agents run ${row.kind}/${row.preset}`);
+  if (row.kind !== "acp" && !responseCommand(row, [], answer)) return result("skipped", `No response-test adapter; use agents run ${row.kind}/${row.preset}`);
   try {
     const { executable, env, args } = launch(row);
-    const command = responseCommand(row, args, answer)!;
-    const { code, stdout, stderr, timedOut, error } = await captureAgentCommand(executable, command, cwd, env, timeoutMs, signal);
+    const settings = row.kind === "acp" ? resolveAgentPreset({ acp: { [row.preset]: row.config } }, "acp", row.preset).acp : undefined;
+    const command = settings ? [acpEntry, "probe", cwd] : responseCommand(row, args, answer)!;
+    const { code, stdout, stderr, timedOut, error } = await captureAgentCommand(settings ? process.execPath : executable, command, cwd, env, timeoutMs, signal,
+      settings ? JSON.stringify({ agent: { ...settings, command: executable }, prompt }) : undefined);
     if (signal?.aborted) return result("failed", "Cancelled");
     if (timedOut) return result("failed", `Timed out after ${timeoutMs} ms`);
     if (error) return result("failed", error.message);

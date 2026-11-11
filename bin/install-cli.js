@@ -66,7 +66,7 @@ function runtime(stateDir, source = path.resolve(__dirname, '..', 'cli'), env = 
   // Validate it before publishing a new shim; a failed upgrade leaves the old CLI usable.
   for (const args of [
     ['install', '--production', '--frozen-lockfile', '--ignore-scripts'],
-    ['-e', 'await import("@opentui/core");'],
+    ['-e', 'await import("@opentui/core"); await import("acpx/runtime");'],
   ]) {
     const result = spawnSync('bun', args, { cwd: path.join(directory, 'cli'), env,
       encoding: 'utf8', timeout: 120000 });

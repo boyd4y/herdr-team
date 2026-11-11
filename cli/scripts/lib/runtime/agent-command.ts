@@ -8,14 +8,15 @@ export function agentLaunch(row: PresetRow) {
   const settings = resolveAgentPreset({ [row.kind]: { [row.preset]: row.config } }, row.kind, row.preset);
   const env = { ...process.env, ...settings.env };
   const aliases: Record<string, string[]> = { cursor: ["cursor-agent"], kiro: ["kiro-cli"], qoder: ["qoder", "qodercli", "qoderclicn", "qodercn"] };
-  const candidates = aliases[row.kind] ?? [row.kind];
+  const candidates = row.kind === "acp" ? [settings.acp!.command] : aliases[row.kind] ?? [row.kind];
   const executable = candidates.map(name => Bun.which(name, { PATH: env.PATH })).find(Boolean);
   return { executable, candidates, env, args: settings.args };
 }
 
 /** Bounded native CLI invocation with cancellation and descendant cleanup. */
-export async function captureAgentCommand(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number, signal?: AbortSignal) {
-  const child = spawn(executable, args, { cwd, env: { ...env, NO_COLOR: "1" }, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
+export async function captureAgentCommand(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number, signal?: AbortSignal, input?: string) {
+  const child = spawn(executable, args, { cwd, env: { ...env, NO_COLOR: "1" }, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
+  if (input !== undefined) { child.stdin!.on("error", () => {}); child.stdin!.end(input); }
   let stdout = "", stderr = "", timedOut = false, error: Error | undefined;
   const kill = () => {
     try { if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL"); else child.kill("SIGKILL"); }

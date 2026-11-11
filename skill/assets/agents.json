@@ -56,5 +56,11 @@
   },
   "acpc": {
     "default": {}
+  },
+  "acp": {
+    "remote": {
+      "command": "cc-remote",
+      "args": []
+    }
   }
 }
