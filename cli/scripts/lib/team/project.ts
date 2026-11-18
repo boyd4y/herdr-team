@@ -168,15 +168,19 @@ function loadRoles(herdrDir: string, problems: Problem[], presets?: AgentPresets
         problems.push({ file: rel, rule: "1", message: error instanceof Error ? error.message : String(error) });
       }
     }
+    const kind = canonicalKind(asString(meta["kind"]) ?? "");
+    let args = launch?.args ?? asStringList(meta["args"]);
+    // Older roles without presets need the same foreground Codex default.
+    if (meta.preset === undefined && kind === "codex" && (meta.args === undefined || args !== undefined) && !args?.includes("--no-daemon")) args = ["--no-daemon", ...(args ?? [])];
     out.push({
       dir: rel,
       name,
       meta,
       preset: asString(meta["preset"]),
-      kind: canonicalKind(asString(meta["kind"]) ?? ""),
+      kind,
       model: launch?.model ?? asString(meta["model"]),
       cwd: asString(meta["cwd"]),
-      args: launch?.args ?? asStringList(meta["args"]),
+      args,
       env: launch?.env ?? asStringMap(meta["env"]),
       worktree: meta["worktree"] === true,
       body: readBody(join(itemDir, ROLE_BODY)),

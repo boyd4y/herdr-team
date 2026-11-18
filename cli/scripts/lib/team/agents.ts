@@ -80,7 +80,7 @@ export function readAgentPresets(root?: string): AgentPresets {
   }
 }
 
-/** Defaults are explicit presets, not inferred overrides of user harness settings. */
+/** Expand native launch options; Codex uses a foreground server by default. */
 function expandPreset(kind: string, preset: AgentPreset) {
   const args: string[] = [];
   const model = preset.model ?? "default";
@@ -95,7 +95,7 @@ function expandPreset(kind: string, preset: AgentPreset) {
     else throw new Error(`Named model selection is not supported for harness ${kind}`);
   }
   if (kind === "codex") {
-    if (preset.daemon === false) args.push("--no-daemon");
+    if (preset.daemon !== true) args.push("--no-daemon");
     if (preset.reasoning_effort) args.push("-c", `model_reasoning_effort=${JSON.stringify(preset.reasoning_effort)}`);
     if (preset.sandbox) args.push("--sandbox", preset.sandbox);
     if (preset.approval_policy) args.push("--ask-for-approval", preset.approval_policy);

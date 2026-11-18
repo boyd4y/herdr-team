@@ -28,7 +28,7 @@ test("role plans keep preset references and resolve launch settings from project
       expect(readFileSync(file, "utf8")).toBe(before);
       const refreshed = loadProject(f.root).roles.find(role => role.name === "dev")!;
       expect(refreshed.model).toBe("default");
-      expect(refreshed.args).toEqual([]);
+      expect(refreshed.args).toEqual(refreshed.kind === "codex" ? ["--no-daemon"] : []);
     } finally { f.cleanup(); }
   }
 });

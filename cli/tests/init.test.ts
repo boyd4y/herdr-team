@@ -138,7 +138,7 @@ describe("init —— 写出的角色", () => {
       expect(reloaded.roles[0]?.name).toBe("dev");
       expect(reloaded.roles[0]?.kind).toBe("codex");
       expect(reloaded.roles[0]?.model).toBe("sol-6.1");
-      expect(reloaded.roles[0]?.args).toEqual(["-m", "gpt-6.1-sol"]);
+      expect(reloaded.roles[0]?.args).toEqual(["--no-daemon", "-m", "gpt-6.1-sol"]);
       expect(reloaded.roles[0]?.body).toContain("你是开发者");
       expect(result.roleMetadataWritten).toEqual(["roles/dev/.role.yaml"]);
       expect(result.roleBodiesWritten).toEqual(["roles/dev/prompt.md"]);

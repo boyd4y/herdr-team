@@ -241,7 +241,7 @@ test("structured presets expand native harness options and leave default models 
   const f = makeProject();
   try {
     writeFileSync(join(f.root, "agents.json"), JSON.stringify({
-      codex: { dev: { model: "project-model", reasoning_effort: "high", daemon: false, sandbox: "workspace-write", approval_policy: "on-request", env: { TEAM_OPTION: "value" } }, default: {} },
+      codex: { dev: { model: "project-model", reasoning_effort: "high", daemon: false, sandbox: "workspace-write", approval_policy: "on-request", env: { TEAM_OPTION: "value" } }, default: {}, shared: { daemon: true } },
       claude: { review: { model: "sonnet", reasoning_effort: "high", permission_mode: "plan" } },
       qoder: { default: { model: "default" } },
     }));
@@ -250,9 +250,27 @@ test("structured presets expand native harness options and leave default models 
       model: "project-model", env: { TEAM_OPTION: "value" },
       args: ["-m", "project-model", "--no-daemon", "-c", 'model_reasoning_effort="high"', "--sandbox", "workspace-write", "--ask-for-approval", "on-request"],
     });
-    expect(resolveAgentPreset(presets, "codex", "default").args).toEqual([]);
+    expect(resolveAgentPreset(presets, "codex", "default").args).toEqual(["--no-daemon"]);
+    expect(resolveAgentPreset(presets, "codex", "shared").args).toEqual([]);
     expect(resolveAgentPreset(presets, "claude", "review").args).toEqual(["--model", "sonnet", "--effort", "high", "--permission-mode", "plan"]);
     expect(resolveAgentPreset(presets, "qoder", "default").args).toEqual([]);
+  } finally { f.cleanup(); }
+});
+
+test("Codex roles without presets launch without a daemon and preserve saved metadata", () => {
+  const f = makeProject();
+  try {
+    for (const [name, args] of [["bare", undefined], ["custom", ["-m", "project-model"]], ["explicit", ["--no-daemon", "-c", 'model_reasoning_effort="high"']]] as const) {
+      writeRole(f.root, name, { kind: "codex", ...(args ? { args } : {}) });
+    }
+    const project = loadProject(f.root), herdr = fakeHerdr();
+    up(project, herdr);
+    for (const role of project.roles) {
+      expect(role.args?.filter(arg => arg === "--no-daemon")).toHaveLength(1);
+      expect(herdr.calls.find(call => call.startsWith(`agent start ${role.name} `))).toContain("--no-daemon");
+    }
+    expect(project.roles.find(role => role.name === "custom")?.args).toEqual(["--no-daemon", "-m", "project-model"]);
+    expect(readFileSync(join(f.root, ".herdr/roles/bare/.role.yaml"), "utf8")).not.toContain("--no-daemon");
   } finally { f.cleanup(); }
 });
 

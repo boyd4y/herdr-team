@@ -69,7 +69,7 @@ describe("up —— 幂等：先找后建", () => {
       const herdr = fakeHerdr();
       up(p, herdr);
       const started = herdr.calls.find((c) => c.startsWith("agent start dev"));
-      expect(started).toContain('["-m","gpt-6.1-sol"]');
+      expect(started).toContain('["--no-daemon","-m","gpt-6.1-sol"]');
     });
   });
 

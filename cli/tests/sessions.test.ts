@@ -43,7 +43,7 @@ describe("up 的原生会话恢复", () => {
       const result = up(p, restarted);
       expect(result.roles.map((r) => r.action)).toEqual(["resumed", "resumed"]);
       expect(restarted.calls.find((c) => c.startsWith("agent start dev")))
-        .toContain('args=["resume","session-123","-m","gpt-6.1-sol"]');
+        .toContain('args=["resume","session-123","--no-daemon","-m","gpt-6.1-sol"]');
       expect(restarted.calls.find((c) => c.startsWith("agent start docs")))
         .toContain('args=["--resume","claude-456"]');
       expect(restarted.calls.some((c) => c.startsWith("agent prompt"))).toBe(false);
@@ -177,7 +177,7 @@ describe("up 的原生会话恢复", () => {
       expect(savedResumeArgs(p, p.roles[0]!)).toEqual(["resume", "session-123"]);
       const fresh = fakeHerdr();
       expect(up(p, fresh, { fresh: true }).roles[0]!.action).toBe("started");
-      expect(fresh.calls.find((c) => c.startsWith("agent start dev"))).toContain('args=["-m","gpt-6.1-sol"]');
+      expect(fresh.calls.find((c) => c.startsWith("agent start dev"))).toContain('args=["--no-daemon","-m","gpt-6.1-sol"]');
       expect(existsSync(roleSessionPath(p, p.roles[0]!))).toBe(false);
     });
   });

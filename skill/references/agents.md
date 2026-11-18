@@ -93,7 +93,7 @@ herdr-team role add test --kind claude --preset review
 | --- | --- | --- |
 | `model` | codex、claude、qoder、acp 支持具名模型；其他暂仅 default | 模型 ID 或原生别名；省略或 default 不传模型覆盖参数；ACP 由 server 声明可用模型 |
 | `reasoning_effort` | codex、claude | 原生推理强度；取值与可用性取决于对应客户端和模型 |
-| `daemon` | codex | false 时使用 --no-daemon；省略时跟随客户端 |
+| `daemon` | codex | 默认或 false 使用 --no-daemon，避免共享 daemon 的启动提示；显式 true 时跟随客户端 |
 | `sandbox`、`approval_policy` | codex | 原生沙箱、审批设置；省略时跟随客户端 |
 | `permission_mode` | claude、acp | 原生权限模式；ACP 取 approve-reads、approve-all 或 deny-all |
 | `trust` | grok | true 时使用 --trust |

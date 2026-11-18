@@ -271,7 +271,7 @@ test("task native IDs are saved independently by task and role, then Codex resum
   f.herdr.paneClose(first.pane_id!);
   f.herdr.calls.length = 0;
   taskAgent(f.load(), f.herdr, role, f.task());
-  expect(f.herdr.calls.find((c) => c.startsWith("agent start dev-0001"))).toContain('args=["resume","first-native-session","-m","gpt-6.1-sol"]');
+  expect(f.herdr.calls.find((c) => c.startsWith("agent start dev-0001"))).toContain('args=["resume","first-native-session","--no-daemon","-m","gpt-6.1-sol"]');
   expect(f.herdr.calls.some((c) => c.startsWith("worktree create"))).toBe(false);
   expect(f.herdr.calls.some((c) => c.startsWith("agent prompt"))).toBe(false);
 }));
