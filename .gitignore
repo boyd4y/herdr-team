@@ -1,0 +1,6 @@
+.DS_Store
+/.herdr/
+/node_modules/
+/artifacts/
+mods/**/jsconfig.json
+mods/**/*.d.ts

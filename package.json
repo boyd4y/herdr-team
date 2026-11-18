@@ -1,0 +1,11 @@
+{
+  "name": "herdr-desktop-team",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "A native Herdr desktop layout and team console mod, backed by herdr-core.",
+  "scripts": {
+    "check": "herdr-app check mods/team-console",
+    "test": "node --test tests/*.test.js"
+  }
+}
