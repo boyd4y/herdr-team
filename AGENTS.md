@@ -8,7 +8,7 @@
 - Skill owns responsibilities, task decomposition, handoff order, validation scope and orchestration decisions. CLI owns task/delivery records, deduplication, locks and explicit operations. Mods never edit task metadata or mark a task complete because a program reports done.
 - Keep `TEAM.md` and `agents.json` compatible with herdr-team. Keep `.herdr/` ignored. Do not copy the old CLI, workflow engine, OpenTUI Console or role prompts into this repository.
 - Bind live views explicitly to root, machine and space. Do not infer ownership from display names or reuse runtime IDs from the old multiplexer.
-- Codex launches and resume must use `--no-daemon`. Inspect actual agent status support; do not infer status from the screen. ACP needs an explicit OSC 7501 bridge before claiming desktop agent-list integration.
+- Codex launches and resume must use `--no-daemon`. Inspect actual agent status support; do not infer status from the screen.
 - Do not overwrite shipped layouts/mods or switch the user's active layout during development. Use namespaced files. Do not stop a core or close user terminals for tests.
 - Keep UI labels, errors and default agent instructions English. Chinese documentation and TEAM.md checklists are allowed; preserve user-authored Unicode content.
 - Before claiming a mod works, run the real `herdr-app check`. It validates initial rendering only; visual interaction and later async states need separate verification. Keep sample data visibly separate from live data.

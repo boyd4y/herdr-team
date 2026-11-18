@@ -20,8 +20,7 @@ export function roleRows(roles, terminals) {
   return roles.map(role => {
     const instances = terminals.filter(terminal => terminal.labels?.["team.role"] === role.name);
     const status = reportedStatus(instances);
-    const harness = role.kind === "acp" && role.preset ? `acp(${role.preset})` : role.kind;
-    return { ...role, harness, status, instances };
+    return { ...role, harness: role.kind, status, instances };
   });
 }
 

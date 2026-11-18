@@ -32,12 +32,12 @@ test("missing program reports stay unknown, including live shell recovery", () =
 });
 
 test("parallel instances remain distinct; an agent done report cannot complete the task", () => {
-  const roles = roleRows([{ name: "dev", kind: "acp", preset: "remote" }], [
+  const roles = roleRows([{ name: "dev", kind: "codex", preset: "dev" }], [
     { address: "t1", status: "done", labels: { "team.role": "dev", "team.task": "0041" } },
     { address: "t2", status: "blocked", labels: { "team.role": "dev", "team.task": "0042" } },
   ]);
   assert.equal(roles[0].instances.length, 2);
-  assert.equal(roles[0].harness, "acp(remote)");
+  assert.equal(roles[0].harness, "codex");
   const task = { role: "dev", status: "doing", handoff: ["test"] };
   flowNodes(task, roles);
   assert.equal(task.status, "doing");

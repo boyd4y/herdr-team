@@ -29,7 +29,7 @@
 
 ## 与旧 Herdr 的关键差异
 
-1. **运行状态来源改变。** Core 根据程序的 OSC 7501 上报保存状态，不解析屏幕识别品牌。无报告应保留 unknown；不能沿用旧的 `pane report-agent`。ACP/ACPC 需要把同一执行会话的结构化事件转成原生状态报告，不能通过修改 labels 伪装成状态。
+1. **运行状态来源改变。** Core 根据程序的 OSC 7501 上报保存状态，不解析屏幕识别品牌。无报告应保留 unknown；不能沿用旧的 `pane report-agent`。无原生上报的 agent 需要经过验证的状态适配，不能通过修改 labels 伪装成状态。
 2. **布局归桌面版。** Core 管 terminal；space/tab/pane 属于 app 的布局文档，并同步在机器的 Core 中。终端可用 `herdr.space`、`herdr.tab` 标签进入已有界面。旧 `w...:p...` ID 和新 `t...` address 不能互换。
 3. **标签只保存归属事实。** 推荐 `team.project`、`team.role`、`team.task`、`team.session`、`team.preset`；project 是机器上的规范化主检出。复用会话前还要验证机器、space 与实际 cwd，不能只匹配 repo 名。
 4. **Core 自带发送门控，业务幂等仍需 CLI。** `hc send --if idle` 会校验状态并顾及用户草稿，但不是任务的事务队列。超时、连接中断或未观察到活动，都不能直接重发同一 delivery。必须保留 claim、交棒回执及不确定状态核查。
