@@ -53,11 +53,5 @@
     "default": {
       "model": "default"
     }
-  },
-  "acp": {
-    "remote": {
-      "command": "cc-remote",
-      "args": []
-    }
   }
 }

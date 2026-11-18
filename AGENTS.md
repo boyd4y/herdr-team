@@ -121,8 +121,8 @@ Keep the initial preset data in `skill/assets/agents.json`, separate from role p
 and prompts. Initialize repository-root `agents.json` only when missing; preserve it
 even with force and plugin updates. Users may maintain this shared file manually.
 Group complete presets under native harness names such as codex and claude; a role
-references kind + preset. Keep model, reasoning_effort, native permission settings,
-and ACP command/args structured. Do not duplicate preset launch settings in role metadata
+references kind + preset. Keep model, reasoning_effort and native permission settings
+structured. Do not duplicate preset launch settings in role metadata
 or require users to concatenate model or command arguments. CLI adapters translate fields
 to native options; unknown fields and unresolved references fail explicitly.
 
@@ -133,24 +133,13 @@ official sources and refreshing presets; CLI never fetches models. Read project
 presets on the next start without reinstalling, while preserving running sessions,
 custom role prompts and active task records. Presets do not grant native Herdr
 support to an unsupported harness. Do not masquerade custom agents as Codex or bypass Herdr.
-ACP roles use kind acp with command/args presets. ACPC owns their complete terminal
-UI and ACP connection; the adapter observes its structured app-server events and
-submits tasks through that same session. Keep one client per scoped session, use
-Herdr's custom-agent reporting API, and retain the authenticated local delivery
-channel. Do not build another chat UI, print protocol updates as transcript lines,
-or submit assignments through terminal keystrokes or native agent prompt. Keep
-bundled acpx for isolated headless response tests. Reuse existing task/delivery
-records and preserve uncertain submission handling. Exact resume failures must
-not silently create a conversation.
 Keep credentials in native user configuration or external environment, not shared
 presets. Existing explicit role launch settings remain readable; migrate them only
 when requested, preserving custom flags, environment and prompt contents.
 
 Standalone `agents check`, `agents run` and `agents test` are explicit local preset checks, separate
 from team orchestration. They may invoke native binaries directly for interactive
-diagnostics. ACPC is the internal ACP UI client and can also be used manually; it
-is not a team harness or preset type. Inside Herdr, standalone ACP runs may report
-their own display identity and lifecycle without acquiring a team assignment.
+diagnostics.
 Do not use standalone diagnostics as a dispatch fallback, bind them to
 roles or save team resume references. Response tests use isolated temporary working
 directories, bounded subprocess output, timeouts and cancellation cleanup; report

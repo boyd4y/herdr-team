@@ -209,19 +209,19 @@ test("agents list reads project presets without local task state and preserves s
     mkdirSync(join(f.root, "src"));
     const file = join(f.root, "agents.json");
     const config = { model: "project-model", reasoning_effort: "high", daemon: false };
-    const original = JSON.stringify({ codex: { z: {}, dev: config }, acp: { remote: { command: "cc-remote", args: ["--host", "ssh-alias"] } } });
+    const original = JSON.stringify({ codex: { z: {}, dev: config }, claude: { review: { model: "sonnet" } } });
     writeFileSync(file, original);
     const result = cli("list", "--json");
     expect(result.code).toBe(0);
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toEqual([
-      { kind: "acp", preset: "remote", config: { command: "cc-remote", args: ["--host", "ssh-alias"] } },
+      { kind: "claude", preset: "review", config: { model: "sonnet" } },
       { kind: "codex", preset: "dev", config }, { kind: "codex", preset: "z", config: {} },
     ]);
     const filtered = cli("list", "--kind", "codex", "--root", f.root, "--json");
     expect(filtered.code).toBe(0);
     expect(JSON.parse(filtered.stdout)).toEqual(JSON.parse(result.stdout).filter((row: { kind: string }) => row.kind === "codex"));
-    expect(cli("list", "--kind", "acp").stdout).toContain("cc-remote");
+    expect(cli("list", "--kind", "claude").stdout).toContain("sonnet");
     expect(readFileSync(file, "utf8")).toBe(original);
     expect(existsSync(join(f.root, ".herdr"))).toBe(false);
     expect(cli("list", "--kind", "missing").code).toBe(2);
@@ -301,7 +301,7 @@ test("invalid presets fail explicitly without falling back to the seed", () => {
   try {
     const file = join(f.root, "agents.json");
     for (const value of [[], { codex: { dev: { daemon: "false" } } }, { codex: { dev: { args: ["-m", "x"] } } },
-      { claude: { dev: { alias: "wrong-harness" } } }, { acpc: { remote: {} } },
+      { claude: { dev: { alias: "wrong-harness" } } }, { acp: { remote: { command: "cc-remote" } } },
       { codex: { dev: { env: { OPTION: 42 } } } }]) {
       writeFileSync(file, JSON.stringify(value));
       expect(() => readAgentPresets(f.root)).toThrow(/Invalid agent presets/);

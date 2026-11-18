@@ -4,7 +4,6 @@ import { acceptanceFor, reviewFor, taskEnvironment, taskScoped, verifyCheckout }
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
 import { assertProjectWorkspace, availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents } from "./team-scope.ts";
 import { savedResumeArgs, rememberRoleSession } from "../runtime/sessions.ts";
-import { startAcpAgent } from "../runtime/acp/client.ts";
 import { reportRoleSidebar } from "../ui/sidebar.ts";
 import { worktreeBranch, type Project, type RoleCard, type TaskCard } from "../shared/types.ts";
 
@@ -54,7 +53,7 @@ export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: 
   }
   bindProjectWorkspace(project, herdr, workspaceId, false);
   const scope = { taskId: task.id, cwd: join(expected ?? checkout, offset) };
-  const resume = role.kind === "acp" ? undefined : savedResumeArgs(project, role, scope);
+  const resume = savedResumeArgs(project, role, scope);
   const env = { ...role.env, ...taskEnvironment(project, task, role.name) };
   const label = `${role.name}-${task.id}`;
   const tab = herdr.tabList(workspaceId).find((t) => t.label === label);
@@ -67,8 +66,7 @@ export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: 
   }
   try {
     const name = availableAgentName(project, herdr, role, task.id);
-    if (role.kind === "acp") startAcpAgent(project, herdr, role, paneId, name, scope);
-    else herdr.agentStart(name, role.kind, paneId, [...(resume ?? []), ...(role.args ?? [])]);
+    herdr.agentStart(name, role.kind, paneId, [...(resume ?? []), ...(role.args ?? [])]);
   } catch (error) {
     if (resume) throw new Error(`Task session resume failed; inspect the saved session before retrying: ${error instanceof Error ? error.message : String(error)}`);
     throw error;

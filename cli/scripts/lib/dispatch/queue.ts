@@ -4,7 +4,6 @@ import { loadProject } from "../team/project.ts";
 import { assignmentPrompt } from "./assignment.ts";
 import { deliveryFor, deliveryState, newDelivery, type Delivery } from "./delivery.ts";
 import { HerdrError, type Herdr } from "../runtime/herdr.ts";
-import { agentSessionId, promptAcpAgent } from "../runtime/acp/client.ts";
 import { taskScoped } from "../tasks/verification.ts";
 import { appendRecord, stamp } from "../tasks/records.ts";
 import { withTeamLock } from "../runtime/state.ts";
@@ -97,7 +96,7 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
       if (d.state === "claimed" && d.pane_id) {
         agents ??= herdr.agentList();
         const agent = agents.find((a) => a.pane_id === d.pane_id);
-        if (!agent || d.session_id && agentSessionId(agent) !== d.session_id) {
+        if (!agent || d.session_id && agent.agent_session?.value !== d.session_id) {
           save(fresh, task, { ...d, state: "uncertain", reason: "Claimed agent disappeared or changed session; verify before retrying" });
           reconciled = true;
         }
@@ -141,14 +140,13 @@ export function pumpQueue(project: Project, herdr: Herdr, now = new Date(), stop
         hold(`Agent is ${agent.agent_status ?? "unknown"}`); continue;
       }
       const sending: Delivery = { ...d, state: "sending", pane_id: agent.pane_id, sent_at: now.toISOString(), reason: "" };
-      if (agentSessionId(agent)) sending.session_id = agentSessionId(agent);
+      if (agent.agent_session?.value) sending.session_id = agent.agent_session.value;
       save(fresh, task, sending);
       const claim = `herdr-team claim ${task.id} --delivery ${d.id} --root ${shellQuote(fresh.root)}`;
       const handoff = `herdr-team handoff ${task.id} --delivery ${d.id} --root ${shellQuote(fresh.root)}`;
       const prompt = `${assignmentPrompt(team, role.body, task, fresh.root)}\nTeam root: ${fresh.root}\nTask file: ${join(fresh.herdrDir, task.dir, TASK_BODY)}\nDelivery ID: ${d.id}\nClaim command: ${claim}\nHandoff base command: ${handoff}\nThese commands identify this delivery; use the skill to choose the result options and next action.`;
       try {
-        if (role.kind === "acp") promptAcpAgent(fresh, role, agent, taskScoped(task, role) ? task.id : undefined, d.id, prompt);
-        else herdr.agentPrompt(agent.pane_id, prompt);
+        herdr.agentPrompt(agent.pane_id, prompt);
       }
       catch (error) {
         const rejected = error instanceof HerdrError && ["agent_blocked", "agent_not_ready", "agent_not_found", "pane_not_found", "empty_agent_prompt"].includes(error.code ?? "");
