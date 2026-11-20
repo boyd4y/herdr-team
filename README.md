@@ -47,6 +47,10 @@ In Herdr, select the `herdr-desktop-team-dev` layout. Inside a project terminal,
 run `herdr-team team up` to establish the binding and start resident roles.
 Isolated roles start when dispatched.
 
+### TUI plugin
+
+For a checkout linked as a Herdr TUI plugin, the root `herdr-plugin.toml` installs the same CLI and Skill. The plugin's setup hook also configures the TUI sidebar and action keys. See the [team runtime guide](docs/team-runtime.md) for CLI-only or Skill-only installation.
+
 For local development (Node.js 22+), run `npm run dev`. It registers a separate
 `herdr-desktop-team-dev` mod and layout under `HERDR_APP_HOME` (default
 `~/.config/herdr-app`), then watches the mod sources and `layouts/team.json`

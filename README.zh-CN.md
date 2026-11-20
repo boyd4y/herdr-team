@@ -37,6 +37,8 @@ npm run setup
 
 在 Herdr 里选择 `herdr-desktop-team-dev` 布局。随后在项目终端中运行 `herdr-team team up` 建立 Space 绑定并启动常驻角色。隔离角色在接到任务时启动。
 
+用 Herdr TUI 安装此仓库时，根目录的 `herdr-plugin.toml` 会安装同一套 CLI 和 Skill，并配置 TUI 侧栏与快捷键。
+
 需要 Node.js 22 或更新版本。在仓库目录运行：
 
 ```sh
