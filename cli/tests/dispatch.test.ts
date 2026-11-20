@@ -1,0 +1,342 @@
+import { describe, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { projectKey } from "../scripts/lib/dispatch/team-scope.ts";
+import { rememberRoleSession } from "../scripts/lib/runtime/sessions.ts";
+import { makeProject, twoRoles, writeTask, taskMeta } from "./helpers.ts";
+
+// Exercise the real CLI and realHerdr adapter, with an offline Herdr executable.
+// Every mutation is confined to a throwaway project, never the user's team.
+function withCLI(run: (cli: (...args: string[]) => { code: number; stdout: string; stderr: string }, root: string, calls: () => string[][], env: NodeJS.ProcessEnv) => void, promptError = ""): void {
+  const { root, cleanup } = makeProject();
+  try {
+    twoRoles(root);
+    writeTask(root, "0001-a", taskMeta());
+    writeTask(root, "0002-b", taskMeta({ priority: "P0" }));
+    const bin = join(root, "bin");
+    mkdirSync(bin);
+    symlinkSync(join(import.meta.dir, "../scripts/cli.ts"), join(bin, "herdr-team"));
+    const stateFile = join(root, "herdr-state.json");
+    writeFileSync(stateFile, JSON.stringify({ calls: [], agents: [], trees: [] }));
+    const executable = join(bin, "herdr");
+    writeFileSync(executable, `#!/usr/bin/env bun
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+const path = process.env.HERDR_TEST_STATE;
+const state = JSON.parse(readFileSync(path, "utf8"));
+const args = process.argv.slice(2);
+if (args[0] === "pane" && args[1] === "current") {
+  process.stdout.write(JSON.stringify({result:{pane:{pane_id:process.env.HERDR_PANE_ID}}})); process.exit(0);
+}
+if (process.env.HERDR_TEST_CALL_LOG) appendFileSync(process.env.HERDR_TEST_CALL_LOG, JSON.stringify(args) + "\\n");
+state.calls.push(args);
+const [command, sub] = args;
+let result = {};
+state.tabs ??= [];
+state.panes ??= [];
+if (command === "workspace" && sub === "list") {
+  result = { workspaces: [...(state.rootAbsent ? [] : [state.rootWorkspace ?? { workspace_id: "w1", label: "myproj" }]), ...(state.workspaces ?? [])] };
+} else if (command === "workspace" && sub === "create") {
+  if (process.env.HERDR_TEST_CALL_LOG) Bun.sleepSync(150);
+  const ws = "w" + process.pid;
+  const workspace = { workspace_id: ws, label: args[args.indexOf("--label") + 1] };
+  const tab = { workspace_id: ws, tab_id: ws + ":t1", label: "1" };
+  const pane = { workspace_id: ws, tab_id: tab.tab_id, pane_id: ws + ":p1", cwd: args[args.indexOf("--cwd") + 1] };
+  state.workspaces ??= []; state.workspaces.push(workspace); state.tabs.push(tab); state.panes.push(pane);
+  result = { workspace, tab, root_pane: pane };
+} else if (command === "tab" && sub === "rename") {
+  const tab = state.tabs.find(tab => tab.tab_id === args[2]);
+  if (tab) tab.label = args[3];
+} else if (command === "tab" && sub === "list") {
+  result = { tabs: [{ workspace_id: "w1", tab_id: "w1:t1", label: "docs" }, ...state.tabs] };
+} else if (command === "tab" && sub === "create") {
+  const ws = args[args.indexOf("--workspace") + 1], n = state.tabs.length + 2;
+  const tab = { workspace_id: ws, tab_id: ws + ":t" + n, label: args[args.indexOf("--label") + 1] };
+  const pane = { workspace_id: ws, tab_id: tab.tab_id, pane_id: ws + ":p" + n, cwd: args[args.indexOf("--cwd") + 1] };
+  state.tabs.push(tab); state.panes.push(pane);
+  result = { tab, root_pane: pane };
+} else if (command === "pane" && sub === "list") {
+  result = { panes: [{ workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", cwd: process.env.HERDR_TEST_ROOT }, ...state.panes] };
+} else if (command === "agent" && sub === "list") {
+  result = { agents: state.agents };
+} else if (command === "worktree" && sub === "list") {
+  result = { worktrees: state.trees };
+} else if (command === "worktree" && sub === "remove") {
+  const id = args[args.indexOf("--workspace") + 1];
+  state.trees = state.trees.filter(tree => tree.open_workspace_id !== id);
+  state.workspaces = state.workspaces.filter(ws => ws.workspace_id !== id);
+} else if (command === "worktree" && sub === "create") {
+  const branch = args[args.indexOf("--branch") + 1];
+  const id = "w" + (state.trees.length + 2);
+  state.trees.push({ branch, path: "/unused/" + branch, open_workspace_id: id });
+  result = { workspace: { workspace_id: id }, tab: { tab_id: id + ":t1" }, root_pane: { pane_id: id + ":p1" } };
+} else if (command === "agent" && sub === "start") {
+  const pane = args[args.indexOf("--pane") + 1];
+  state.agents.push({ name: args[2], agent_status: "idle", pane_id: pane, workspace_id: pane.split(":")[0] });
+} else if (["pane", "workspace"].includes(command) && sub === "report-metadata") {
+  if(command === "pane") {
+    const agent = state.agents.find(a=>a.pane_id===args[2]);
+    if(agent) for(let i=3;i<args.length;i++) if(args[i]==="--token") {
+      const token=args[++i], split=token.indexOf("="); agent.tokens={...agent.tokens,[token.slice(0,split)]:token.slice(split+1)};
+    }
+  } else {
+    const workspace = args[2] === "w1"
+      ? (state.rootWorkspace ??= { workspace_id: "w1", label: "myproj" })
+      : state.workspaces?.find(ws=>ws.workspace_id===args[2]);
+    if(workspace) for(let i=3;i<args.length;i++) if(args[i]==="--token") {
+      const token=args[++i], split=token.indexOf("="); workspace.tokens={...workspace.tokens,[token.slice(0,split)]:token.slice(split+1)};
+    }
+  }
+} else if (!((command === "agent" && sub === "prompt") || (["pane", "workspace"].includes(command) && sub === "report-metadata"))) {
+  throw new Error("Unexpected Herdr call: " + args.join(" "));
+}
+writeFileSync(path, JSON.stringify(state));
+if (command === "agent" && sub === "prompt" && process.env.HERDR_TEST_PROMPT_ERROR) {
+  process.stderr.write(JSON.stringify({ error: { code: process.env.HERDR_TEST_PROMPT_ERROR } }));
+  process.exit(1);
+}
+process.stdout.write(JSON.stringify({ result }));
+`);
+    chmodSync(executable, 0o755);
+    const env = { ...process.env, HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1", HERDR_TEST_STATE: stateFile, HERDR_TEST_ROOT: root,
+      HERDR_TEAM_HOME: join(root, "daemon-home"), HERDR_SOCKET_PATH: join(root, "fixture.sock"),
+      HERDR_BIN_PATH: executable, HERDR_TEST_PROMPT_ERROR: promptError, PATH: `${bin}${delimiter}${process.env.PATH}` };
+    writeFileSync(env.HERDR_SOCKET_PATH, "");
+    const cli = (...args: string[]) => {
+      const proc = Bun.spawnSync([join(bin, "herdr-team"), ...args], {
+        cwd: root,
+        env,
+        stdout: "pipe", stderr: "pipe",
+      });
+      return { code: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
+    };
+    try { run(cli, root, () => JSON.parse(readFileSync(stateFile, "utf8")).calls, env); }
+    finally { cli("daemon", "stop"); }
+  } finally {
+    cleanup();
+  }
+}
+
+describe("CLI up / dispatch", () => {
+  test("daemon lifecycle records start, status, and stop even with no registered projects", () => {
+    withCLI(cli => {
+      expect(JSON.parse(cli("daemon", "status", "--json").stdout)).toMatchObject({ state: "stopped", teams: [] });
+      expect(JSON.parse(cli("daemon", "start", "--json").stdout)).toMatchObject({ state: "running", teams: [] });
+      expect(JSON.parse(cli("daemon", "status", "--json").stdout)).toMatchObject({ state: "running", teams: [] });
+      expect(JSON.parse(cli("daemon", "stop", "--json").stdout)).toMatchObject({ state: "stopped" });
+      const logs = JSON.parse(cli("daemon", "logs", "--json").stdout);
+      expect(logs).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event: "daemon.ready", projects: 0 }),
+        expect.objectContaining({ event: "daemon.status", state: "running", projects: 0 }),
+        expect.objectContaining({ event: "daemon.stopped" }),
+      ]));
+      const human = cli("daemon", "logs").stdout;
+      expect(human).toContain("Daemon status  running · PID");
+      expect(human).toContain("0 active projects");
+      expect(human).not.toContain('"event"');
+      expect(JSON.parse(cli("daemon", "logs", "--lines", "1", "--json").stdout)).toHaveLength(1);
+    });
+  });
+
+  test("parallel up commands create one project workspace and reuse one resident agent", () => {
+    withCLI((_cli, root, _calls, env) => {
+      const stateFile = join(root, "herdr-state.json");
+      const state = JSON.parse(readFileSync(stateFile, "utf8"));
+      state.rootAbsent = true;
+      writeFileSync(stateFile, JSON.stringify(state));
+      const log = join(root, "herdr-calls.jsonl");
+      const command = [join(root, "bin", "herdr-team"), "up", "--name", "fixture-team", "--json"];
+      const runner = Bun.spawnSync([process.execPath, "-e", `
+        const results = await Promise.all([0, 1].map(async () => {
+          const child = Bun.spawn(${JSON.stringify(command)}, { stdout: "pipe", stderr: "pipe" });
+          const stdout = await new Response(child.stdout).text(), stderr = await new Response(child.stderr).text();
+          return { code: await child.exited, stdout, stderr };
+        }));
+        console.log(JSON.stringify(results));
+      `], { cwd: root, env: { ...env, HERDR_TEST_CALL_LOG: log }, stdout: "pipe", stderr: "pipe" });
+      expect(runner.exitCode).toBe(0);
+      const results = JSON.parse(runner.stdout.toString()) as Array<{ code: number; stdout: string; stderr: string }>;
+      expect(results.map(result => result.code)).toEqual([0, 0]);
+      const outputs = results.map(result => JSON.parse(result.stdout));
+      expect(outputs.map(result => result.projectName)).toEqual(["fixture-team", "fixture-team"]);
+      expect(new Set(outputs.map(result => result.daemon.pid)).size).toBe(1);
+      expect(outputs.map(result => result.daemon.action).sort()).toEqual(["reused", "started"]);
+      const projects = JSON.parse(_cli("project", "list", "--json").stdout);
+      expect(projects).toMatchObject([{ space: outputs[0]!.workspaceId, enabled: true }]);
+      expect(JSON.parse(_cli("project", "current", "--json").stdout)).toMatchObject({ aliases: ["fixture-team"], daemonState: "enabled" });
+      const selected = Bun.spawnSync([join(root, "bin", "herdr-team"), "tasks", "--project", projects[0].id, "--json"], {
+        cwd: join(root, ".."), env, stdout: "pipe", stderr: "pipe",
+      });
+      expect(selected.exitCode).toBe(0);
+      expect(JSON.parse(selected.stdout.toString()).map((task: { id: string }) => task.id).sort()).toEqual(["0001", "0002"]);
+      const inbox = Bun.spawnSync([join(root, "bin", "herdr-team"), "inbox", "dev@fixture-team", "--all", "--json"], {
+        cwd: join(root, ".."), env, stdout: "pipe", stderr: "pipe",
+      });
+      expect(inbox.exitCode).toBe(0);
+      expect(JSON.parse(inbox.stdout.toString())).toEqual([]);
+      expect(new Set(outputs.map(result => result.workspaceId)).size).toBe(1);
+      expect(outputs.map(result => result.workspaceAction).sort()).toEqual(["created", "reused"]);
+      const calls = readFileSync(log, "utf8").trim().split("\n").map(line => JSON.parse(line) as string[]);
+      expect(calls.filter(args => args[0] === "workspace" && args[1] === "create")).toHaveLength(1);
+      expect(calls.filter(args => args[0] === "agent" && args[1] === "start")).toHaveLength(1);
+    });
+  });
+
+  test("clean targets one terminal task and reports incomplete cleanup as failure in JSON too", () => {
+    withCLI((cli, root, calls) => {
+      writeTask(root, "0001-a", taskMeta({ status: "done" }));
+      writeTask(root, "0002-b", taskMeta({ status: "done" }));
+      const statePath = join(root, "herdr-state.json");
+      const state = JSON.parse(readFileSync(statePath, "utf8"));
+      const owner = projectKey(loadProject(root));
+      state.workspaces = ["w2", "w3"].map(workspace_id => ({ workspace_id, tokens: { team_project: owner } }));
+      state.trees = ["0001-a", "0002-b"].map((id, i) => ({ branch: `feat/${id}`, path: `/unused/${id}`, open_workspace_id: `w${i + 2}` }));
+      writeFileSync(statePath, JSON.stringify(state));
+      const cleaned = cli("clean", "0001", "--json");
+      expect(cleaned.code).toBe(0);
+      expect(JSON.parse(cleaned.stdout)).toMatchObject([{ id: "0001", action: "removed" }]);
+      expect(JSON.parse(cleaned.stdout)).toHaveLength(1);
+      expect(JSON.parse(readFileSync(statePath, "utf8")).trees.map((tree: { branch: string }) => tree.branch)).toEqual(["feat/0002-b"]);
+      expect(JSON.parse(cli("clean", "0001", "--json").stdout)).toMatchObject([{ action: "absent" }]);
+      writeTask(root, "0002-b", taskMeta());
+      const active = cli("clean", "0002", "--json");
+      expect(active.code).toBe(1);
+      expect(JSON.parse(active.stdout)).toMatchObject([{ id: "0002", action: "not-terminal" }]);
+      expect(cli("clean", "0002").code).toBe(1);
+      expect(cli("clean", "9999", "--json").code).not.toBe(0);
+      expect(cli("clean", "0001", "0002").code).not.toBe(0);
+      const broken = JSON.parse(readFileSync(statePath, "utf8"));
+      broken.trees = null;
+      writeFileSync(statePath, JSON.stringify(broken));
+      const unavailable = cli("clean", "0001", "--json");
+      expect(unavailable.code).toBe(1);
+      expect(JSON.parse(unavailable.stdout)).toMatchObject([{ action: "failed" }]);
+      expect(calls().filter(args => args[0] === "worktree" && args[1] === "remove")).toEqual([["worktree", "remove", "--workspace", "w2"]]);
+    });
+  });
+
+  test.each([false, true])("up 的默认恢复与 --fresh 通过真实 CLI 生效（fresh=%s）", (fresh) => {
+    withCLI((cli, root, calls) => {
+      const project = loadProject(root);
+      const role = project.roles.find((r) => r.name === "docs")!;
+      const transcripts = join(process.env.CLAUDE_CONFIG_DIR!, "projects", "cli-recovery");
+      mkdirSync(transcripts, { recursive: true });
+      writeFileSync(join(transcripts, "saved-docs-session.jsonl"), '{"type":"user","message":{"content":"Hello"}}\n');
+      rememberRoleSession(project, role, { agent_session: {
+        source: "herdr:claude", agent: "claude", kind: "id", value: "saved-docs-session",
+      } });
+      const result = cli("up", "--json", ...(fresh ? ["--fresh"] : []));
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout).roles.find((r: { role: string }) => r.role === "docs").action)
+        .toBe(fresh ? "started" : "resumed");
+      const start = calls().find((args) => args[0] === "agent" && args[1] === "start")!;
+      expect(start.includes("saved-docs-session")).toBe(!fresh);
+      expect(calls().some((args) => args[0] === "agent" && args[1] === "prompt")).toBe(false);
+    });
+  });
+
+  for (const code of ["agent_prompt_stalled", "timeout"]) {
+    test.each([false, true])(`dispatch ${code} 成功并在输出中注明未确认（json=%s）`, (json) => {
+      withCLI((cli, root, calls) => {
+        const result = cli("dispatch", "0001", ...(json ? ["--json"] : []));
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe("");
+        if (json) {
+          expect(JSON.parse(result.stdout)).toMatchObject([{
+            id: "0001", action: "uncertain", reason: expect.stringContaining(code),
+          }]);
+        } else {
+          expect(result.stdout).toContain("0001  dev  uncertain");
+          expect(result.stdout).toContain(code);
+        }
+        expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "todo"]);
+        expect(calls().filter((c) => c[0] === "agent" && c[1] === "prompt")).toHaveLength(1);
+      }, code);
+    });
+  }
+
+  test.each(["agent_blocked", "agent_not_found"])("dispatch %s 仍报错并保留 todo", (code) => {
+    withCLI((cli, root) => {
+      const result = cli("dispatch", "0001");
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toContain("queued");
+      expect(result.stdout).toContain(code);
+      expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "todo"]);
+      expect(readFileSync(join(root, ".herdr/tasks/0001-a/task.md"), "utf8")).not.toContain("(todo → doing)");
+    }, code);
+  });
+
+  test("up 只起常驻角色，明确派发只把指定卡入箱", () => {
+    withCLI((cli, root, calls) => {
+      const onboard = cli("up", "--json");
+      expect(onboard.code).toBe(0);
+      expect(JSON.parse(onboard.stdout)).not.toHaveProperty("dispatched");
+      expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "todo"]);
+      expect(calls().some((c) => c[0] === "worktree")).toBe(false);
+      expect(calls().filter((c) => c[0] === "agent" && c[1] === "start").map((c) => c[2])).toEqual(["docs"]);
+      expect(calls().filter((c) => c[0] === "agent" && c[1] === "prompt")).toEqual([]);
+      expect(cli("daemon", "stop").code).toBe(0);
+      const assigned = cli("dispatch", "0002", "--json");
+      expect(assigned.code).toBe(0);
+      expect(JSON.parse(assigned.stdout).map((d: { id: string; action: string }) => [d.id, d.action])).toEqual([
+        ["0002", "dispatched"],
+      ]);
+      expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "doing"]);
+      expect(loadProject(root).tasks[0]?.meta.delivery).toBeUndefined();
+    });
+  });
+
+  test("dispatch rejects every bulk syntax before enrolling or starting any task", () => {
+    withCLI((cli, root, calls) => {
+      const files = ["0001-a", "0002-b"].map(dir => join(root, ".herdr/tasks", dir, ".task.yaml"));
+      const before = files.map(file => readFileSync(file, "utf8"));
+      for (const args of [[], ["--all"], ["0001", "--all"], ["--all=true"], ["all"], ["0001,0002"], ["0001", "0002"]]) {
+        const result = cli("task", "dispatch", ...args);
+        expect(result.code).toBe(2);
+        expect(result.stderr).toMatch(/one task ID|--all is not supported/);
+      }
+      expect(files.map(file => readFileSync(file, "utf8"))).toEqual(before);
+      expect(JSON.parse(cli("inbox", "list", "--json").stdout)).toEqual([]);
+      expect(calls()).toEqual([]);
+    });
+  });
+
+  test("dispatch <id> 只派一张，并输出人类可读结果", () => {
+    withCLI((cli, root, calls) => {
+      const result = cli("dispatch", "0001");
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain("0001  dev  dispatched");
+      expect(result.stdout).not.toContain("0002");
+      expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["doing", "todo"]);
+      expect(calls().filter((c) => c[0] === "worktree" && c[1] === "create")).toHaveLength(1);
+    });
+  });
+
+  test("未知 id / 非 todo / 多个 id 报错，且不派其他卡", () => {
+    withCLI((cli, root, calls) => {
+      const unknown = cli("dispatch", "9999");
+      expect(unknown.code).toBe(2);
+      expect(unknown.stderr).toContain("Task 9999 not found");
+      writeTask(root, "0001-a", taskMeta({ status: "done" }));
+      const finished = cli("dispatch", "0001");
+      expect(finished.code).toBe(2);
+      expect(finished.stderr).toContain("done; only todo tasks");
+      expect(cli("dispatch", "0001", "0002").code).toBe(2);
+      expect(calls().filter(args => args[0] !== "workspace" || args[1] !== "list")).toEqual([]);
+      expect(loadProject(root).tasks[1]?.status).toBe("todo");
+    });
+  });
+
+  test("handoff starts an isolated downstream agent without resetting the card", () => {
+    withCLI((cli, root) => {
+      writeTask(root, "0001-a", taskMeta({ role: "docs", status: "doing", handoff: ["dev"] }));
+      const handed = cli("handoff", "0001", "--json");
+      expect(handed.code).toBe(0);
+      expect(JSON.parse(handed.stdout).status).toBe("review");
+      expect(JSON.parse(handed.stdout).prompted).toBe(true);
+      expect(loadProject(root).tasks[0]?.status).toBe("review");
+      expect(loadProject(root).tasks[1]?.status).toBe("todo");
+    });
+  });
+});

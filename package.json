@@ -1,0 +1,16 @@
+{
+  "name": "herdr-team-skill",
+  "version": "0.1.56",
+  "private": true,
+  "description": "Shared Herdr Team skill and CLI, independent of the TUI and Desktop presentation packages.",
+  "scripts": {
+    "test": "cd cli && bun test",
+    "test:install": "node --test tests/*.test.cjs",
+    "typecheck": "cd cli && bun run typecheck",
+    "install:cli": "node bin/install-cli.js",
+    "install:mock": "node bin/install-cli.js --mock",
+    "install:skill": "node bin/install-skill.js",
+    "setup": "node bin/setup.js"
+  },
+  "license": "MIT"
+}

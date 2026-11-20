@@ -1,0 +1,198 @@
+import { readAsset, rolePrompt } from "./templates.ts";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { canonicalKind, isRoleLifecycle, KINDS, NAME_RE, ROLE_BODY, ROLE_META, type Project, type RoleLifecycle } from "../shared/types.ts";
+import { checkPresetRole, initialAgentPresets } from "./agents.ts";
+import { emitYaml } from "../shared/yaml.ts";
+
+/** 角色元数据里键的顺序。**不含 `name`** —— 角色名就是目录名，不重复存。 */
+export const ROLE_FIELD_ORDER = ["kind", "preset", "model", "lifecycle", "worktree", "cwd", "args", "env"];
+
+export class InitError extends Error {}
+
+export interface RoleSpec {
+  name: string;
+  kind: string;
+  preset?: string;
+  model?: string;
+  /** Skip the resident conversation tab; dispatched work is always task-scoped. */
+  worktree?: boolean;
+  lifecycle?: RoleLifecycle;
+  cwd?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  body?: string;
+}
+
+export interface InitResult {
+  created: string[];
+  skipped: string[];
+  roleMetadataWritten: string[];
+  roleBodiesWritten: string[];
+  roleBodiesPreserved: string[];
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new InitError("Role definitions must be an array of JSON objects");
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireString(rec: Record<string, unknown>, key: string): string {
+  const v = rec[key];
+  if (typeof v !== "string" || v === "") throw new InitError(`Role definition is missing string field ${key}`);
+  return v;
+}
+
+function optionalString(rec: Record<string, unknown>, key: string): string | undefined {
+  const v = rec[key];
+  if (v === undefined) return undefined;
+  if (typeof v !== "string") throw new InitError(`Role field ${key} must be a string`);
+  return v;
+}
+
+/** 解析角色定义。接受数组或 `{roles: [...]}`。 */
+export function parseRoleSpecs(input: string): RoleSpec[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(input);
+  } catch (error) {
+    throw new InitError(`Invalid role definition JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const list = Array.isArray(parsed) ? parsed : (asRecord(parsed)["roles"] ?? null);
+  if (!Array.isArray(list)) throw new InitError("Role definitions must be an array or an object containing a roles array");
+
+  const names = new Set<string>();
+  return list.map((raw) => {
+    const rec = asRecord(raw);
+    const name = requireString(rec, "name");
+    const kind = canonicalKind(requireString(rec, "kind"));
+    if (!NAME_RE.test(name)) throw new InitError(`Role name "${name}" must match ${NAME_RE}`);
+    if (names.has(name)) throw new InitError(`Duplicate role definition: ${name}`);
+    names.add(name);
+    if (!(KINDS as readonly string[]).includes(kind)) {
+      throw new InitError(`Role "${name}" has unsupported kind "${kind}"`);
+    }
+    const argsRaw = rec["args"];
+    if (argsRaw !== undefined && !Array.isArray(argsRaw)) {
+      throw new InitError(`Role "${name}" args must be an array of strings`);
+    }
+    const envRaw = rec["env"];
+    if (envRaw !== undefined && (envRaw === null || typeof envRaw !== "object" || Array.isArray(envRaw))) {
+      throw new InitError(`Role "${name}" env must map strings to strings`);
+    }
+
+    const worktreeRaw = rec["worktree"];
+    if (worktreeRaw !== undefined && typeof worktreeRaw !== "boolean") {
+      throw new InitError(`Role "${name}" worktree must be true or false`);
+    }
+
+    const lifecycle = rec.lifecycle;
+    if (lifecycle !== undefined && !isRoleLifecycle(lifecycle)) throw new InitError(`Role "${name}" lifecycle must be resident or temporary`);
+    return {
+      name,
+      kind,
+      preset: optionalString(rec, "preset"),
+      model: optionalString(rec, "model"),
+      worktree: worktreeRaw === true,
+      ...(lifecycle ? { lifecycle } : {}),
+      cwd: optionalString(rec, "cwd"),
+      args: argsRaw === undefined ? undefined : (argsRaw as unknown[]).map((a) => String(a)),
+      env:
+        envRaw === undefined
+          ? undefined
+          : Object.fromEntries(
+              Object.entries(envRaw as Record<string, unknown>).map(([k, v]) => [k, String(v)]),
+            ),
+      body: optionalString(rec, "body"),
+    };
+  });
+}
+
+/**
+ * 建骨架。默认跳过已有角色；force 只重写元数据，始终保留已有正文。
+ * 用户的 TEAM.md 和本地角色正文不能被 init 冲掉。
+ */
+export function init(project: Project, roleSpecs: RoleSpec[], force = false): InitResult {
+  const created: string[] = [];
+  const skipped: string[] = [];
+
+  const presets = initialAgentPresets(project.root);
+  for (const spec of roleSpecs) {
+    if (force || !existsSync(join(project.herdrDir, "roles", spec.name, ROLE_META))) checkPresetRole(spec, presets);
+  }
+  mkdirSync(project.herdrDir, { recursive: true });
+
+  const ignorePath = join(project.root, ".gitignore");
+  const ignore = existsSync(ignorePath) ? readFileSync(ignorePath, "utf8") : "";
+  if (ignore.split(/\r?\n/).some(line => [".herdr/", "/.herdr/"].includes(line.trim()))) skipped.push(".gitignore");
+  else {
+    const newline = ignore.includes("\r\n") ? "\r\n" : "\n";
+    writeFileSync(ignorePath, `${ignore}${ignore && !ignore.endsWith("\n") ? newline : ""}/.herdr/${newline}`);
+    created.push(".gitignore");
+  }
+
+  const agentsPath = join(project.root, "agents.json");
+  try {
+    writeFileSync(agentsPath, readAsset("agents.json"), { flag: "wx" });
+    created.push("agents.json");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    skipped.push("agents.json");
+  }
+
+  try {
+    writeFileSync(join(project.root, "TEAM.md"), readAsset("TEAM.md"), { flag: "wx" });
+    created.push("TEAM.md");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    skipped.push("TEAM.md");
+  }
+
+  for (const dir of ["roles", "tasks"]) mkdirSync(join(project.herdrDir, dir), { recursive: true });
+
+  const roleMetadataWritten: string[] = [];
+  const roleBodiesWritten: string[] = [];
+  const roleBodiesPreserved: string[] = [];
+  for (const spec of roleSpecs) {
+    const rel = `roles/${spec.name}`;
+    const dir = join(project.herdrDir, rel);
+    const metaPath = join(dir, ROLE_META);
+
+    if (existsSync(metaPath) && !force) {
+      skipped.push(rel);
+      continue;
+    }
+
+    mkdirSync(dir, { recursive: true });
+
+    const meta: Record<string, unknown> = { kind: spec.kind };
+    if (spec.preset !== undefined) meta["preset"] = spec.preset;
+    if (spec.model !== undefined) meta["model"] = spec.model;
+    if (spec.worktree === true) meta["worktree"] = true;
+    if (spec.lifecycle !== undefined) meta.lifecycle = spec.lifecycle;
+    if (spec.cwd !== undefined) meta["cwd"] = spec.cwd;
+    if (spec.args !== undefined) meta["args"] = spec.args;
+    if (spec.env !== undefined) meta["env"] = spec.env;
+    writeFileSync(metaPath, emitYaml(meta, ROLE_FIELD_ORDER));
+    roleMetadataWritten.push(`${rel}/${ROLE_META}`);
+
+    const bodyPath = join(dir, ROLE_BODY);
+    if (!existsSync(bodyPath)) {
+      writeFileSync(bodyPath, spec.body === undefined ? rolePrompt(spec.name) : `${spec.body.replace(/\s*$/, "")}\n`);
+      roleBodiesWritten.push(`${rel}/${ROLE_BODY}`);
+    } else {
+      roleBodiesPreserved.push(`${rel}/${ROLE_BODY}`);
+      skipped.push(`${rel}/${ROLE_BODY}`);
+    }
+  }
+
+  return { created, skipped, roleMetadataWritten, roleBodiesWritten, roleBodiesPreserved };
+}
+
+export function readRolesFile(path: string): string {
+  if (path === "-") return readFileSync(0, "utf8");
+  if (!existsSync(path)) throw new InitError(`File not found: ${path}`);
+  return readFileSync(path, "utf8");
+}

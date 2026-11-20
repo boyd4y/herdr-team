@@ -1,0 +1,71 @@
+{
+  "cheap": [
+    {
+      "name": "lead",
+      "kind": "claude",
+      "preset": "haiku"
+    },
+    {
+      "name": "dev",
+      "worktree": true,
+      "kind": "claude",
+      "preset": "haiku"
+    },
+    {
+      "name": "test",
+      "kind": "claude",
+      "preset": "haiku"
+    },
+    {
+      "name": "search",
+      "kind": "grok",
+      "preset": "default"
+    }
+  ],
+  "balanced": [
+    {
+      "name": "lead",
+      "kind": "claude",
+      "preset": "haiku"
+    },
+    {
+      "name": "dev",
+      "worktree": true,
+      "kind": "codex",
+      "preset": "dev"
+    },
+    {
+      "name": "test",
+      "kind": "claude",
+      "preset": "sonnet"
+    },
+    {
+      "name": "search",
+      "kind": "grok",
+      "preset": "default"
+    }
+  ],
+  "strong": [
+    {
+      "name": "lead",
+      "kind": "codex",
+      "preset": "dev"
+    },
+    {
+      "name": "dev",
+      "worktree": true,
+      "kind": "codex",
+      "preset": "dev"
+    },
+    {
+      "name": "test",
+      "kind": "codex",
+      "preset": "dev"
+    },
+    {
+      "name": "search",
+      "kind": "grok",
+      "preset": "default"
+    }
+  ]
+}
