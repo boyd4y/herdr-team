@@ -5,7 +5,10 @@
   "type": "module",
   "description": "A native Herdr desktop layout and team console mod, backed by herdr-core.",
   "scripts": {
-    "check": "herdr-app check mods/team-console",
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:register": "node scripts/dev.mjs --once",
+    "check": "herdr-app check mods/team-console && herdr-app check mods/team-agents",
     "test": "node --test tests/*.test.js"
   }
 }

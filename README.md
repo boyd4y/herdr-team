@@ -4,7 +4,24 @@
 
 A layout and native team console mod for **Herdr desktop**, using **herdr-core (`hc`)** for terminal facts. This is the initial research and preview repository, separate from the terminal-multiplexer plugin [herdr-team](https://github.com/boyd4y/herdr-team).
 
-The preview includes a visibly marked sample, newest-first tasks, remaining assignees, a compact role list, and native animation. With explicit bindings it can read existing project tasks/roles and display scoped Core terminals. It does not start agents, dispatch tasks, hand off, merge, or clean worktrees. The Core execution adapter is a planned migration, not an implemented feature.
+The preview includes a visibly marked sample, newest-first tasks, remaining assignees, a compact role list, and native animation. With explicit bindings it can read existing project tasks/roles and display scoped Core terminals. The mod itself does not start agents, dispatch tasks, hand off, merge, or clean worktrees; runtime operations belong to the shared CLI.
+
+The shared Skill and CLI now live in the sibling `herdr-team-skill` repository.
+Run `herdr-team up --demo` in the prepared demo project's Desktop Space. The
+Team Board and Agents sidebar show mock Codex, Claude and Grok as the release runs.
+A local Space without an initialized project opens a centered setup view.
+**Initialize now** uses the current terminal directory, falling back to the
+Space folder, and registers the project. Choose an installed agent to
+configure the team with the shared Skill, or select **View demo** to explore
+sample data. After initialization, **Up** starts the team in the same Space.
+The panel checks the team's daemon status to show whether it is running.
+
+This repository owns only the native Desktop presentation. The shared CLI
+implements verified caller detection, persistent space bindings and resident
+startup/reuse with `herdr-team up`. Local Core dispatch, claim, handoff and inbox
+recovery use the shared delivery engine. Task sessions receive isolated Git
+checkouts; automatic Desktop cleanup and native conversation recovery remain
+unsupported. Completed checkouts are retained with an explicit receipt.
 
 ## Check locally
 
@@ -19,9 +36,93 @@ npm run check
 
 ## Try the preview
 
-Copy `mods/team-console/` and `layouts/team.json` into the corresponding folders under your Herdr app home, normally `~/.config/herdr-app`. Preserve any existing personal copies. Then choose the `team` layout in Herdr. The shipped Spaces, Agents, Tabs, Files and Changes mods are reused.
+To install the shared CLI/Skill and register the Desktop development layout,
+place `herdr-team-skill` beside this checkout, then run:
 
-The layout starts in **Sample** mode. Sample never starts processes or writes project data. To bind a live read-only panel, change its content props:
+```sh
+npm run setup
+```
+
+`HERDR_TEAM_SOURCE` can select a different shared checkout. This install does not
+switch your layout or start agents. Inside a project terminal in Herdr, run
+`herdr-team up` to establish/reuse its project binding and resident roles.
+The CLI verifies the caller and chooses its runtime; no runtime flag or
+environment-specific Skill is needed. Isolated roles start only when dispatched.
+
+For local development (Node.js 22+), run `npm run dev`. It registers a separate
+`herdr-desktop-team-dev` mod and layout under `HERDR_APP_HOME` (default
+`~/.config/herdr-app`), then watches the mod sources and `layouts/team.json`
+and syncs changes for the app's native hot reload. No dependencies or repeated
+installation are needed. Generated types, `jsconfig.json`, hidden files and
+`node_modules` are excluded. The script never launches the app, starts agents,
+or switches your active layout. With the desktop app open, select it manually:
+
+```sh
+herdr-app do layout.switch --name herdr-desktop-team-dev
+```
+
+`npm run dev:register` performs only the initial sync. Ctrl+C stops watching and
+leaves the registration installed. Edit source files, including live binding
+props, in this repository. A hidden `.herdr-desktop-team-dev.json` in app home
+tracks ownership; pre-existing personal files, another checkout's registration,
+and externally modified installed files are preserved with an error. Move
+conflicting files aside before retrying. Use the same `HERDR_APP_HOME` for both
+the script and app commands when overriding it.
+
+The **Team** button at the right of the tab bar shows or hides the console, like
+Files. To toggle it from the keyboard, bind a key in your `keys.json` (any edit makes that file yours, so Herdr
+stops adding new default shortcuts to it):
+
+```json
+"layout:herdr-desktop-team-dev": { "cmd-shift-e": "layout.toggle:team-console" }
+```
+
+**Board** groups tasks by their recorded status: Todo, In progress, Review,
+Blocked and Done. Cards include the current assignee. Cancelled tasks get a
+separate column when present. Narrow panels scroll horizontally; agent reports
+never move a task between columns.
+Hover over the Team icon to see the binding path, machine and Space.
+
+**List** is the compact sidebar view. Its status filters show counts and wrap
+to fit the panel. **All** is the default, ordered by newest task first. **Open**
+orders blocked, review, in progress, then todo. Done and cancelled tasks have their own
+filters. Rows show the title, task ID, owner and recorded status; P0/P1 stays
+visible, with full titles and handoff details available on hover or selection.
+List / Board switching remembers the view and preserves the current List filter.
+For keyboard bindings or app commands, the console accepts `<mod>.list`,
+`<mod>.board` and `<mod>.filter-<status>` (including `open`). The development
+mod name is `herdr-desktop-team-dev`.
+
+Task details separate **Description** and **History**. **Issues** shows requirements
+and defects and supports independent type and iteration filters.
+A shared iteration filter applies to Issues and to both Tasks views. Tasks can
+set their own iteration or inherit the linked issue's iteration.
+A task can stand alone or link to one issue. An issue can link to several tasks.
+Open a link from either detail view. The CLI accepts `--requirement R0001` when
+creating a task and `backlog link R0001 0001` for an existing task.
+**Inbox** displays current deliveries and AgentMail, including message bodies and
+the routing reasons in Trash.
+
+For a regular preview installation:
+
+Copy `mods/team-console/`, `mods/team-agents/` and `layouts/team.json` into the corresponding folders under your Herdr app home, normally `~/.config/herdr-app`. Preserve any existing personal copies. Then choose the `team` layout in Herdr. The shipped Spaces, Tabs, Files and Changes mods are reused. Team Agents extends the installed native Agents interface under its own name.
+
+Team Agents retains native **Priority / Grouped by space** sorting, pins and
+sub-agent trees. It defaults to grouped when no explicit sort preference exists.
+Agent rows use one 30px line: a small space-colored marker, the native harness
+icon, role name, muted session title and status. Task IDs stay inline when present. Session/tool
+details and responsibilities are in the tooltip;
+responsibilities are read via `role list --details` only after verifying the
+CLI binding. Local role changes use cancellable watches; Refresh handles
+unavailable watches. Remote role lookups are skipped. The shipped Agents mod is untouched.
+In grouped mode, verified team task spaces join their parent space's heading
+and color marker. Pins and Priority keep their native behavior. Row clicks
+still focus the agent's actual worktree pane; grouping never moves a terminal.
+
+The layout reads the shown Space's explicit CLI binding for project data. The
+terminal directory is used for setup. In Inbox, **Email** opens the message body
+and routing information, and **Task deliveries** opens the corresponding task.
+To pin a read-only panel explicitly, change its content props:
 
 ```json
 {
@@ -35,13 +136,25 @@ The layout starts in **Sample** mode. Sample never starts processes or writes pr
 }
 ```
 
-Get actual space IDs from `herdr-app ls`. A remote binding uses that machine's root, machine name and qualified space ID. Never copy an old multiplexer workspace ID.
+Get actual local space IDs from `herdr-app ls`. Never copy an old multiplexer workspace ID.
+Remote spaces show a neutral unsupported empty state; the console does not run
+CLI commands, install dependencies or start file watches on remote machines.
 
-Live reads require `herdr-team` on the selected machine's PATH. The mod only calls `tasks --json` and `role list --json`. It reads the existing CLI format rather than implementing YAML/task parsing. Local `.herdr/` changes use `watchFolder`; remote changes and unavailable watchers require **Refresh**. Core facts are reactive and are not polled.
+Live reads require the shared local `herdr-team` CLI. The mod uses read-only
+`space show`, `tasks --json` and `role list --json` contracts. It reads the existing
+CLI format rather than implementing YAML/task parsing. Local `.herdr/` changes
+use `watchFolder`; unavailable watchers require **Refresh**. Core facts are
+reactive and are not polled.
 
-Terminals are matched by machine plus labels `team.project=<exact-root>`, `herdr.space=<machine-local-space-id>` and `team.role=<role>`. The future execution adapter must write these labels; old `herdr` metadata does not migrate automatically. Without matching terminals roles remain unknown. **Open** focuses the actual terminal; it sends no message.
+Terminals are matched by machine plus labels `team.project=<exact-root>`, `herdr.space=<machine-local-space-id>` and `team.role=<role>`. Resident `up` writes these labels; old `herdr` metadata does not migrate automatically. Without matching terminals roles remain unknown. **Open** focuses the actual terminal; it sends no message.
 
-A task displayed in its own worktree space can additionally carry `team.owner_space=<coordinating-space-id>`. This explicitly groups it under that team instance; the actual `herdr.space` still controls where the desktop shows it. These `team.*` labels are this project's proposed convention, not built-in Core policies.
+The CLI gives each task checkout one native space and sets
+`team.owner_space=<coordinating-space-id>` while `herdr.space` selects its actual
+task space. The shipped Spaces mod supplies its existing Git worktree nesting;
+it is not replaced or extended. The CLI registry maps task space IDs to their
+parent team. Switching between them preserves the Team view, filter, selection
+and local watcher; another project resolves to another team. A registered task
+space never borrows ownership from its display name or checkout path.
 
 ## Design and contribution
 

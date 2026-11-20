@@ -1,19 +1,296 @@
-import { View, div } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
-import { checking, exec, props, run, terminals, theme, watchFolder } from "herdr";
-import { flowNodes, roleRows, scopedTerminals, sortTasks } from "./model.js";
+import { View, div, image, svg } from "gpui-kit";
+import { Button, Popover, TextView, h_flex, v_flex } from "gpui-base";
+import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder } from "herdr";
+import { boardColumns, consoleBinding, flowNodes, iterationOptions, iterationVersion, listFilters, listTasks, requirementsForIteration,
+  roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
 import { sample } from "./sample.js";
+
+const ICON = name => `mods/workspace-chrome/${name}.svg`;
+const LABEL = { blocked: "Needs you", error: "Error", working: "Working", done: "Done", idle: "Idle", unknown: "Unknown",
+  next: "Next", ready: "Ready", assigned: "Assigned", "awaiting handoff": "Awaiting handoff", cancelled: "Cancelled",
+  doing: "In progress", todo: "Todo", review: "Review" };
+const label = status => LABEL[status] ?? status;
+const REQUIREMENT_STATUS = { backlog: "Backlog", planned: "Planned", "in-progress": "In progress", ready: "Ready for acceptance", accepted: "Accepted" };
+const REQUIREMENT_TYPES = [[null, "All"], ["requirement", "Requirements"], ["defect", "Defects"]];
+const WIDE = 520;
+
+// herdr-team is a bun script; GUI-launched apps often lack the user's shell PATH additions.
+const team = (args, options) => exec("sh", ["-c", 'PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH" exec herdr-team "$@"', "herdr-team", ...args], options);
+const teamStateFolder = options => exec("sh", ["-c", 'cd -P "${HERDR_TEAM_HOME:-$HOME/.herdr-team}" && pwd -P'], options);
+const firstLine = value => (value || "").trim().split("\n", 1)[0].replace(/^Error:\s*/, "");
+const errorMessage = error => error instanceof Error ? error.message : String(error);
+function teamJson(result, command, type = "object") {
+  if (result.code !== 0) {
+    const detail = firstLine(result.stderr) || firstLine(result.stdout) || `Exit code ${result.code}.`;
+    throw new Error(`${command} failed. ${detail.length > 140 ? detail.slice(0, 139) + "…" : detail}`);
+  }
+  let value;
+  try { value = JSON.parse(result.stdout); }
+  catch {
+    throw new Error(`${command} returned invalid data. Refresh to retry.`);
+  }
+  const matches = type === "array" ? Array.isArray(value) : value && typeof value === "object" && !Array.isArray(value);
+  if (!matches) throw new Error(`${command} returned invalid data. Refresh to retry.`);
+  return value;
+}
+async function initializedProject(cwd) {
+  const result = await team(["project", "show", "--json"], { cwd, timeout: 10000 });
+  if (result.code !== 0) return null;
+  const project = teamJson(result, "project show");
+  if (!project.registered || !project.root?.startsWith("/")) return null;
+  const validation = await team(["team", "validate", "--root", project.root], { timeout: 10000 });
+  return validation.code === 0 ? project.root : null;
+}
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = find(child, id);
+    if (found) return found;
+  }
+  return null;
+}
 
 export default class TeamConsole extends View {
   init(_props, cx) {
-    this.binding = props()?.root && props()?.space ? { root: props().root, space: props().space, machine: props().machine ?? null } : null;
-    this.preview = props()?.sample === true || !this.binding;
-    this.tasks = []; this.roles = []; this.selected = null; this.error = null; this.loading = false;
-    if (!checking() && !this.preview) this.load(cx);
+    // The same mod draws the "Team" toggle in the tab bar; that copy reads nothing.
+    if (props()?.tab) return;
+    // Explicit props pin one team; without them the console follows the shown space.
+    this.pinned = props()?.root && props()?.space ? { root: props().root, space: props().space, machine: props().machine ?? null } : null;
+    this.binding = this.pinned;
+    this.preview = props()?.sample === true;
+    // A popped-out window shows one task's details; it is pinned to the team that opened it.
+    this.popout = Boolean(props()?.task);
+    this.tasks = []; this.roles = []; this.selected = props()?.task ?? null; this.error = null; this.loading = false;
+    this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
+    this.section = "tasks"; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
+    this.inboxFolder = "active"; this.inboxRows = []; this.inboxRequest = 0; this.mail = null;
+    this.bodies = new Map();
+    this.taskDocumentTab = "description"; this.taskExpanded = false;
+    this.view = localStorage.getItem("view") === "board" ? "board" : "list";
+    this.demoView = "board";
+    this.setup = null;
+    this.filter = "all";
+    this.agentPrograms = new Map();
+    if (!checking() && !this.popout) cx.spawn(async cx => {
+      try {
+        const catalog = await knownAgents({ on: null });
+        if (this.closed) return;
+        this.agentPrograms = new Map(catalog.filter(program => program.agent).map(program => [program.key, program]));
+        cx.notify();
+      } catch { /* Live icons remain available even if the local catalog fails. */ }
+    });
+    if (!checking() && !this.popout) cx.spawn(async cx => {
+      while (!this.closed) {
+        const command = await nextCommand();
+        if (this.closed) break;
+        if (command === "list" || command === "board") this.setView(command, cx);
+        else if (command.startsWith("filter-") && listFilters(this.preview ? sample().tasks : this.tasks).some(filter => filter.status === command.slice(7))) {
+          this.filter = command.slice(7);
+          this.setView("list", cx);
+        }
+      }
+    });
+    if (!checking() && !this.preview && this.pinned) this.load(cx);
+  }
+
+  // Space identity comes from the app; project ownership comes only from the CLI.
+  target() {
+    return teamSpace(spaces(), terminals());
+  }
+
+  followSetup(space, cx, force = false) {
+    // The terminal directory only chooses the setup command's working directory.
+    if (space && !space.machine && !this.binding) {
+      const focus = focused();
+      const tab = space.tabs.find(tab => tab.active);
+      const cwd = (focus?.space === space.id ? focus.cwd : null) ??
+        (tab && panes().find(pane => pane.tab === tab.id && pane.terminal && pane.cwd)?.cwd) ?? space.folder;
+      if (cwd?.startsWith("/") && (force || this.setup?.space !== space.id || this.setup?.cwd !== cwd)) {
+        if (this.setup?.cwd !== cwd) this.setPreview(false, cx);
+        this.setupConfigWatch?.cancel();
+        const setup = this.setup = { space: space.id, cwd, action: null, busy: true, error: "" };
+        cx.spawn(async cx => {
+          try {
+            const root = await initializedProject(cwd);
+            if (root) { setup.action = "up"; setup.root = root; }
+          } catch (error) {
+            setup.error = errorMessage(error);
+          } finally {
+            setup.action ??= "init";
+            setup.busy = false;
+            if (!this.closed && this.setup === setup) {
+              if (setup.action === "up") {
+                this.setPreview(false, cx);
+                this.watchSetupConfig(setup, cx);
+              } else this.loadSetupAgents(setup, cx);
+              cx.notify();
+            }
+          }
+        });
+        return;
+      }
+      if (cwd?.startsWith("/")) return;
+    }
+    this.setupWatch?.cancel();
+    this.setupConfigWatch?.cancel();
+    this.setup = null;
+  }
+
+  watchSetupConfig(setup, cx, root = setup.root) {
+    this.setupConfigWatch?.cancel();
+    const config = `${root}/.herdr`;
+    cx.spawn(async cx => {
+      // Watch the parent so removing .herdr itself invalidates the ready state.
+      while (!this.closed && this.setup === setup && !this.binding) {
+        const pending = this.setupConfigWatch = watchFolder(root);
+        try {
+          const paths = await pending;
+          if (!paths.length || this.setupConfigWatch !== pending || this.setup !== setup || this.closed) break;
+          if (!paths.some(path => path === root || path === config || path.startsWith(config + "/roles/") ||
+            path === `${root}/TEAM.md` || path === `${root}/agents.json`)) continue;
+          if (setup.action === "up") {
+            this.follow(cx, true);
+            break;
+          }
+          const project = await initializedProject(setup.cwd);
+          if (project && this.setup === setup && !this.closed) {
+            setup.action = "up"; setup.root = project;
+            this.setPreview(false, cx);
+            cx.notify();
+            if (project !== root) { this.watchSetupConfig(setup, cx); break; }
+          }
+        } catch { break; }
+        finally { if (this.setupConfigWatch === pending) this.setupConfigWatch = null; }
+      }
+    });
+  }
+
+  clearBinding() {
+    this.pendingWatch?.cancel();
+    this.stopRuntimeWatch();
+    this.resetInbox();
+    this.binding = null; this.tasks = []; this.roles = []; this.selected = null; this.error = null; this.watchError = null; this.viewBinding = null;
+    this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
+    this.iteration = null; this.iterationMenu = false; this.requirementType = null;
+    this.bodies.clear();
+  }
+
+  follow(cx, force = false) {
+    if (this.pinned || this.popout || this.closed || checking()) return;
+    const target = this.target();
+    // Pane cwd can change without changing the Space or any team labels.
+    if (target?.space.id === this.place?.id) this.followSetup(target?.space, cx, force);
+    if (!force && (target?.key ?? null) === (this.following ?? null)) return;
+    const generation = this.followGeneration = (this.followGeneration ?? 0) + 1;
+    this.following = target?.key ?? null;
+    const changedSpace = target?.space.id !== this.place?.id;
+    if (changedSpace) {
+      this.setupWatch?.cancel();
+      this.setupConfigWatch?.cancel();
+      this.setupWatch = null; this.setup = null;
+      this.setPreview(false, cx);
+    }
+    this.place = target ? { name: target.space.name, id: target.space.id, folder: target.space.folder } : null;
+    this.remoteMachine = target?.space.machine ?? null;
+    this.resolving = false;
+    if (!target || this.remoteMachine) {
+      this.clearBinding();
+      this.setPreview(false, cx);
+      return;
+    }
+    this.resolving = true;
+    cx.spawn(async cx => {
+      try {
+        const result = await team(["space", "show", "--space", target.localId, "--json"], { on: target.space.machine, timeout: 10000 });
+        if (this.closed || this.followGeneration !== generation) return;
+        const record = teamJson(result, "space show").binding;
+        const binding = consoleBinding(record, target.space);
+        // Main/worktree switches keep one team, one watcher and the current selection.
+        const teamChanged = Boolean(this.binding || binding) && !sameTeam(this.binding, binding);
+        if (teamChanged) {
+          this.demoView = "board";
+          this.clearBinding(); this.binding = binding;
+        }
+        this.viewBinding = record;
+        this.error = null;
+        if (binding) {
+          const wasPreview = this.preview;
+          this.setPreview(false, cx);
+          if (!wasPreview && (teamChanged || force)) this.load(cx);
+        }
+        this.watchRuntime(cx, force);
+        this.followSetup(target.space, cx);
+      } catch (error) {
+        if (!this.closed && this.followGeneration === generation) {
+          this.clearBinding();
+          this.error = errorMessage(error);
+        }
+      } finally {
+        if (!this.closed && this.followGeneration === generation) { this.resolving = false; cx.notify(); }
+      }
+    });
+  }
+
+  stopRuntimeWatch() {
+    this.runtime?.pending?.cancel();
+    this.runtime = null;
+  }
+
+  watchRuntime(cx, refresh) {
+    const binding = this.binding;
+    if (!binding || binding.machine || this.viewBinding?.view_space || this.viewBinding?.demo || this.pinned) {
+      this.stopRuntimeWatch();
+      return;
+    }
+    if (this.runtime?.binding === binding) {
+      const runtime = this.runtime;
+      if (refresh) cx.spawn(async cx => { await this.readRuntime(runtime, cx); });
+      return;
+    }
+    this.stopRuntimeWatch();
+    const runtime = this.runtime = { binding, running: null };
+    cx.spawn(async cx => {
+      try {
+        const result = await teamStateFolder({ cwd: binding.root, timeout: 10000 });
+        if (this.closed || this.runtime !== runtime) return;
+        const path = result.stdout.trim();
+        if (result.code !== 0 || !path.startsWith("/")) { await this.readRuntime(runtime, cx); return; }
+        let changed = true;
+        while (!this.closed && this.runtime === runtime) {
+          runtime.pending = watchFolder(path);
+          if (changed) await this.readRuntime(runtime, cx);
+          const paths = await runtime.pending;
+          if (!paths.length) break;
+          changed = paths.some(file => file === path || file === `${path}/daemon.json` ||
+            file === `${path}/teams` || (file.startsWith(`${path}/teams/`) && file.endsWith(".json")));
+        }
+      } catch {
+        if (this.runtime === runtime && runtime.running === null) await this.readRuntime(runtime, cx);
+      }
+    });
+  }
+
+  async readRuntime(runtime, cx) {
+    const binding = runtime.binding;
+    const request = runtime.request = (runtime.request ?? 0) + 1;
+    try {
+      const result = await team(["daemon", "status", "--json"], { cwd: binding.root, timeout: 10000 });
+      const status = teamJson(result, "daemon status");
+      if (this.runtime !== runtime || runtime.request !== request || this.closed) return;
+      runtime.running = status.state === "running" && Boolean(status.teams?.some(team =>
+        team.runtime === "desktop" && team.root === binding.root && team.space === binding.space));
+      runtime.starting = status.state === "starting";
+      runtime.error = status.state === "unresponsive" ? "The team service is unresponsive. Use Refresh to check again." : "";
+    } catch (error) {
+      if (this.runtime !== runtime || runtime.request !== request || this.closed) return;
+      runtime.error = errorMessage(error);
+    }
+    cx.notify();
   }
 
   load(cx) {
-    if (this.closed || this.preview || !this.binding) return;
+    if (this.closed || this.preview || !this.binding || this.binding.machine) return;
+    if (this.section === "inbox") this.loadInbox(cx);
     if (this.loading) { this.refreshAgain = true; return; }
     const binding = this.binding;
     this.loading = true;
@@ -22,16 +299,33 @@ export default class TeamConsole extends View {
       try {
         const options = { cwd: binding.root, on: binding.machine, timeout: 10000 };
         // Existing read-only JSON contracts; no legacy runtime commands here.
-        const results = await Promise.all([
-          exec("herdr-team", ["tasks", "--root", binding.root, "--json"], options),
-          exec("herdr-team", ["role", "list", "--root", binding.root, "--json"], options),
+        const records = Promise.all([
+          team(["task", "list", "--all", "--root", binding.root, "--json"], options),
+          team(["role", "list", "--root", binding.root, "--json"], options),
         ]);
-        if (this.closed || this.preview) return;
-        for (const result of results) if (result.code !== 0) throw new Error(result.stderr || "Cannot read team records");
-        const [tasks, roles] = results.map(result => JSON.parse(result.stdout));
-        if (!Array.isArray(tasks) || !Array.isArray(roles)) throw new Error("Expected task and role arrays from herdr-team");
+        const backlog = this.popout ? Promise.resolve(null) : team(["issue", "list", "--root", binding.root, "--json"], options).then(result => {
+          const cards = teamJson(result, "issue list", "array");
+          return { cards };
+        }).catch(error => ({ error: errorMessage(error) }));
+        const [results, planning] = await Promise.all([records, backlog]);
+        if (this.closed || this.preview || this.binding !== binding) return;
+        const tasks = teamJson(results[0], "task list", "array");
+        const roles = teamJson(results[1], "role list", "array");
         this.tasks = sortTasks(tasks); this.roles = roles; this.error = null;
-      } catch (error) { if (!this.preview) this.error = String(error); }
+        if (planning) {
+          this.requirements = planning.cards ?? [];
+          this.requirementError = planning.error ?? null;
+          this.requirementDetails = new Map();
+          if (this.iteration !== null && !iterationOptions([...tasksWithIterations(this.tasks, this.requirements), ...this.requirements]).includes(this.iteration)) {
+            this.iteration = null;
+          }
+          if (this.selectedRequirement && !this.requirements.some(card => card.id === this.selectedRequirement)) this.selectedRequirement = null;
+          if (this.selectedRequirement) this.loadRequirement(this.selectedRequirement, cx);
+        }
+        // Bodies may have changed with the records; refetch the one on screen.
+        this.bodies.clear();
+        if (this.selected) this.loadBody(this.selected, cx);
+      } catch (error) { if (!this.preview && this.binding === binding) this.error = errorMessage(error); }
       finally {
         this.loading = false;
         if (this.refreshAgain) { this.refreshAgain = false; this.load(cx); }
@@ -40,84 +334,781 @@ export default class TeamConsole extends View {
     });
   }
 
+  // One cancellable watch per binding; switching spaces cancels it.
   watch(cx) {
-    if (this.closed || this.preview || !this.binding || this.binding.machine || this.watching) return;
-    this.watching = true;
+    const binding = this.binding;
+    if (this.closed || this.preview || !binding || binding.machine || this.watchFor === binding) return;
+    this.watchFor = binding;
     cx.spawn(async cx => {
       try {
-        while (!this.closed && !this.preview) {
-          this.pendingWatch = watchFolder(`${this.binding.root}/.herdr`);
+        while (!this.closed && !this.preview && this.binding === binding) {
+          this.pendingWatch = watchFolder(`${binding.root}/.herdr`);
           const paths = await this.pendingWatch;
           this.pendingWatch = null;
-          if (this.closed || this.preview) break;
+          if (this.closed || this.preview || this.binding !== binding) break;
           if (paths.length) this.load(cx);
         }
-      } catch (error) { if (!this.preview) { this.watchError = `Live file updates unavailable; use Refresh. ${String(error)}`; cx.notify(); } }
-      finally { this.watching = false; }
+      } catch (error) {
+        if (!this.preview && this.binding === binding) { this.watchError = `Live file updates unavailable; use Refresh. ${String(error)}`; cx.notify(); }
+      } finally { if (this.watchFor === binding) this.watchFor = null; }
     });
   }
 
-  close() { this.closed = true; this.pendingWatch?.cancel(); }
+  // List JSON omits bodies; read one task's Markdown on demand.
+  loadBody(id, cx) {
+    const binding = this.binding;
+    if (this.preview || !binding || this.bodies.has(id)) return;
+    this.bodies.set(id, null);
+    cx.spawn(async cx => {
+      try {
+        const result = await team(["task", "show", id, "--root", binding.root, "--json"], { cwd: binding.root, on: binding.machine, timeout: 10000 });
+        if (this.binding !== binding) return;
+        this.bodies.set(id, String(teamJson(result, "task show").body ?? ""));
+      } catch (error) { if (this.binding === binding) this.bodies.set(id, errorMessage(error)); }
+      cx.notify();
+    });
+  }
 
-  toggle(cx) {
-    this.preview = !this.preview;
+  loadRequirement(id, cx) {
+    const binding = this.binding, cache = this.requirementDetails;
+    if (this.preview || !binding || cache.has(id)) return;
+    cache.set(id, null);
+    cx.spawn(async cx => {
+      try {
+        const result = await team(["issue", "show", id, "--root", binding.root, "--json"],
+          { cwd: binding.root, on: binding.machine, timeout: 10000 });
+        if (!this.closed && this.binding === binding && this.requirementDetails === cache) cache.set(id, teamJson(result, "issue show"));
+      } catch (error) {
+        if (!this.closed && this.binding === binding && this.requirementDetails === cache) cache.set(id, { error: errorMessage(error) });
+      }
+      if (!this.closed && this.binding === binding) cx.notify();
+    });
+  }
+
+  resetInbox() {
+    this.stopInboxWatch();
+    this.inboxRequest++;
+    this.inboxFolder = "active";
+    this.inboxRows = []; this.inboxError = null; this.inboxLoading = false; this.mail = null;
+  }
+
+  stopInboxWatch() {
+    this.inboxWatch?.pending?.cancel();
+    this.inboxWatch = null;
+  }
+
+  showInbox(folder, cx) {
+    const changed = this.inboxFolder !== folder;
+    this.section = "inbox";
+    this.selected = null; this.selectedRequirement = null; this.iterationMenu = false; this.mail = null;
+    this.inboxFolder = folder;
+    if (changed) { this.inboxRows = []; this.inboxError = null; }
+    this.loadInbox(cx);
+    cx.notify();
+  }
+
+  loadInbox(cx) {
+    const binding = this.binding;
+    if (this.closed || this.preview || !binding || binding.machine || this.section !== "inbox") return;
+    const folder = this.inboxFolder, request = ++this.inboxRequest;
+    const current = () => !this.closed && !this.preview && this.binding === binding && request === this.inboxRequest;
+    this.inboxLoading = true;
+    cx.spawn(async cx => {
+      try {
+        const command = folder === "active" ? "list" : "trash";
+        const result = await team(["inbox", command, "--root", binding.root, "--json"],
+          { cwd: binding.root, on: binding.machine, timeout: 10000 });
+        if (!current()) return;
+        this.inboxRows = teamJson(result, `inbox ${command}`, "array");
+        this.inboxError = null;
+        this.watchInbox(cx);
+      } catch (error) {
+        if (current()) this.inboxError = errorMessage(error);
+      } finally {
+        if (current()) { this.inboxLoading = false; cx.notify(); }
+      }
+    });
+  }
+
+  watchInbox(cx) {
+    if (this.section !== "inbox" || this.inboxWatch) return;
+    const binding = this.binding, watch = {};
+    this.inboxWatch = watch;
+    const current = () => !this.closed && !this.preview && this.binding === binding && this.inboxWatch === watch;
+    cx.spawn(async cx => {
+      try {
+        // Resolve the same local state directory as the CLI. Other files here,
+        // including logs written by inbox reads, do not affect the mail view.
+        const result = await teamStateFolder(
+          { cwd: binding.root, on: binding.machine, timeout: 10000 });
+        const path = result.stdout.trim();
+        if (result.code !== 0 || !path.startsWith("/")) return;
+        while (current()) {
+          watch.pending = watchFolder(path);
+          const paths = await watch.pending;
+          if (current() && paths.some(changed => changed === path || changed === `${path}/agentmail` ||
+              changed.startsWith(`${path}/agentmail/`))) this.loadInbox(cx);
+        }
+      } catch {
+        // The refresh button remains available if the state directory cannot be watched.
+      } finally { if (this.inboxWatch === watch) this.inboxWatch = null; }
+    });
+  }
+
+  openMail(row, cx) {
+    const binding = this.binding, selection = { row, content: this.preview ? row : null, error: null };
+    this.mail = selection;
+    cx.notify();
+    if (this.preview || !binding || binding.machine) return;
+    cx.spawn(async cx => {
+      try {
+        const result = await team(["inbox", "read", row.id, "--root", binding.root, "--json"],
+          { cwd: binding.root, on: binding.machine, timeout: 10000 });
+        selection.content = teamJson(result, "inbox read");
+      } catch (error) { selection.error = errorMessage(error); }
+      if (!this.closed && this.binding === binding && this.mail === selection) cx.notify();
+    });
+  }
+
+  popOut(task) {
+    const binding = this.binding;
+    openOverlay({ mod: find(layout(), this.block())?.content?.mod ?? "team-console", kind: "window", key: "team-task", width: 640, height: 0.8,
+      props: this.preview ? { task: task.id, sample: true } : { task: task.id, root: binding.root, space: binding.space, machine: binding.machine,
+        showcase: this.viewBinding?.demo === true } });
+  }
+
+  close() { this.closed = true; this.pendingWatch?.cancel(); this.setupWatch?.cancel(); this.setupConfigWatch?.cancel(); this.stopInboxWatch(); this.stopRuntimeWatch(); }
+
+  loadSetupAgents(setup, cx) {
+    cx.spawn(async cx => {
+      try { setup.agents = (await knownAgents({ on: null })).filter(agent => agent.installed && agent.agent && agent.run.length); }
+      catch (error) { setup.agentError = `Cannot check installed agents. ${String(error)}`; }
+      if (!this.closed && this.setup === setup) cx.notify();
+    });
+  }
+
+  startSetupAgent(agent, cx) {
+    const setup = this.setup;
+    if (setup?.action !== "init" || setup.busy || this.binding || !setup.agents?.includes(agent)) return;
+    setup.busy = true; setup.error = "";
+    cx.notify();
+    cx.spawn(async cx => {
+      try {
+        let root = setup.cwd;
+        try {
+          const git = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: setup.cwd, timeout: 3000 });
+          if (git.code === 0 && git.stdout.trim().startsWith("/")) root = git.stdout.trim();
+        } catch { /* A project can also be a standalone folder. */ }
+        if (this.closed || this.setup !== setup || this.target()?.space.id !== setup.space || setup.action !== "init") return;
+        const argv = agent.key === "codex" ? agent.run.filter((arg, index) => index === 0 || arg !== "--daemon") : agent.run;
+        if (agent.key === "codex" && !argv.includes("--no-daemon")) argv.splice(1, 0, "--no-daemon");
+        this.watchSetupConfig(setup, cx, root);
+        run("tab.new", { name: `Team Setup · ${agent.name}`, space: setup.space, folder: setup.cwd, argv,
+          task: "Use the installed herdr-team skill’s setup (onboard) entry to help me configure this project. Validate and register the team when the setup is complete. Leave team startup for the Up action in Herdr." });
+        setup.agentStarted = true;
+      } catch (error) { setup.error = String(error); }
+      finally {
+        setup.busy = false;
+        if (!this.closed && this.setup === setup) cx.notify();
+      }
+    });
+  }
+
+  setupAction(cx) {
+    const setup = this.setup;
+    if (!setup || setup.busy || this.binding || this.resolving) return;
+    const current = () => !this.closed && this.setup === setup && this.target()?.space.id === setup.space;
+    setup.busy = true; setup.error = "";
+    cx.notify();
+    cx.spawn(async cx => {
+      try {
+        if (setup.action === "init") {
+          const result = await team(["team", "init", "--json"], { cwd: setup.cwd, timeout: 15000 });
+          const init = teamJson(result, "team init");
+          if (!init.registered || !init.root?.startsWith("/")) throw new Error("Update the shared herdr-team CLI to register a project with Init.");
+          setup.action = "up"; setup.root = init.root;
+          if (current()) {
+            this.setPreview(false, cx);
+            this.watchSetupConfig(setup, cx);
+          }
+        } else {
+          const validation = await team(["team", "validate", "--root", setup.root], { timeout: 10000 });
+          if (!current()) return;
+          if (validation.code !== 0) {
+            this.follow(cx, true);
+            return;
+          }
+          const folder = `${setup.root}/.herdr`;
+          const watching = () => !this.closed && this.place?.id === setup.space && !this.binding;
+          this.setupWatch?.cancel();
+          cx.spawn(async cx => {
+            while (watching()) {
+              const pending = this.setupWatch = watchFolder(folder);
+              try {
+                const paths = await pending;
+                if (!paths.length || !watching() || this.setupWatch !== pending) break;
+                if (paths.some(path => path === folder || path.endsWith("/desktop.json"))) {
+                  this.follow(cx, true); break;
+                }
+              } catch { break; }
+              finally { if (this.setupWatch === pending) this.setupWatch = null; }
+            }
+          });
+          this.launchTeam(setup);
+        }
+      } catch (error) { setup.error = String(error); }
+      finally { setup.busy = false; if (current()) cx.notify(); }
+    });
+  }
+
+  launchTeam({ root, space, cwd }) {
+    run("tab.new", { name: "Team Up", space, folder: cwd, focus: true,
+      argv: ["zsh", "-ilc", 'PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"; export PATH; herdr-team team up --root "$1" || exec zsh -i', "herdr-team", root] });
+  }
+
+  startStoppedTeam(cx) {
+    const runtime = this.runtime;
+    if (!runtime || runtime.running !== false || runtime.busy || runtime.starting || runtime.error) return;
+    runtime.busy = true;
+    cx.notify();
+    cx.spawn(async cx => {
+      try {
+        await this.readRuntime(runtime, cx);
+        if (this.runtime !== runtime || this.closed || runtime.running !== false || runtime.starting || runtime.error) return;
+        const { root, space } = runtime.binding;
+        if (this.target()?.localId !== space) return;
+        this.launchTeam({ root, space, cwd: root });
+      } catch (error) { runtime.error = String(error); }
+      finally {
+        runtime.busy = false;
+        if (!this.closed && this.runtime === runtime) cx.notify();
+      }
+    });
+  }
+
+  setPreview(preview, cx) {
+    if (preview || (!this.binding && this.setup?.action === "up")) this.section = "tasks";
+    if (this.preview === preview) return;
+    this.preview = preview;
     this.selected = null;
-    if (this.preview) this.pendingWatch?.cancel();
+    this.selectedRequirement = null; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
+    this.resetInbox();
+    if (this.preview) { this.pendingWatch?.cancel(); this.watchFor = null; }
     else this.load(cx);
     cx.notify();
   }
 
+  // The layout block holding this console; the tab-bar button toggles it.
+  block() { return props()?.block ?? "team-console"; }
+
+  // Own icons live in this mod's folder, whose name differs between dev and installed copies.
+  teamIcon() { return `mods/${find(layout(), this.block())?.content?.mod ?? "team-console"}/users.svg`; }
+
+  // A tab-bar button styled like the shipped Files/Changes buttons, toggling the console block.
+  tabButton(t) {
+    const node = find(layout(), this.block()), on = Boolean(node) && !node.hidden;
+    return h_flex().size_full().pr(10).items_center().bg(t.chrome).border_b(1).border_color(t.border)
+      .child(h_flex().id("team-tab").h(26).px(8).gap(5).flex_none().items_center().rounded(6)
+        .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
+        .hover(s => s.bg(t.hover))
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .on_click(() => run("layout.toggle", { id: this.block() }))
+        .child(svg(this.teamIcon()).size(14)).child("Team"));
+  }
+
+  setView(view, cx) {
+    this.stopInboxWatch();
+    this.section = "tasks";
+    const showcase = !this.preview && this.viewBinding?.demo === true;
+    if (showcase) this.demoView = view;
+    else this.view = view;
+    this.selected = null;
+    this.selectedRequirement = null;
+    this.iterationMenu = false;
+    if (!showcase) localStorage.setItem("view", view);
+    cx.notify();
+  }
+
+  select(id, cx) {
+    this.stopInboxWatch();
+    this.section = "tasks";
+    this.selected = id;
+    this.taskDocumentTab = "description"; this.taskExpanded = false;
+    this.selectedRequirement = null;
+    this.iterationMenu = false;
+    if (id) this.loadBody(id, cx);
+    cx.notify();
+  }
+
+  showRequirements(id, cx) {
+    this.stopInboxWatch();
+    this.section = "requirements";
+    this.selected = null;
+    this.selectedRequirement = id;
+    this.iterationMenu = false;
+    if (id) this.loadRequirement(id, cx);
+    cx.notify();
+  }
+
   render(cx) {
-    const t = theme(), demo = this.preview ? sample() : null;
+    if (props()?.tab) return this.tabButton(theme());
+    this.follow(cx);
+    const t = theme(), mono = settings()?.font_family ?? "JetBrains Mono";
+    const demo = this.preview ? sample() : null;
     const binding = demo?.binding ?? this.binding;
-    const tasks = sortTasks(demo?.tasks ?? this.tasks);
+    const showcase = !this.preview && (this.viewBinding?.demo === true || props()?.showcase === true);
+    const displayView = showcase ? this.demoView : this.view;
+    const visibleRole = name => showcase ? name?.replace(/^demo-(dev|test|review)$/, "$1") : name;
+    const remoteMachine = !this.preview && (this.pinned?.machine ?? this.remoteMachine);
+    const setup = !this.binding && !this.resolving ? this.setup : null;
+    const requirements = demo?.requirements ?? this.requirements;
+    const tasks = sortTasks(tasksWithIterations(demo?.tasks ?? this.tasks, requirements));
+    const iterationTasks = tasksForIteration(tasks, this.iteration);
+    const inbox = demo?.inbox?.[this.inboxFolder] ?? this.inboxRows;
     const live = scopedTerminals(demo?.terminals ?? terminals(), binding);
     const roles = roleRows(demo?.roles ?? this.roles, live);
-    const task = tasks.find(task => task.id === this.selected) ?? tasks[0];
-    const color = status => t[status === "error" ? "blocked" : status] ?? t.muted;
-    const button = (id, text, action) => div().id(id).px(8).py(4).rounded(5).text_color(t.muted).hover(style => style.bg(t.hover)).on_click((_event, cx) => action(cx)).child(text);
-    const section = title => div().text_size(11).font_semibold().text_color(t.dim).child(title);
-    const list = tasks.map(task => h_flex().id(`task-${task.id}`).px(10).py(8).gap(8).rounded(6)
-      .bg(task.id === (this.selected ?? tasks[0]?.id) ? t.selected : t.surface).hover(style => style.bg(t.hover))
-      .on_click((_event, cx) => { this.selected = task.id; cx.notify(); })
-      .child(div().text_color(t.accent).child(`#${task.id}`))
-      .child(div().flex_1().truncate().child(task.title))
-      .child(div().text_color(t.muted).child(`${task.status} · ${task.role}`)));
-    const flow = flowNodes(task, roles).map((node, index) => h_flex().gap(8).items_center()
-      .when(index > 0, element => element.child(div().text_color(t.dim).child("→")))
-      .child(v_flex().p(10).gap(4).rounded(6).border(1).border_color(index ? t.border : t.accent)
+    const color = status => status === "error" ? t.blocked : status === "ready" ? t.accent : status === "awaiting handoff" ? t.done
+      : status === "assigned" ? t.muted : t[status] ?? t.dim;
+
+    // Small building blocks, in the shipped sidebar's vocabulary.
+    const pill = (text, c) => div().flex_none().px(6).h(18).rounded(5).bg(c + "22").text_size(10.5).font_semibold().text_color(c)
+      .flex().items_center().child(text);
+    const heading = (text, count) => h_flex().items_center().gap(6).px(2)
+      .child(div().text_size(11).font_semibold().text_color(t.dim).child(text))
+      .when(count !== undefined, el => el.child(div().text_size(10.5).text_color(t.dim).child(String(count))));
+    const statusColor = status => status === "doing" ? t.working : status === "review" ? t.accent : status === "blocked" ? t.blocked : status === "done" ? t.done : t.dim;
+    const taskLabel = status => status === "blocked" ? "Blocked" : label(status);
+    const taskDisplayLabel = task => taskReviewPhase(task) ?? taskLabel(task.status);
+    const taskDisplayColor = task => task.status === "review" && task.meta?.integration?.state === "blocked"
+      ? t.blocked : statusColor(task.status);
+    const emptyState = (title, description, icon = this.teamIcon(), detail) => v_flex().w_full().flex_1().min_h(220)
+      .px(22).py(32).gap(10).items_center().justify_center().text_center()
+      .child(div().size(42).flex_none().rounded(12).bg(t.surface).border(1).border_color(t.border)
+        .flex().items_center().justify_center().child(svg(icon).size(20).text_color(t.muted)))
+      .child(div().max_w(280).text_size(14).font_semibold().text_color(t.foreground).child(title))
+      .child(div().max_w(280).text_size(12).line_height(1.5).text_color(t.muted).child(description))
+      .when(Boolean(detail), el => el.child(div().max_w(280).mt(2).text_size(10.5).text_color(t.dim).child(detail)));
+    const roleColor = name => {
+      const palette = [t.ansi4, t.ansi5, t.ansi6, t.ansi2, t.ansi3, t.ansi1].filter(Boolean);
+      let hash = 0;
+      for (const ch of name ?? "") hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+      return palette[hash % palette.length] ?? t.accent;
+    };
+    const avatar = (name, size = 26) => div().size(size).flex_none().rounded(size > 20 ? 7 : 5).bg(roleColor(name) + "26")
+      .text_size(size > 20 ? 12 : 10).font_bold().text_color(roleColor(name)).flex().items_center().justify_center()
+      .child((name ?? "?").slice(0, 1).toUpperCase());
+    const assigneeTooltip = ({ name, live, program, model, modelSource }) => [name,
+      program?.name && `${live ? "Live agent" : "Configured agent"} · ${program.name}`,
+      model && `${modelSource === "launch" ? "Launch model" : "Configured model"} · ${model}`,
+    ].filter(Boolean).join("\n");
+    const assignee = (assignment, stacked = false) => {
+      const { name, program, model } = assignment;
+      const icon = program?.icon ? program.tint ? svg(program.icon).size(15).flex_none().text_color(t.foreground)
+        : image(program.icon).size(15).flex_none() : stacked ? avatar(name, 16) : null;
+      const text = stacked ? v_flex().gap(2) : h_flex().gap(4).items_center();
+      return h_flex().gap(5).items_center().flex_1().min_w(0)
+        .when(Boolean(icon), el => el.child(icon))
+        .child(text.flex_1().min_w(0)
+          .child(div().min_w(0).truncate().text_size(11).text_color(t.muted).child(name))
+          .when(Boolean(model), el => el.child(div().min_w(0).truncate().text_size(10.5).text_color(t.dim)
+            .child(stacked ? model : `· ${model}`))));
+    };
+    const priorityColor = p => p === "P0" ? t.blocked : p === "P1" ? t.working : t.muted;
+    // Per-task glyph: recorded task status first, then what its current agent reports.
+    const taskGlyph = task => {
+      if (task.status === "done") return svg(ICON("circle-check")).size(14).flex_none().text_color(t.done);
+      if (task.status === "cancelled") return svg(ICON("minus")).size(14).flex_none().text_color(t.dim);
+      if (task.status === "todo") return div().size(10).m(2).flex_none().rounded(5).border(1.5).border_color(t.dim);
+      const report = flowNodes(task, roles)[0]?.status;
+      if (report === "working") return svg(ICON("spinner")).size(14).flex_none().text_color(t.working).spin(900);
+      if (report === "blocked" || report === "error") return div().size(14).flex_none().rounded(4).bg(t.blocked + "26")
+        .text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
+      return div().size(10).m(2).flex_none().rounded(5).bg(t.accent);
+    };
+
+    const routeNote = task => {
+      const waiting = waitingOn(task, tasks);
+      if (waiting.length) return `waiting on ${waiting.map(id => `#${id}`).join(", ")}`;
+      if (task.status === "done" || task.status === "cancelled") return "";
+      return task.handoff?.length ? "" : "last step";
+    };
+
+    // Detail: one line per assignee with its harness and report.
+    const steps = task => v_flex().gap(5).children(flowNodes(task, roles).map((node, index) => h_flex().gap(7).items_center().flex_wrap()
+      .child(avatar(visibleRole(node.name), 18))
+      .child(div().max_w(144).truncate().tooltip(visibleRole(node.name)).text_size(12).font_semibold().text_color(index ? t.muted : t.foreground).child(visibleRole(node.name)))
+      .child(div().text_size(11).text_color(index ? t.dim : color(node.status)).child(index ? `Step ${index + 1}` : label(node.status)))
+      .child(div().flex_1().min_w(0))
+      .child(div().max_w(140).truncate().text_size(11).text_color(t.dim).child(`${node.harness} · ${node.model}`))));
+    const detailPage = task => {
+      const body = this.preview ? task.body ?? "" : this.bodies.get(task.id);
+      const document = taskDocument(body ?? "");
+      const tab = this.taskDocumentTab;
+      const content = document[tab];
+      const longDescription = tab === "description" && content.length > 950;
+      const descriptionPreview = longDescription && !this.taskExpanded
+        ? [...content].slice(0, 360).join("").trimEnd() + "…"
+        : "";
+      const linkedId = task.meta?.requirement;
+      const linked = requirements.find(card => card.id === linkedId);
+      const linkedType = linked ? (linked.type === "defect" ? "Defect" : "Requirement") : "Issue";
+      const linkedLabel = `${linkedType} ${linkedId}`;
+      const back = div().id("back").h(24).pl(2).pr(8).gap(2).flex().items_center().rounded(6).hover(s => s.bg(t.hover))
+        .on_click((_e, cx) => this.select(null, cx))
+        .child(svg(ICON("chevron-left")).size(14).text_color(t.muted)).child(div().text_size(12).text_color(t.muted).child("Tasks"));
+      const popOut = div().id("pop-out").h(24).px(8).flex().items_center().rounded(6).border(1).border_color(t.border)
+        .text_size(11.5).text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
+        .on_click(() => this.popOut(task)).child("Pop out");
+      return v_flex().gap(14)
+        .when(!this.popout, el => el.child(h_flex().items_center().child(back).child(div().flex_1()).child(popOut)))
+        .child(v_flex().gap(7)
+          .child(h_flex().gap(7).items_center().flex_wrap()
+            .child(taskGlyph(task))
+            .child(div().font_family(mono).text_size(11).text_color(t.dim).child(`#${task.id}`))
+            .child(pill(taskDisplayLabel(task), taskDisplayColor(task)))
+            .when(Boolean(task.priority), el => el.child(pill(task.priority, priorityColor(task.priority))))
+            .when(Boolean(task.iteration), el => el.child(div().max_w(108).truncate().text_size(11).text_color(t.muted)
+              .tooltip(task.meta?.iteration ? task.iteration : `${task.iteration} · From issue`).child(task.iteration)))
+            .when(Boolean(task.meta?.feature), el => el.child(div().max_w(180).truncate().text_size(11).text_color(t.muted)
+              .tooltip(task.meta?.feature ?? "").child(`Feature ${task.meta?.feature}`)))
+            .when(Boolean(linkedId), el => el.child(div().id("linked-requirement").text_size(11).text_color(t.accent)
+              .tooltip(linked?.title ?? linkedLabel)
+              .when(Boolean(linked && !this.popout), el => el.hover(s => s.text_color(t.foreground))
+                .on_click((_e, cx) => this.showRequirements(linkedId, cx)))
+              .child(linkedLabel))))
+          .child(div().text_size(16).font_semibold().line_height(1.35).child(task.title)))
+        .child(v_flex().px(8).py(7).gap(5).rounded(7).bg(t.surface)
+          .when(Boolean(task.handoff?.length), el => el.child(heading("Handoff")))
+          .child(steps(task))
+          .when(Boolean(task.dependsOn?.length), el => el.child(div().text_size(11).text_color(t.dim)
+            .child(`Depends on ${task.dependsOn.map(id => `#${id}`).join(", ")}${routeNote(task).startsWith("waiting") ? " · not finished" : ""}`))))
+        .child(h_flex().self_start().gap(2).p(2).rounded(7).bg(t.raised)
+          .child(segment("task-description", "Description", tab === "description", cx => { this.taskDocumentTab = "description"; cx.notify(); }))
+          .child(segment("task-history", "History", tab === "history", cx => { this.taskDocumentTab = "history"; cx.notify(); })))
+        // Selecting text must not drag a popped-out window.
+        .child(div().id("body").on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .child(body == null ? div().text_color(t.dim).child("Loading…")
+            : descriptionPreview ? div().line_height(1.55).child(descriptionPreview)
+            : content ? TextView.markdown(`body-${task.id}-${tab}`, content).selectable(true)
+            : div().text_color(t.dim).child(tab === "history" ? "No history recorded." : "No description recorded.")))
+        .when(longDescription, el => el.child(div().id("expand-description").self_start().text_size(11.5).text_color(t.accent)
+          .hover(s => s.text_color(t.foreground))
+          .on_click((_e, cx) => { this.taskExpanded = !this.taskExpanded; cx.notify(); })
+          .child(this.taskExpanded ? "Collapse description" : "Show full description")));
+    };
+
+    // A. List: narrow-sidebar rows, explicit status filters and attention order.
+    const taskRow = task => {
+      const owner = taskAssignee(task, roles, this.agentPrograms);
+      owner.name = visibleRole(owner.name);
+      return v_flex().id(`task-${task.id}`).px(6).py(7).gap(4).rounded(6).min_w(0)
+        .tooltip(`#${task.id} · ${task.title}\n${taskDisplayLabel(task)}\n${assigneeTooltip(owner)}`)
+        .hover(s => s.bg(t.hover))
+        .on_click((_e, cx) => this.select(task.id, cx))
+        .child(h_flex().gap(8).items_center().min_w(0)
+          .child(div().size(7).mx(3.5).flex_none().rounded(4).bg(taskDisplayColor(task)))
+          .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(task.status === "done" ? t.muted : t.foreground).child(task.title))
+          .when(task.priority === "P0" || task.priority === "P1", el => el.child(pill(task.priority, priorityColor(task.priority)))))
+        .child(h_flex().pl(22).gap(6).items_center().min_w(0).text_size(11)
+          .child(div().flex_none().font_family(mono).text_color(t.dim).child(`#${task.id}`))
+          .child(assignee(owner))
+          .when(Boolean(task.iteration), el => el.child(div().max_w(76).truncate().text_color(t.dim).tooltip(task.iteration).child(task.iteration)))
+          .child(div().flex_none().text_color(taskDisplayColor(task)).child(taskDisplayLabel(task))));
+    };
+    const filters = listFilters(iterationTasks);
+    const activeFilter = filters.some(filter => filter.status === this.filter) ? this.filter : "all";
+    const visibleTasks = listTasks(iterationTasks, activeFilter);
+    const filterButton = ({ status, title, count }) => h_flex().id(`filter-${status}`).flex_none().h(25).px(7).gap(5).items_center().rounded(5)
+      .bg(activeFilter === status ? t.selected : t.background)
+      .text_color(activeFilter === status ? t.foreground : t.muted)
+      .tooltip(status === "open" ? "Open tasks · blocked, review and in progress first. Done and cancelled are hidden." : `${title} tasks`)
+      .hover(s => s.bg(t.hover))
+      .on_click((_e, cx) => { this.filter = status; cx.notify(); })
+      .child(div().text_size(11.5).font_medium().child(title))
+      .child(div().text_size(10.5).text_color(t.dim).child(String(count)));
+    const listView = v_flex().min_w(0).gap(8)
+      .child(h_flex().flex_wrap().gap(4).pb(8).border_b(1).border_color(t.border).children(filters.map(filterButton)))
+      .child(v_flex().min_w(0).gap(1).children(visibleTasks.map(taskRow))
+        .when(!visibleTasks.length, el => el.child(div().px(6).py(14).text_size(12).text_color(t.muted)
+          .child(this.iteration && !iterationTasks.length ? `No tasks in ${this.iteration}.`
+            : activeFilter === "open" ? "No open tasks. Use Done to see completed tasks." : `No ${taskLabel(activeFilter).toLowerCase()} tasks.`))));
+
+    // B. Board: one card in its recorded status column, with its current assignee.
+    const card = task => {
+      const next = visibleRole(task.handoff?.[0]), phase = taskReviewPhase(task), note = phase ?? routeNote(task);
+      const owner = taskAssignee(task, roles, this.agentPrograms);
+      owner.name = visibleRole(owner.name);
+      return v_flex().id(`card-${task.id}`).p(10).gap(6).rounded(8).bg(t.surface).border(1)
+        .border_color(t.border).hover(s => s.border_color(t.input))
+        .on_click((_e, cx) => this.select(task.id, cx))
         .child(h_flex().gap(6).items_center()
-          .child(div().size(6).rounded(3).bg(color(node.status)).when(node.status === "working", element => element.loop("opacity", { from: 0.35, to: 1, period: 1200 })))
-          .child(node.name))
-        .child(div().text_size(11).text_color(color(node.status)).child(node.status))
-        .child(div().text_size(11).text_color(t.muted).child(`${node.harness} · ${node.model}`))));
-    const roleList = roles.map(role => h_flex().id(`role-${role.name}`).gap(8).py(5).items_center()
-      .child(div().size(6).rounded(3).bg(color(role.status)))
-      .child(div().w(58).font_semibold().child(role.name))
-      .child(div().flex_1().truncate().text_color(t.muted).child(`${role.harness} · ${role.model ?? "default"}`))
-      .child(div().text_color(t.dim).child(`${role.instances.length} live`))
-      .when(!this.preview && role.instances.length === 1, element => element.child(button(`focus-${role.name}`, "Open", () => run("agent.focus", { terminal: role.instances[0].address })))));
-    return v_flex().id("team-root").size_full().overflow_hidden().bg(t.surface).text_color(t.foreground).text_size(13).p(14).gap(12)
-      .child(h_flex().items_center().gap(8).child(div().font_semibold().child("Team Console"))
-        .child(div().text_size(11).text_color(this.preview ? t.accent : t.muted).child(this.preview ? "SAMPLE · no real work" : "READ-ONLY PREVIEW"))
+          .child(taskGlyph(task))
+          .child(div().flex_1().font_family(mono).text_size(10.5).text_color(t.dim).child(`#${task.id}`))
+          .when(Boolean(task.priority), el => el.child(pill(task.priority, priorityColor(task.priority)))))
+        .child(div().text_size(12.5).line_height(1.35).child(task.title))
+        .child(h_flex().gap(5).items_center().min_w(0)
+          .child(assignee(owner, true).tooltip(assigneeTooltip(owner)))
+          .when(Boolean(task.iteration), el => el.child(div().max_w(76).truncate().text_size(10.5).text_color(t.dim)
+            .tooltip(task.iteration).child(task.iteration))))
+        .when(Boolean(note || next), el => el.child(div().text_size(10.5).text_color(phase ? taskDisplayColor(task) : t.dim).child(note || `→ ${next}`)));
+    };
+    // Keep cards readable in narrow panels; the native scrollbar exposes later columns.
+    const columns = boardColumns(iterationTasks);
+    const columnWidth = Math.max(190, Math.floor(((this.width ?? WIDE) - 30 - 10 * (columns.length - 1)) / columns.length));
+    const column = ({ status, title, tasks: cards }) => v_flex().w(columnWidth).flex_none().gap(8)
+      .child(h_flex().gap(7).items_center().px(2).pb(2)
+        .child(div().size(7).flex_none().rounded(4).bg(statusColor(status)))
+        .child(div().flex_1().text_size(12).font_semibold().child(title))
+        .child(div().text_size(10.5).text_color(t.dim).child(String(cards.length))))
+      .children(cards.map(card))
+      .when(!cards.length, el => el.child(div().px(10).py(12).text_size(11).text_color(t.dim).child("No tasks")));
+    const boardView = h_flex().id("status-board").overflow_x_scrollbar().gap(10).items_start().pb(4).children(columns.map(column));
+
+    const compactHeader = (this.width ?? WIDE) < 465;
+    const narrowHeader = (this.width ?? WIDE) < 365;
+    const segment = (id, text, on, action) => div().id(id).px(narrowHeader ? 4 : compactHeader ? 6 : 8).h(22).rounded(5).flex().items_center()
+      .text_size(11.5).font_medium().text_color(on ? t.foreground : t.muted)
+      .when(on, el => el.bg(t.background).border(1).border_color(t.border))
+      .when(!on, el => el.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => action(cx)))
+      .child(text);
+
+    const typePill = type => pill(type === "defect" ? "Defect" : "Requirement", type === "defect" ? t.blocked : t.accent);
+    const requirementLabel = status => REQUIREMENT_STATUS[status] ?? status;
+    const requirementColor = status => status === "accepted" ? t.done : status === "ready" ? t.accent : status === "in-progress" ? t.working : t.dim;
+    const requirementRow = card => h_flex().id(`requirement-${card.id}`).gap(7).items_center().min_w(0).px(6).py(8).rounded(6)
+      .tooltip(`${card.id} · ${card.title}\n${requirementLabel(card.status)} · ${card.progress.done}/${card.progress.total} tasks complete`)
+      .hover(s => s.bg(t.hover)).on_click((_e, cx) => this.showRequirements(card.id, cx))
+      .child(div().size(7).flex_none().rounded(4).bg(requirementColor(card.status)))
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(card.title))
+      .child(typePill(card.type))
+      .child(div().flex_none().font_family(mono).text_size(11).text_color(t.muted).child(`${card.progress.done}/${card.progress.total}`));
+    const options = [null, ...iterationOptions([...tasks, ...requirements])];
+    const iterationTitle = value => value ?? "All iterations";
+    const visibleRequirements = requirementsForIteration(requirements, this.iteration, this.requirementType);
+    const iterationFilter = Popover.new("iteration-filter").anchor("top_right").flex_none()
+      .open(this.iterationMenu).on_open_change((open, cx) => { this.iterationMenu = open; cx.notify(); })
+      .trigger(h_flex().w(narrowHeader ? 56 : compactHeader ? 82 : 124).gap(5).items_center().px(narrowHeader ? 4 : 7).h(24).rounded(6)
+        .border(1).border_color(t.border).text_color(t.muted).hover(s => s.bg(t.hover))
+        .tooltip(`Filter by iteration · ${iterationTitle(this.iteration)}`)
+        .child(div().flex_1().min_w(0).truncate().text_size(11.5)
+          .child(compactHeader && this.iteration === null ? "All" : iterationTitle(this.iteration)))
+        .child(svg(ICON("chevron-down")).size(12).flex_none()))
+      .content(v_flex().id("iteration-options").w(172).max_h(180).overflow_y_scrollbar()
+        .p(3).rounded(6).bg(t.surface).border(1).border_color(t.border)
+        .children(options.map((value, index) => Button.new(`iteration-option-${index}`).w_full().h(26).px(7).rounded(4)
+          .flex().items_center().gap(6).text_size(11.5).bg(value === this.iteration ? t.selected : t.surface)
+          .tooltip(iterationTitle(value)).hover(s => s.bg(t.hover))
+          .on_click((_e, cx) => { this.iteration = value; this.iterationMenu = false; cx.notify(); })
+          .child(div().flex_1().min_w(0).truncate().child(iterationTitle(value)))
+          .when(value === this.iteration, el => el.child(svg(ICON("check")).size(12).flex_none().text_color(t.accent))))));
+    const requirementList = v_flex().min_w(0).gap(8)
+      .child(h_flex().gap(2).p(2).rounded(7).bg(t.raised).flex_wrap()
+        .children(REQUIREMENT_TYPES.map(([type, name], index) => segment(`requirement-type-${index}`, name,
+          type === this.requirementType, cx => { this.requirementType = type; cx.notify(); }))))
+      .child(v_flex().gap(1).children(visibleRequirements.map(requirementRow))
+        .when(!visibleRequirements.length, el => el.child(div().px(6).py(14).text_size(12).text_color(t.muted)
+          .child(requirements.length ? "No items match these filters." : "No requirements or defects yet."))));
+    const requirementPage = card => {
+      const detail = this.preview ? card : this.requirementDetails.get(card.id);
+      const linked = (detail?.tasks ?? []).map(task => h_flex().id(`linked-task-${task.id}`).min_w(0)
+        .gap(6).items_center().px(6).py(6).rounded(5).hover(s => s.bg(t.hover)).on_click((_e, cx) => this.select(task.id, cx))
+        .child(div().font_family(mono).flex_none().text_size(10.5).text_color(t.muted).child(`#${task.id}`))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).child(task.title))
+        .child(div().text_size(10.5).flex_none().text_color(taskDisplayColor(task)).child(taskDisplayLabel(task))));
+      return v_flex().gap(12).min_w(0)
+        .child(h_flex().id("back-to-requirements").h(24).gap(4).items_center().rounded(6).hover(s => s.bg(t.hover))
+          .on_click((_e, cx) => this.showRequirements(null, cx))
+          .child(svg(ICON("chevron-left")).size(14).text_color(t.muted)).child("Issues"))
+        .child(h_flex().gap(6).items_center().flex_wrap().child(typePill(card.type))
+          .child(div().text_size(11).font_family(mono).text_color(t.muted).child(card.id))
+          .child(pill(requirementLabel(card.status), requirementColor(card.status)))
+          .child(pill(card.priority, priorityColor(card.priority)))
+          .when(Boolean(iterationVersion(card.iteration)), el => el.child(div().text_size(11).text_color(t.muted).child(iterationVersion(card.iteration)))))
+        .child(div().text_size(16).font_semibold().line_height(1.35).child(card.title))
+        .when(!detail, el => el.child(div().text_color(t.dim).child("Loading…")))
+        .when(Boolean(detail?.error), el => el.child(div().text_color(t.blocked).child(detail?.error ?? "")))
+        .when(Boolean(detail?.body), el => el.child(TextView.markdown(`description-${card.id}`, detail?.body ?? "").selectable(true)))
+        .when(Boolean(detail && !detail.error), el => el
+          .child(heading("ACCEPTANCE CRITERIA"))
+          .child(detail?.acceptance ? TextView.markdown(`acceptance-${card.id}`, detail.acceptance).selectable(true)
+            : div().text_color(t.dim).child("No acceptance criteria recorded."))
+          .child(heading("TASKS", linked.length))
+          .child(v_flex().gap(2).children(linked)));
+    };
+
+    const mailTime = row => row.received_at ? new Date(row.received_at).toLocaleString() : "";
+    const inboxRow = row => {
+      const mail = row.source === "agentmail";
+      const openable = mail || tasks.some(task => task.id === row.id);
+      const title = mail ? row.subject || "(No subject)" : row.title || `Task #${row.id}`;
+      const metadata = (mail ? [row.sender, mailTime(row)] : [`Task #${row.id}`, visibleRole(row.role), row.label]).filter(Boolean).join(" · ");
+      return v_flex().id(`inbox-${row.id}`).min_w(0).gap(3).px(7).py(7).rounded(6)
+        .when(openable, el => el.hover(s => s.bg(t.hover))
+          .on_click((_e, cx) => mail ? this.openMail(row, cx) : this.select(row.id, cx)))
+        .tooltip([title, metadata, row.reason].filter(Boolean).join("\n"))
+        .child(h_flex().items_center().gap(6)
+          .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(title))
+          .when(openable, el => el.child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.dim))))
+        .child(div().min_w(0).truncate().text_size(11).text_color(t.muted).child(metadata))
+        .when(mail && row.state === "trashed" && Boolean(row.label), el => el.child(div().text_size(11).text_color(t.dim).child(row.label)))
+        .when(Boolean(row.reason), el => el.child(div().min_w(0).text_size(11).text_color(t.dim).child(row.reason)));
+    };
+    const email = inbox.filter(row => row.source === "agentmail");
+    const deliveries = inbox.filter(row => row.source !== "agentmail");
+    const inboxList = v_flex().min_w(0).gap(12)
+      .child(h_flex().self_start().gap(2).p(2).rounded(7).bg(t.raised)
+        .child(segment("inbox-active", "Active", this.inboxFolder === "active", cx => this.showInbox("active", cx)))
+        .child(segment("inbox-trash", "Trash", this.inboxFolder === "trash", cx => this.showInbox("trash", cx))))
+      .when(Boolean(inbox.length), el => el.child(v_flex().min_w(0).gap(4).child(heading("Email", email.length))
+        .children(email.map(inboxRow))
+        .when(!email.length, el => el.child(div().px(7).py(6).text_size(12).text_color(t.muted).child("No email in this Inbox.")))))
+      .when(Boolean(deliveries.length), el => el.child(v_flex().min_w(0).gap(4)
+        .child(heading("Task deliveries", deliveries.length)).children(deliveries.map(inboxRow))))
+      .when(!inbox.length, el => el.child(this.inboxError && !this.preview
+        ? emptyState("Inbox unavailable", this.inboxError)
+        : this.inboxLoading && !this.preview ? emptyState("Loading Inbox…", "Reading deliveries and mail.")
+        : emptyState(this.inboxFolder === "trash" ? "Trash is empty" : "Inbox is empty",
+          this.inboxFolder === "trash" ? "Mail that could not be routed appears here." : "Deliveries and AgentMail for this team appear here.")));
+    const mailPage = selection => {
+      const row = selection.row, detail = selection.content;
+      const field = (title, value) => h_flex().min_w(0).gap(8).text_size(12)
+        .child(div().flex_none().w(66).text_color(t.muted).child(title))
+        .child(div().flex_1().min_w(0).child(value));
+      const body = typeof detail?.body === "string" ? detail.body : "";
+      // Email text is external input. Escape it before using the native rich text view.
+      const escaped = body.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replace(/\r\n?|\n/g, "<br>");
+      return v_flex().min_w(0).gap(12)
+        .child(h_flex().id("back-to-inbox").self_start().h(24).gap(4).items_center().rounded(6).hover(s => s.bg(t.hover))
+          .on_click((_e, cx) => { this.mail = null; cx.notify(); })
+          .child(svg(ICON("chevron-left")).size(14).text_color(t.muted)).child(this.inboxFolder === "trash" ? "Trash" : "Inbox"))
+        .child(v_flex().min_w(0).gap(9).p(12).rounded(8).border(1).border_color(t.border).bg(t.surface)
+          .child(div().text_size(16).font_semibold().line_height(1.35).child(row.subject || "(No subject)"))
+          .child(v_flex().gap(4).min_w(0)
+            .child(field("From", row.sender || "Unknown sender"))
+            .when(Boolean(row.inbox), el => el.child(field("Mailbox", row.inbox)))
+            .when(Boolean(row.received_at), el => el.child(field("Received", mailTime(row))))
+            .when(Boolean(row.role), el => el.child(field("Routed to", visibleRole(row.role))))
+            .when(Boolean(row.label), el => el.child(field("Status", row.label)))))
+        .child(v_flex().id("email-body").min_w(0).gap(7).px(4).pt(2)
+          .child(heading("Message"))
+          .child(selection.error ? div().text_color(t.blocked).child(selection.error)
+            : !detail ? div().text_color(t.muted).child("Loading message…")
+            : body.trim() ? TextView.html(`email-text-${row.id}`, `<p>${escaped}</p>`).selectable(true)
+            : div().text_color(t.muted).child("No message body.")));
+    };
+
+    const setupLoading = this.resolving || setup?.action === null;
+    const hasTeamView = Boolean(binding) || setup?.action === "up";
+    const runtime = this.runtime;
+    const teamTooltip = this.binding
+      ? `${this.binding.root}\nMachine: ${this.binding.machine ?? "Local"}\nTeam space: ${this.binding.space}${this.viewBinding?.task ? `\nTask #${this.viewBinding.task}\nWorktree space: ${this.viewBinding.view_space}` : ""}`
+      : "Team";
+    const setupButton = () => Button.new("team-setup-action").flex_none().h(32).px(14).rounded(6)
+      .flex().items_center().bg(t.accent + "29").text_size(13).font_semibold().text_color(setup?.busy ? t.dim : t.accent)
+      .when(!setup?.busy, button => button.hover(s => s.bg(t.hover)).on_click((_e, cx) => this.setupAction(cx)))
+      .tooltip(setup?.action === "up" ? `Start the team in this Space\n${setup.root}` : `Initialize and register the project\n${setup?.cwd}`)
+      .child(setup?.busy ? "Working…" : setup?.action === "up" ? "Up" : "Initialize now");
+    const setupPage = () => emptyState("Set up your team", "Initialize this project or use an agent to configure it.")
+      .id("team-onboarding")
+      .child(setupButton())
+      .child(v_flex().w_full().max_w(400).min_w(0).gap(7).mt(4).items_center()
+        .child(div().text_size(12).font_semibold().text_color(t.muted).child("Start with an agent"))
+        .child(setup?.agents?.length
+          ? h_flex().w_full().flex_wrap().justify_center().gap(6).children(setup.agents.map(agent => Button.new(`team-setup-agent-${agent.key}`)
+            .h(28).px(9).rounded(5).bg(t.surface).text_size(12).flex().items_center().gap(6)
+            .when(!setup.busy, button => button.hover(s => s.bg(t.hover)).on_click((_e, cx) => this.startSetupAgent(agent, cx)))
+            .when(Boolean(agent.icon), button => button.child(agent.tint
+              ? svg(agent.icon).size(14).flex_none().text_color(t.foreground)
+              : image(agent.icon).size(14).flex_none()))
+            .child(agent.name)))
+          : div().text_size(12).text_color(t.muted).child(setup?.agentError ??
+            (setup?.agents ? "No local agents are available." : "Checking installed agents…"))))
+      .when(Boolean(setup?.agentStarted), el => el.child(div().text_size(12).text_color(t.muted).child("Continue setup in the agent tab.")))
+      .child(Button.new("team-view-demo").h(28).px(10).rounded(5).text_size(12).text_color(t.muted)
+        .when(!setup?.busy, button => button.hover(s => s.bg(t.hover)).on_click((_e, cx) => this.setPreview(true, cx)))
+        .child("View demo"));
+    const sampleBanner = () => h_flex().id("team-sample-banner").flex_none().flex_wrap().items_center().gap(8).mx(14).mt(12).px(12).py(8)
+      .rounded(8).border(1).border_color(t.accent + "55").bg(t.accent + "12")
+      .child(div().flex_1().min_w(0).text_size(13).font_semibold().child("You’re viewing demo data"))
+      .child(Button.new("team-demo-back").flex_none().h(27).px(9).rounded(5).bg(t.surface).text_size(12)
+        .hover(s => s.bg(t.hover)).on_click((_e, cx) => this.setPreview(false, cx)).child("Back to setup"));
+    const header = h_flex().h(44).flex_none().px(compactHeader ? 8 : 12).gap(compactHeader ? 5 : 8)
+      .items_center().border_b(1).border_color(t.border)
+      .child(div().flex_none().flex().items_center().tooltip(teamTooltip)
+        .child(svg(this.teamIcon()).size(15).text_color(t.muted)))
+      .when(!remoteMachine && hasTeamView, el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
+        .child(segment("section-tasks", "Tasks", this.section === "tasks", cx => this.select(null, cx)))
+        .child(segment("section-requirements", "Issues", this.section === "requirements", cx => this.showRequirements(null, cx)))
+        .child(segment("section-inbox", "Inbox", this.section === "inbox", cx => this.showInbox(this.inboxFolder, cx)))))
+      .child(div().flex_1().min_w(0))
+      .when(!remoteMachine && hasTeamView && this.section === "tasks", el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
+        .child(segment("view-list", "List", displayView === "list", cx => this.setView("list", cx)))
+        .child(segment("view-board", "Board", displayView === "board", cx => this.setView("board", cx)))))
+      .when(!remoteMachine && Boolean(binding) && this.section !== "inbox" && !this.selected && !this.selectedRequirement,
+        el => el.child(iterationFilter))
+      .when((!this.preview || setup?.agentStarted) && !remoteMachine, el => el.child(this.loading || this.resolving || this.section === "inbox" && this.inboxLoading
+        ? div().size(22).flex_none().flex().items_center().justify_center().child(svg(ICON("spinner")).size(13).text_color(t.muted).spin(900))
+        : div().id("refresh").size(22).flex_none().rounded(6).flex().items_center().justify_center().hover(s => s.bg(t.hover))
+          .on_click((_e, cx) => this.pinned ? this.load(cx) : this.follow(cx, true)).child(div().text_size(14).text_color(t.muted).child("↻"))));
+
+    const notices = [];
+    if (this.error && !remoteMachine) notices.push(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(this.error));
+    if (this.watchError && !this.preview && !remoteMachine) notices.push(div().px(10).py(7).rounded(7).bg(t.surface).text_size(11.5).text_color(t.dim).child(this.watchError));
+    if (setup?.error) notices.push(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(setup.error));
+    if (runtime?.error) notices.push(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(runtime.error));
+
+    const empty = this.error && !this.preview
+      ? emptyState("Team unavailable", "Resolve the error above, then refresh.")
+      : this.loading || this.resolving
+        ? emptyState("Loading team…", "Reading the team connected to this space.")
+        : binding || this.preview
+          ? emptyState("No tasks yet", "Tasks will appear here once your team creates them.")
+          : emptyState("Connect a team", "Open a local project terminal to set up this Space.", ICON("monitor"));
+
+    const open = tasks.find(task => task.id === this.selected);
+    const activeRequirement = requirements.find(card => card.id === this.selectedRequirement);
+    const issues = this.requirementError && !this.preview ? emptyState("Issues unavailable", this.requirementError)
+      : this.loading && !requirements.length && !this.preview ? emptyState("Loading issues…", "Reading requirements and defects.")
+      : activeRequirement ? requirementPage(activeRequirement) : requirementList;
+    const runtimePrompt = this.section === "tasks" && !open && runtime && !runtime.error && !runtime.running
+      ? runtime.running === null || runtime.starting
+        ? emptyState("Checking team…", "Waiting for the team service.")
+        : emptyState("Team is stopped", "Start the team in this Space.").child(Button.new("team-restart")
+          .h(32).px(14).rounded(6).bg(t.accent + "29").text_color(runtime.busy ? t.dim : t.accent).font_semibold()
+          .when(!runtime.busy, el => el.hover(s => s.bg(t.hover)).on_click((_e, cx) => this.startStoppedTeam(cx)))
+          .child(runtime.busy ? "Working…" : "Up"))
+      : null;
+    const content = remoteMachine ? emptyState("Remote teams aren't available yet", "Team currently supports local spaces. Switch to a space on this computer to view its tasks.", ICON("server"), remoteMachine)
+      : setupLoading ? emptyState("Loading team…", "Checking the project for this Space.")
+      : setup?.action === "up" ? emptyState("Project initialized", "Start the team in this Space.").child(setupButton())
+      : !this.preview && setup?.action === "init" ? setupPage()
+      : runtimePrompt ? runtimePrompt
+      : open ? detailPage(open) : this.popout ? div().text_color(t.dim).child(this.loading ? "Loading…" : "Task not found.")
+      : this.section === "requirements" ? binding && (!this.error || this.preview) ? issues : empty
+      : this.section === "inbox" ? binding && (!this.error || this.preview) ? this.mail ? mailPage(this.mail) : inboxList : empty
+      : displayView === "board" && (tasks.length || binding && !this.loading && !this.error) ? boardView : !tasks.length ? empty : listView;
+
+    // A popped-out window: the window frame is the app's; its title bar drags it.
+    if (this.popout) return v_flex().id("team-root").size_full().overflow_hidden().bg(t.background).text_color(t.foreground).text_size(12.8)
+      .child(h_flex().h(40).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
+        .child(svg(this.teamIcon()).size(14).text_color(t.muted))
+        .child(div().text_size(12.5).font_semibold().child(`Task #${this.selected}`))
+        .when(this.preview, el => el.child(pill("SAMPLE", t.accent)))
         .child(div().flex_1())
-        .child(button("sample", this.preview ? "Live" : "Sample", cx => this.toggle(cx)))
-        .when(!this.preview && Boolean(binding), element => element.child(button("refresh", this.loading ? "Loading…" : "Refresh", cx => this.load(cx)))))
-      .when(!this.preview, element => element.child(div().text_size(11).text_color(t.dim).child(binding ? `${binding.machine ?? "Local"} · ${binding.space} · ${binding.root}` : "Bind root and space in the mod props to read a team.")))
-      .when(Boolean(this.error) && !this.preview, element => element.child(div().text_color(t.blocked).child(this.error)))
-      .when(Boolean(this.watchError) && !this.preview, element => element.child(div().text_color(t.dim).child(this.watchError)))
-      .child(section(`TASKS · ${tasks.length}`))
-      .child(v_flex().id("task-list").h(190).overflow_y_scrollbar().gap(4).children(list)
-        .when(!tasks.length, element => element.child(div().p(10).text_color(t.muted).child("No tasks. Use Sample to preview the layout."))))
-      .child(v_flex().flex_1().min_h(0).gap(12)
-        .child(v_flex().flex_1().min_h(0).gap(8).child(section("CURRENT → REMAINING ASSIGNEES"))
-          .child(h_flex().id("flow").flex_1().overflow_x_scrollbar().items_center().gap(8).children(flow)))
-        .child(v_flex().id("details").flex_1().min_h(0).overflow_y_scrollbar().gap(6).child(section("DETAIL"))
-          .child(div().child(task?.title ?? "Select a task"))
-          .when(Boolean(task), element => element.child(div().text_color(t.muted).child(`${task?.priority} · ${task?.status} · ${task?.role}`))
-            .child(div().text_color(t.dim).child(`Dependencies: ${task?.dependsOn?.join(", ") || "none"}`))
-            .child(div().text_size(11).text_color(t.dim).child("Display only. Status reports do not approve, hand off or complete tasks.")))))
-      .child(section(`ROLES · ${roles.length}`))
-      .child(v_flex().id("roles").max_h(180).overflow_y_scrollbar().children(roleList));
+        .child(div().id("close").size(24).rounded(6).flex().items_center().justify_center().hover(s => s.bg(t.hover))
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click(() => closeOverlay(props().overlay)).child(svg(ICON("x")).size(14).text_color(t.muted))))
+      .child(v_flex().id("team-body").flex_1().min_h(0).overflow_y_scrollbar().p(18).gap(14)
+        .when(Boolean(this.error), el => el.child(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(this.error)))
+        .child(content));
+
+    return v_flex().id("team-root").relative().size_full().overflow_hidden().rounded(10).border(1).border_color(t.border)
+      .bg(t.background).text_color(t.foreground).text_size(12.8)
+      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
+      .child(header)
+      .when(this.preview && !remoteMachine && !setupLoading, el => el.child(sampleBanner()))
+      .child(v_flex().id("team-body").flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(14)
+        .children(notices)
+        .child(content));
   }
 }

@@ -47,7 +47,10 @@
           "id": "agents",
           "type": "block",
           "content": {
-            "mod": "agents"
+            "mod": "team-agents",
+            "props": {
+              "defaultSort": "grouped"
+            }
           },
           "size": {
             "weight": 1
@@ -73,15 +76,38 @@
       "type": "column",
       "children": [
         {
-          "id": "tabs",
-          "type": "block",
-          "content": {
-            "mod": "tabs"
-          },
+          "id": "tab-bar",
+          "type": "row",
           "size": {
             "px": 42
           },
-          "window_drag": true
+          "children": [
+            {
+              "id": "tabs",
+              "type": "block",
+              "content": {
+                "mod": "tabs"
+              },
+              "window_drag": true,
+              "size": {
+                "weight": 1
+              }
+            },
+            {
+              "id": "team-tab",
+              "type": "block",
+              "content": {
+                "mod": "team-console",
+                "props": {
+                  "tab": true
+                }
+              },
+              "size": {
+                "px": 78
+              },
+              "window_drag": true
+            }
+          ]
         },
         {
           "id": "work-body",
@@ -126,9 +152,7 @@
               "type": "block",
               "content": {
                 "mod": "team-console",
-                "props": {
-                  "sample": true
-                }
+                "props": {}
               },
               "size": {
                 "px": 520
