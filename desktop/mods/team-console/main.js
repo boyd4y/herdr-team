@@ -167,6 +167,9 @@ export default class TeamConsole extends View {
 
   clearBinding() {
     this.pendingWatch?.cancel();
+    this.pendingWatch = null;
+    this.taskLoad = null;
+    this.loading = false;
     this.stopRuntimeWatch();
     this.resetInbox();
     this.binding = null; this.tasks = []; this.roles = []; this.selected = null; this.error = null; this.watchError = null; this.viewBinding = null;
@@ -183,17 +186,19 @@ export default class TeamConsole extends View {
     if (!force && (target?.key ?? null) === (this.following ?? null)) return;
     const generation = this.followGeneration = (this.followGeneration ?? 0) + 1;
     this.following = target?.key ?? null;
-    const changedSpace = target?.space.id !== this.place?.id;
+    const machine = target?.space.machine ?? null;
+    const changedMachine = machine !== (this.place?.machine ?? null);
+    const changedSpace = changedMachine || target?.space.id !== this.place?.id;
+    if (changedMachine) this.clearBinding();
     if (changedSpace) {
       this.setupWatch?.cancel();
       this.setupConfigWatch?.cancel();
       this.setupWatch = null; this.setup = null;
       this.setPreview(false, cx);
     }
-    this.place = target ? { name: target.space.name, id: target.space.id, folder: target.space.folder } : null;
-    this.remoteMachine = target?.space.machine ?? null;
+    this.place = target ? { name: target.space.name, id: target.space.id, folder: target.space.folder, machine } : null;
     this.resolving = false;
-    if (!target || this.remoteMachine) {
+    if (!target) {
       this.clearBinding();
       this.setPreview(false, cx);
       return;
@@ -201,7 +206,9 @@ export default class TeamConsole extends View {
     this.resolving = true;
     cx.spawn(async cx => {
       try {
-        const result = await team(["space", "show", "--space", target.localId, "--json"], { on: target.space.machine, timeout: 10000 });
+        const args = ["space", "show", "--space", target.localId, "--json"];
+        if (machine) args.push("--core");
+        const result = await team(args, { on: machine, timeout: 10000 });
         if (this.closed || this.followGeneration !== generation) return;
         const record = teamJson(result, "space show").binding;
         const binding = consoleBinding(record, target.space);
@@ -289,10 +296,11 @@ export default class TeamConsole extends View {
   }
 
   load(cx) {
-    if (this.closed || this.preview || !this.binding || this.binding.machine) return;
+    if (this.closed || this.preview || !this.binding) return;
     if (this.section === "inbox") this.loadInbox(cx);
-    if (this.loading) { this.refreshAgain = true; return; }
     const binding = this.binding;
+    if (this.taskLoad?.binding === binding) { this.taskLoad.again = true; return; }
+    const request = this.taskLoad = { binding, again: false };
     this.loading = true;
     this.watch(cx);
     cx.spawn(async cx => {
@@ -327,9 +335,12 @@ export default class TeamConsole extends View {
         if (this.selected) this.loadBody(this.selected, cx);
       } catch (error) { if (!this.preview && this.binding === binding) this.error = errorMessage(error); }
       finally {
-        this.loading = false;
-        if (this.refreshAgain) { this.refreshAgain = false; this.load(cx); }
-        cx.notify();
+        if (this.taskLoad === request) {
+          this.taskLoad = null;
+          this.loading = false;
+          if (request.again) this.load(cx);
+          cx.notify();
+        }
       }
     });
   }
@@ -342,9 +353,9 @@ export default class TeamConsole extends View {
     cx.spawn(async cx => {
       try {
         while (!this.closed && !this.preview && this.binding === binding) {
-          this.pendingWatch = watchFolder(`${binding.root}/.herdr`);
-          const paths = await this.pendingWatch;
-          this.pendingWatch = null;
+          const pending = this.pendingWatch = watchFolder(`${binding.root}/.herdr`);
+          const paths = await pending;
+          if (this.pendingWatch === pending) this.pendingWatch = null;
           if (this.closed || this.preview || this.binding !== binding) break;
           if (paths.length) this.load(cx);
         }
@@ -409,7 +420,7 @@ export default class TeamConsole extends View {
 
   loadInbox(cx) {
     const binding = this.binding;
-    if (this.closed || this.preview || !binding || binding.machine || this.section !== "inbox") return;
+    if (this.closed || this.preview || !binding || this.section !== "inbox") return;
     const folder = this.inboxFolder, request = ++this.inboxRequest;
     const current = () => !this.closed && !this.preview && this.binding === binding && request === this.inboxRequest;
     this.inboxLoading = true;
@@ -431,8 +442,9 @@ export default class TeamConsole extends View {
   }
 
   watchInbox(cx) {
-    if (this.section !== "inbox" || this.inboxWatch) return;
-    const binding = this.binding, watch = {};
+    const binding = this.binding;
+    if (!binding || binding.machine || this.section !== "inbox" || this.inboxWatch) return;
+    const watch = {};
     this.inboxWatch = watch;
     const current = () => !this.closed && !this.preview && this.binding === binding && this.inboxWatch === watch;
     cx.spawn(async cx => {
@@ -459,7 +471,7 @@ export default class TeamConsole extends View {
     const binding = this.binding, selection = { row, content: this.preview ? row : null, error: null };
     this.mail = selection;
     cx.notify();
-    if (this.preview || !binding || binding.machine) return;
+    if (this.preview || !binding) return;
     cx.spawn(async cx => {
       try {
         const result = await team(["inbox", "read", row.id, "--root", binding.root, "--json"],
@@ -659,7 +671,7 @@ export default class TeamConsole extends View {
     const showcase = !this.preview && (this.viewBinding?.demo === true || props()?.showcase === true);
     const displayView = showcase ? this.demoView : this.view;
     const visibleRole = name => showcase ? name?.replace(/^demo-(dev|test|review)$/, "$1") : name;
-    const remoteMachine = !this.preview && (this.pinned?.machine ?? this.remoteMachine);
+    const remoteMachine = !this.preview && (this.pinned?.machine ?? this.place?.machine);
     const setup = !this.binding && !this.resolving ? this.setup : null;
     const requirements = demo?.requirements ?? this.requirements;
     const tasks = sortTasks(tasksWithIterations(demo?.tasks ?? this.tasks, requirements));
@@ -1036,24 +1048,24 @@ export default class TeamConsole extends View {
       .items_center().border_b(1).border_color(t.border)
       .child(div().flex_none().flex().items_center().tooltip(teamTooltip)
         .child(svg(this.teamIcon()).size(15).text_color(t.muted)))
-      .when(!remoteMachine && hasTeamView, el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
+      .when(hasTeamView, el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
         .child(segment("section-tasks", "Tasks", this.section === "tasks", cx => this.select(null, cx)))
         .child(segment("section-requirements", "Issues", this.section === "requirements", cx => this.showRequirements(null, cx)))
         .child(segment("section-inbox", "Inbox", this.section === "inbox", cx => this.showInbox(this.inboxFolder, cx)))))
       .child(div().flex_1().min_w(0))
-      .when(!remoteMachine && hasTeamView && this.section === "tasks", el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
+      .when(hasTeamView && this.section === "tasks", el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
         .child(segment("view-list", "List", displayView === "list", cx => this.setView("list", cx)))
         .child(segment("view-board", "Board", displayView === "board", cx => this.setView("board", cx)))))
-      .when(!remoteMachine && Boolean(binding) && this.section !== "inbox" && !this.selected && !this.selectedRequirement,
+      .when(Boolean(binding) && this.section !== "inbox" && !this.selected && !this.selectedRequirement,
         el => el.child(iterationFilter))
-      .when((!this.preview || setup?.agentStarted) && !remoteMachine, el => el.child(this.loading || this.resolving || this.section === "inbox" && this.inboxLoading
+      .when(!this.preview || setup?.agentStarted, el => el.child(this.loading || this.resolving || this.section === "inbox" && this.inboxLoading
         ? div().size(22).flex_none().flex().items_center().justify_center().child(svg(ICON("spinner")).size(13).text_color(t.muted).spin(900))
-        : div().id("refresh").size(22).flex_none().rounded(6).flex().items_center().justify_center().hover(s => s.bg(t.hover))
+        : div().id("refresh").size(22).flex_none().rounded(6).flex().items_center().justify_center().tooltip("Refresh").hover(s => s.bg(t.hover))
           .on_click((_e, cx) => this.pinned ? this.load(cx) : this.follow(cx, true)).child(div().text_size(14).text_color(t.muted).child("↻"))));
 
     const notices = [];
-    if (this.error && !remoteMachine) notices.push(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(this.error));
-    if (this.watchError && !this.preview && !remoteMachine) notices.push(div().px(10).py(7).rounded(7).bg(t.surface).text_size(11.5).text_color(t.dim).child(this.watchError));
+    if (this.error) notices.push(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(this.error));
+    if (this.watchError && !this.preview) notices.push(div().px(10).py(7).rounded(7).bg(t.surface).text_size(11.5).text_color(t.dim).child(this.watchError));
     if (setup?.error) notices.push(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(setup.error));
     if (runtime?.error) notices.push(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(runtime.error));
 
@@ -1063,7 +1075,9 @@ export default class TeamConsole extends View {
         ? emptyState("Loading team…", "Reading the team connected to this space.")
         : binding || this.preview
           ? emptyState("No tasks yet", "Tasks will appear here once your team creates them.")
-          : emptyState("Connect a team", "Open a local project terminal to set up this Space.", ICON("monitor"));
+          : remoteMachine
+            ? emptyState("Connect a team", "Run herdr-team space bind --core in this Space's project terminal, then Refresh.", ICON("server"), remoteMachine)
+            : emptyState("Connect a team", "Open a local project terminal to set up this Space.", ICON("monitor"));
 
     const open = tasks.find(task => task.id === this.selected);
     const activeRequirement = requirements.find(card => card.id === this.selectedRequirement);
@@ -1078,8 +1092,7 @@ export default class TeamConsole extends View {
           .when(!runtime.busy, el => el.hover(s => s.bg(t.hover)).on_click((_e, cx) => this.startStoppedTeam(cx)))
           .child(runtime.busy ? "Working…" : "Up"))
       : null;
-    const content = remoteMachine ? emptyState("Remote teams aren't available yet", "Team currently supports local spaces. Switch to a space on this computer to view its tasks.", ICON("server"), remoteMachine)
-      : setupLoading ? emptyState("Loading team…", "Checking the project for this Space.")
+    const content = setupLoading ? emptyState("Loading team…", "Checking the project for this Space.")
       : setup?.action === "up" ? emptyState("Project initialized", "Start the team in this Space.").child(setupButton())
       : !this.preview && setup?.action === "init" ? setupPage()
       : runtimePrompt ? runtimePrompt
@@ -1106,7 +1119,7 @@ export default class TeamConsole extends View {
       .bg(t.background).text_color(t.foreground).text_size(12.8)
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(header)
-      .when(this.preview && !remoteMachine && !setupLoading, el => el.child(sampleBanner()))
+      .when(this.preview && !setupLoading, el => el.child(sampleBanner()))
       .child(v_flex().id("team-body").flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(14)
         .children(notices)
         .child(content));

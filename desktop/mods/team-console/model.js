@@ -45,8 +45,9 @@ export function teamSpace(spaces, terminals) {
 export function consoleBinding(binding, space) {
   if (!binding) return null;
   const prefix = space.machine ? `${space.machine}/` : "";
-  const id = prefix && space.id.startsWith(prefix) ? space.id.slice(prefix.length) : space.id;
-  if ((binding.view_space ?? binding.space) !== id || binding.machine !== null || typeof binding.root !== "string" || !binding.root.startsWith("/") ||
+  const id = space.id.slice(prefix.length);
+  if (!space.id.startsWith(prefix) || !id || id.includes("/") || (binding.view_space ?? binding.space) !== id ||
+      binding.machine !== null || typeof binding.root !== "string" || !binding.root.startsWith("/") ||
       typeof binding.space !== "string" || !binding.space || binding.space.includes("/") ||
       binding.view_space && (!/^\d{4}$/.test(binding.task ?? "") || typeof binding.checkout !== "string" || !binding.checkout.startsWith("/"))) {
     throw new Error("Invalid project space binding returned by the CLI");
@@ -108,7 +109,7 @@ function taskTerminal(task, role, delivery) {
     const labels = terminal.labels;
     return labels?.["team.runtime"] === "desktop" && labels["team.role"] === task.role && labels["team.task"] === task.id &&
       labels["team.delivery"] === delivery.id && (labels["team.owner_space"] ?? labels["herdr.space"]) === delivery.space &&
-      (!delivery.terminal || terminal.address === delivery.terminal) &&
+      (!delivery.terminal || terminal.address?.split("/").at(-1) === delivery.terminal) &&
       (!delivery.process_id || terminal.pid === delivery.process_id) && terminal.program?.agent === true;
   });
   return instances?.length === 1 ? instances[0] : null;

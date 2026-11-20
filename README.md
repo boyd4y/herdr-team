@@ -136,15 +136,16 @@ To pin a read-only panel explicitly, change its content props:
 }
 ```
 
-Get actual local space IDs from `herdr-app ls`. Never copy an old multiplexer workspace ID.
-Remote spaces show a neutral unsupported empty state; the console does not run
-CLI commands, install dependencies or start file watches on remote machines.
+Get actual space IDs from `herdr-app ls`. For a pinned remote panel, specify the
+machine name and its qualified Space ID (`machine/space-id`).
 
-Live reads require the shared local `herdr-team` CLI. The mod uses read-only
-`space show`, `tasks --json` and `role list --json` contracts. It reads the existing
-CLI format rather than implementing YAML/task parsing. Local `.herdr/` changes
-use `watchFolder`; unavailable watchers require **Refresh**. Core facts are
-reactive and are not polled.
+The Team Panel follows the selected Space's machine. With the shared `herdr-team`
+CLI installed on that machine, it reads Tasks, Issues, and Inbox for the bound
+project. On a remote host, run `herdr-team space bind --core` once from the project's
+terminal in that Space. This connects the view through that host's Core registry
+without requiring a Desktop window there. The remote panel is read-only and loads
+records on entry or **Refresh**. Local `.herdr/` changes use `watchFolder`, with
+**Refresh** also available. Core terminal status updates reactively on both.
 
 Terminals are matched by machine plus labels `team.project=<exact-root>`, `herdr.space=<machine-local-space-id>` and `team.role=<role>`. Resident `up` writes these labels; old `herdr` metadata does not migrate automatically. Without matching terminals roles remain unknown. **Open** focuses the actual terminal; it sends no message.
 

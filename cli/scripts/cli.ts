@@ -29,7 +29,7 @@ import { canonicalKind, isRoleLifecycle, isTerminal, NAME_RE, STATUSES, type Pro
 import { confirmedFeatures, FeatureError, featureKey, finishFeature, validateFeature, type FeatureScope } from "./lib/team/features.ts";
 import { callerSpace, managedContext } from "./lib/runtime/context.ts";
 import { readProxyEnv } from "./lib/runtime/agent-env.ts";
-import { bindDesktop, desktopDown, desktopUp, DesktopError, realDesktop, savedDesktopBinding, showDesktopBinding, unbindDesktop, type DesktopTerminal } from "./lib/runtime/desktop.ts";
+import { bindDesktop, desktopDown, desktopUp, DesktopError, realDesktop, registeredDesktopBinding, savedDesktopBinding, showDesktopBinding, unbindDesktop, type DesktopTerminal } from "./lib/runtime/desktop.ts";
 import { withTeamLock } from "./lib/runtime/state.ts";
 import { desktopTaskRuntime, syncDesktopTaskSpaces, type DesktopTaskRuntime } from "./lib/runtime/desktop-dispatch.ts";
 import { taskRuntime } from "./lib/dispatch/runtime.ts";
@@ -1010,13 +1010,18 @@ async function cmdUp(args: string[], command = "up"): Promise<number> {
 function cmdSpace(args: string[]): number {
   const parsed = parseArgs(args, ["root", "space"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team space <show|bind|unbind|sync [TASK]> [--space ID] [--root DIR] [--json]\nup binds the verified caller space automatically. Task spaces resolve to their parent team. sync attaches existing owned task terminals to native worktree spaces without restarting them. show is read-only.\n");
+    process.stdout.write("Usage: herdr-team space <show|bind|unbind|sync [TASK]> [--space ID] [--root DIR] [--json]\nup binds the verified caller space automatically. Task spaces resolve to their parent team. sync attaches existing owned task terminals to native worktree spaces without restarting them. show is read-only.\nUse bind --core from a terminal in the Space to connect a project when no window runs on that machine. show --core --space ID reads the binding from that machine's Core registry.\n");
     return 0;
   }
   const operation = parsed.pos[0] ?? "show";
+  const core = parsed.flags.has("core"), space = parsed.values.get("space");
+  if (core && (parsed.pos.length !== 1 || !["show", "bind"].includes(operation) ||
+      space?.includes("/") || operation === "show" && (!space || parsed.values.has("root")))) {
+    throw new UsageError("Use space show --core --space ID or space bind --core with a machine-local Space ID");
+  }
   const client = realDesktop();
-  if (operation === "show" && parsed.values.get("space")) {
-    const binding = showDesktopBinding(client, parsed.values.get("space")!);
+  if (operation === "show" && space) {
+    const binding = core ? registeredDesktopBinding(client, space) : showDesktopBinding(client, space);
     const view = binding && isDesktopDemo(binding.root) ? { ...binding, demo: true } : binding;
     return out(parsed, { binding: view }, binding ? `${binding.space}  ${binding.root}` : "No team bound to this space.");
   }
@@ -1046,7 +1051,8 @@ function cmdSpace(args: string[]): number {
       return out(parsed, { unbound: true }, "Project space binding removed.");
     }
     loadValidated(root);
-    const binding = bindDesktop({ root }, client, parsed.values.get("space") ?? callerSpace(context.caller, client));
+    const binding = core ? bindDesktop({ root }, client, space, context.caller)
+      : bindDesktop({ root }, client, space ?? callerSpace(context.caller, client));
     return out(parsed, { binding }, `Bound ${binding.space} to ${binding.root}`);
   });
 }

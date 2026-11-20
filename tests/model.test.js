@@ -128,6 +128,25 @@ test("task spaces resolve only through explicit CLI parent mappings and retain o
   assert.deepEqual(scopedTerminals([terminal], child), [terminal]);
 });
 
+test("a remote Space uses its own Core binding and qualifies the owner and terminal addresses", () => {
+  const record = { root: "/repo", space: "main", view_space: "task-space", task: "0002", checkout: "/checkouts/0002", machine: null };
+  const space = { id: "box/task-space", machine: "box", active: true };
+  const binding = consoleBinding(record, space);
+  assert.deepEqual(binding, { root: "/repo", space: "box/main", machine: "box" });
+  assert.equal(teamSpace([space], []).localId, "task-space");
+  assert.throws(() => consoleBinding(record, { ...space, id: "other/task-space" }), /Invalid project space binding/);
+  assert.throws(() => consoleBinding({ ...record, machine: "other" }, space), /Invalid project space binding/);
+  const terminal = { address: "box/t1", state: "live", pid: 31, status: "working", program: { agent: true },
+    labels: { "team.project": "/repo", "team.owner_space": "main", "herdr.space": "task-space", "team.role": "dev", "team.task": "0002",
+      "team.runtime": "desktop", "team.delivery": "delivery" } };
+  const roles = roleRows([{ name: "dev", kind: "codex" }], scopedTerminals([
+    { ...terminal, address: "t1", status: "blocked" }, { ...terminal, address: "other/t1", status: "error" }, terminal,
+  ], binding));
+  const task = { id: "0002", status: "doing", role: "dev", meta: { delivery: { id: "delivery", role: "dev", state: "claimed",
+    runtime: "desktop", space: "main", terminal: "t1", process_id: 31 } } };
+  assert.equal(flowNodes(task, roles)[0].status, "working");
+});
+
 test("same root on another space or machine is not this team instance", () => {
   const terminal = { address: "t1", state: "live", labels: { "team.project": "/repo", "herdr.space": "s1", "team.role": "dev" } };
   const terminals = [terminal,

@@ -82,9 +82,9 @@ npm run typecheck
 
 试用时将 `desktop/mods/team-console/`、`desktop/mods/team-agents/` 与 `desktop/layouts/team.json` 放入 Herdr app home 的对应目录，通常为 `~/.config/herdr-app/`。保留已有同名个人文件，再手动选择 `team` 布局。Agents 没有明确排序偏好时默认按 Space 分组，仍可从原生排序菜单切换。
 
-真实项目绑定方式见 [英文 README 的 props 示例](README.md#try-the-preview)。root 必须指向主检出，space 使用 `herdr-app ls` 返回的真实本地 ID。不要靠项目名或当前焦点推断归属。远程空间显示不支持的简洁空状态，不调用远程 CLI、不安装依赖、不启动监听。
+Team Panel 跟随所选 Space 的机器，显示该机器上已绑定项目的 Tasks、Issues 和 Inbox。远程机器需要安装同版 `herdr-team`。在该远程 Space 的项目终端内运行一次 `herdr-team space bind --core`，然后切回该 Space 或点 **Refresh**。远程项目记录为只读，切换 Space 或点击 **Refresh** 时重新读取。本地项目继续监听 `.herdr/`，两端的终端状态都由 Core 实时提供。
 
-只读数据使用本地共享 CLI 的 `space show`、`tasks --json` 与 `role list --json`；监听 `.herdr/`，监听不可用时手动 Refresh。Core 状态由桌面版响应式模型提供，不轮询。
+手动固定面板见 [英文 README 的 props 示例](README.md#try-the-preview)。`root` 指向主检出，`space` 与 `machine` 使用 `herdr-app ls` 返回的标识。远程 `space` 使用 `机器名/Space ID`。
 
 终端匹配使用 `team.project`、`herdr.space`、`team.role` 等标签；旧版 metadata 不会自动变成 Core 标签。尚无匹配时显示 unknown，不把空闲、退出或恢复后的 shell 伪报为任务完成。
 

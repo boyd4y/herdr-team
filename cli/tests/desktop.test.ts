@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { desktopAgentProgram, desktopUp, bindDesktop, showDesktopBinding, unbindDesktop, type DesktopClient, type DesktopTerminal } from "../scripts/lib/runtime/desktop.ts";
+import { desktopAgentProgram, desktopUp, bindDesktop, registeredDesktopBinding, showDesktopBinding, unbindDesktop, type DesktopClient, type DesktopTerminal } from "../scripts/lib/runtime/desktop.ts";
 import { callerSpace, managedContext } from "../scripts/lib/runtime/context.ts";
 import { loadProject } from "../scripts/lib/team/project.ts";
 import { makeProject, writeRole } from "./helpers.ts";
@@ -128,6 +128,21 @@ test("another project cannot take over a bound space and absent spaces are never
     expect(() => bindDesktop({ root: other.root }, f.client, "display-name")).toThrow("No local Desktop space");
     expect(f.calls.filter(call => call.method === "terminal.run")).toHaveLength(0);
   } finally { f.cleanup(); other.cleanup(); }
+});
+
+test("an explicit Core-only binding uses the verified terminal's Space without a window", () => {
+  const f = fixture();
+  const caller: DesktopTerminal = { address: "caller", state: "live", argv: ["sh"], cwd: f.root, labels: { "herdr.space": "space-one" } };
+  f.client.spaces = () => { throw new Error("No window on this host"); };
+  try {
+    expect(() => bindDesktop(f, f.client, "other-space", caller)).toThrow("intended Space");
+    expect(() => bindDesktop(f, f.client, undefined, { ...caller, address: "other/caller" })).toThrow("intended Space");
+    expect(() => bindDesktop(f, f.client, undefined, { ...caller, labels: {} })).toThrow("No space binding");
+    const binding = bindDesktop(f, f.client, undefined, caller);
+    expect(registeredDesktopBinding(f.client, "space-one")).toEqual(binding);
+    expect(registeredDesktopBinding(f.client, "other-space")).toBeNull();
+    expect(f.calls.filter(call => call.method === "doc.set")).toHaveLength(1);
+  } finally { f.cleanup(); }
 });
 
 test("concurrent binding conflict stops before any resident launch", () => {

@@ -205,14 +205,20 @@ export function savedDesktopBinding(project: Pick<Project, "root">): DesktopBind
 }
 
 /** Persist under a project lock and Core's document compare-and-swap; never bind by name/cwd. */
-export function bindDesktop(project: Pick<Project, "root">, client: DesktopClient, explicitSpace?: string): DesktopBinding {
+export function bindDesktop(project: Pick<Project, "root">, client: DesktopClient, explicitSpace?: string, coreCaller?: DesktopTerminal): DesktopBinding {
   const root = realpathSync(project.root);
   const saved = savedDesktopBinding(project);
   const registry = readRegistry(client);
   const recorded = Object.values(registry.value.spaces).filter(binding => binding.root === root);
-  const id = explicitSpace ?? saved?.space ?? (recorded.length === 1 ? recorded[0]!.space : undefined);
+  const id = coreCaller ? coreCaller.labels["herdr.space"] : explicitSpace ?? saved?.space ?? (recorded.length === 1 ? recorded[0]!.space : undefined);
   if (!id) throw new DesktopError("No space binding or verified caller space; run up from the project's Herdr terminal");
-  localSpace(client, id);
+  // A remote Core may have no window process. Its verified caller has the
+  // machine-local Space ID assigned by the Desktop window that opened it.
+  if (coreCaller) {
+    if (coreCaller.state !== "live" || coreCaller.address.includes("/") || id.includes("/") || explicitSpace !== undefined && explicitSpace !== id) {
+      throw new DesktopError("Bind from a live terminal in the intended Space on this Core");
+    }
+  } else localSpace(client, id);
   if (saved && saved.space !== id || recorded.some(binding => binding.space !== id)) {
     throw new DesktopError("This project is already bound to another Desktop space; explicitly unbind it before moving the team");
   }
