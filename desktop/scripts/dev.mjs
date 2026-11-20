@@ -4,7 +4,9 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Keep the checkout as the owner so existing registrations survive the move.
+const checkout = dirname(desktop);
 const home = resolve(process.env.HERDR_APP_HOME || join(homedir(), ".config/herdr-app"));
 const name = "herdr-desktop-team-dev";
 const manifestPath = join(home, `.${name}.json`);
@@ -41,8 +43,8 @@ function sources() {
       else if (entry.isFile()) files.set(target, readFileSync(path));
     }
   }
-  for (const [source, installed] of sourceMods) collect(join(root, "mods", source), `mods/${installed}`);
-  const layout = JSON.parse(readFileSync(join(root, "layouts/team.json"), "utf8"));
+  for (const [source, installed] of sourceMods) collect(join(desktop, "mods", source), `mods/${installed}`);
+  const layout = JSON.parse(readFileSync(join(desktop, "layouts/team.json"), "utf8"));
   function rewrite(node) {
     if (!node || typeof node !== "object") return;
     if (sourceMods.has(node.mod)) node.mod = sourceMods.get(node.mod);
@@ -67,12 +69,12 @@ function atomicWrite(path, data) {
 function sync() {
   // Read and validate everything before touching the installed files.
   const files = sources();
-  let previous = { source: root, files: {} };
+  let previous = { source: checkout, files: {} };
   const manifest = stat(manifestPath);
   if (manifest) {
     if (!manifest.isFile()) throw new Error(`Not a regular file: ${manifestPath}`);
     previous = JSON.parse(readFileSync(manifestPath, "utf8"));
-    if (previous.source !== root || !previous.files || typeof previous.files !== "object") {
+    if (previous.source !== checkout || !previous.files || typeof previous.files !== "object") {
       throw new Error(`Dev registration belongs to another checkout: ${manifestPath}`);
     }
   } else if (modPaths.some(path => stat(join(home, path))) || stat(join(home, layoutPath))) {
@@ -108,7 +110,7 @@ function sync() {
       changed++;
     }
   }
-  if (!manifest || changed) atomicWrite(manifestPath, `${JSON.stringify({ source: root, files: hashes }, null, 2)}\n`);
+  if (!manifest || changed) atomicWrite(manifestPath, `${JSON.stringify({ source: checkout, files: hashes }, null, 2)}\n`);
   console.log(`[dev] Synced ${changed} file(s) to ${home}`);
 }
 
@@ -123,7 +125,7 @@ try {
   if (!args.includes("--once")) {
     // Watch directories, so editor atomic saves and new nested files are observed.
     for (const folder of ["mods", "layouts"]) {
-      const watcher = watch(join(root, folder), { recursive: true }, (_event, filename) => {
+      const watcher = watch(join(desktop, folder), { recursive: true }, (_event, filename) => {
         if (filename && (ignored(String(filename)) || (folder === "layouts" && String(filename) !== "team.json"))) return;
         clearTimeout(timer);
         timer = setTimeout(() => {
@@ -140,7 +142,7 @@ try {
   sync();
   console.log(`[dev] Registered layout: ${name}`);
   console.log(`[dev] Select it when ready: herdr-app do layout.switch --name ${name}`);
-  if (watchers.length) console.log(`[dev] Watching ${relative(process.cwd(), root) || "."}; save source files to hot reload. Ctrl+C stops watching; registration stays installed.`);
+  if (watchers.length) console.log(`[dev] Watching ${relative(process.cwd(), desktop) || "."}; save source files to hot reload. Ctrl+C stops watching; registration stays installed.`);
 } catch (error) {
   console.error(`[dev] ${error.message}`);
   stop(1);

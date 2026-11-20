@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { boardColumns, consoleBinding, flowNodes, groupTasks, iterationOptions, listFilters, listTasks,
-  requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../mods/team-console/model.js";
+  requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/team-console/model.js";
 
 test("task assignee uses native agent and launch model only for the recorded live delivery", () => {
   const binding = { root: "/repo", space: "main", machine: null };
@@ -170,13 +170,20 @@ test("the path follows the task's assignees rather than a predefined workflow", 
   assert.deepEqual(flow.map(node => node.status), ["ready", "next"]);
 });
 
-test("a role's other task cannot supply the selected task's execution status", () => {
-  const roles = roleRows([{ name: "dev", kind: "codex" }], [
-    { address: "t1", status: "blocked", labels: { "team.role": "dev", "team.task": "0041" } },
-    { address: "t2", status: "done", labels: { "team.role": "dev", "team.task": "0042" } },
-  ]);
-  assert.equal(flowNodes({ id: "0042", role: "dev", status: "doing" }, roles)[0].status, "awaiting handoff");
-  assert.equal(flowNodes({ id: "0043", role: "dev", status: "doing" }, roles)[0].status, "assigned");
+test("the flow uses only the current delivery, even when an older session is blocked", () => {
+  const terminal = (address, task, delivery, status) => ({ address, status, program: { agent: true },
+    labels: { "team.role": "dev", "team.task": task, "team.delivery": delivery, "team.runtime": "desktop", "herdr.space": "main" } });
+  const old = terminal("t1", "0042", "old", "blocked");
+  const current = terminal("t2", "0042", "new", "working");
+  const other = terminal("t3", "0041", "other", "error");
+  const delivery = { id: "new", role: "dev", state: "claimed", runtime: "desktop", space: "main", terminal: "t2" };
+  const task = { id: "0042", role: "dev", status: "doing", handoff: ["test"], meta: { delivery } };
+  const flow = (task, terminals) => flowNodes(task, roleRows([{ name: "dev", kind: "codex" }], terminals)).map(node => node.status);
+  assert.deepEqual(flow(task, [old, other, current]), ["working", "next"]);
+  assert.deepEqual(flow(task, [old, other, { ...current, status: "done" }]), ["awaiting handoff", "next"]);
+  assert.deepEqual(flow(task, [old, other]), ["assigned", "next"]);
+  assert.deepEqual(flow({ ...task, meta: { delivery: { ...delivery, state: "queued" } } }, [old, current]), ["assigned", "next"]);
+  assert.equal(task.status, "doing");
 });
 
 test("list sections and dependencies follow task records", () => {

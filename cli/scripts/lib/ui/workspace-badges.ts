@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { badgeTokens, type Herdr, type WorkspaceInfo } from "../runtime/herdr.ts";
 import { roleAgentLabel } from "../dispatch/team-scope.ts";
 
-export const BADGE_COLOR_COUNT = 8; // Must match the fixed sidebar color slots in bin/configure.js.
+export const BADGE_COLOR_COUNT = 8; // Must match the fixed sidebar color slots in tui/bin/configure.cjs.
 interface Badge { label: string; slot: number }
 
 interface Registry { next: number; assignments: Record<string, number> }

@@ -1,9 +1,10 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { completedDeliveries } from "../dispatch/delivery.ts";
 import { isMockHarness, mockConsole, report } from "../mock-console.ts";
 import type { TaskCard } from "../shared/types.ts";
-import { checkArtifact, command, team, type MockRun } from "./shared.ts";
+import { smokeChecks, smokeFixtures, smokeSource } from "./scenario.ts";
+import { checkArtifact, command, handoffGate, team, type MockRun } from "./shared.ts";
 
 const harness = process.env.HERDR_SMOKE_HARNESS;
 
@@ -32,7 +33,10 @@ async function main(): Promise<void> {
   const view = tui ?? mockConsole(harness, run.fast);
   if (!tui) view.heading(session);
   try {
-    await doAssignment(view, harness, step, task, run, cwd, delivery);
+    const gate = run.scenario?.hold && step === "review" ? {
+      state: run.scenario.hold, path: handoffGate(dirname(manifest), delivery),
+    } : undefined;
+    await doAssignment(view, harness, step, task, run, cwd, delivery, gate);
     if (tui) await tui.closed;
     else for await (const _chunk of Bun.stdin.stream()) { /* Retain the assignment output until cleanup. */ }
   } finally {
@@ -44,9 +48,11 @@ async function main(): Promise<void> {
 async function doAssignment(
   view: ReturnType<typeof mockConsole>, harness: NonNullable<Parameters<typeof report>[1]>,
   step: "dev" | "test" | "review", task: MockRun["tasks"][number], run: MockRun, cwd: string, delivery: string,
+  gate?: { state: "done" | "blocked"; path: string },
 ) {
   const taskId = task.id;
   const options = ["--delivery", delivery];
+  const fixture = run.scenario ? smokeFixtures[run.scenario.fixture] : undefined;
   report("working", harness);
   const receipt = team<{ duplicate: boolean }>(run.root, "task", "claim", taskId, ...options);
   if (receipt.duplicate) throw new Error("The delivery was already claimed");
@@ -64,7 +70,10 @@ async function doAssignment(
       "Stage the single generated file for review.",
     ], 590);
     mkdirSync(dirname(task.artifact), { recursive: true });
-    writeFileSync(task.artifact, `// ${task.artifact}\nexport const result = { lane: ${task.ordinal}, accepted: ${accepted} } as const;\n`);
+    const source = run.scenario
+      ? smokeSource(run.scenario, accepted)
+      : `// ${task.artifact}\nexport const result = { lane: ${task.ordinal}, accepted: ${accepted} } as const;\n`;
+    writeFileSync(task.artifact, source);
     command(["git", "add", "--", task.artifact], cwd);
     command(["git", "diff", "--cached", "--check"], cwd);
     await view.step(2, "Validate the staged patch", [
@@ -79,27 +88,42 @@ async function doAssignment(
     const sha = review?.commit;
     if (!sha || command(["git", "rev-parse", "HEAD"], cwd).stdout !== sha) throw new Error("The assigned commit changed");
     const changed = command(["git", "show", "--format=", "--name-only", sha], cwd).stdout;
+    const example = run.scenario ? smokeChecks(run.scenario)[0] : undefined;
     await view.step(1, step === "test" ? "Run the fixture checks" : "Inspect the pinned change", [
       `Confirm ${sha.slice(0, 7)} matches the assigned commit.`,
       `Read ${changed}`,
-      "Compare the fixture with the expected contract.",
+      fixture?.expectation ?? "Compare the fixture with the expected contract.",
+      ...(example ? [`Example: ${JSON.stringify(example.args)} → ${JSON.stringify(example.expected)}`] : []),
     ], 550);
     const passed = checkArtifact(run, task, cwd);
     if (!passed && step === "test") {
-      report("blocked", harness);
-      await view.step(2, "The fixture failed its contract", ["Expected accepted = true", "Return the finding to development."], 610);
-      report("working", harness);
-      handoff = ["--reject", "--summary", "The fixture returned the wrong contract result. Correct it and resubmit."];
+      if (!fixture) report("blocked", harness);
+      const failure = fixture?.failure ?? "Expected accepted = true";
+      await view.step(2, "The fixture failed its contract", [failure, "Return the finding to development."], 610);
+      if (!fixture) report("working", harness);
+      const summary = fixture ? `${failure} Correct the contract and resubmit.`
+        : "The fixture returned the wrong contract result. Correct it and resubmit.";
+      handoff = ["--reject", "--summary", summary];
     } else {
       if (!passed) throw new Error("The demo artifact failed validation");
       command(["git", "show", "--check", sha], cwd);
       await view.step(2, step === "test" ? "Checks passed" : "Review complete", [
-        "The fixture matches its contract.", "No whitespace errors in the pinned patch.",
+        fixture?.expectation ?? "The fixture matches its contract.", "No whitespace errors in the pinned patch.",
       ], 620);
-      handoff = ["--accept", sha, "--summary", "Validated the pinned commit and its contract."];
+      const evidence = fixture ? `Validated the pinned commit. ${fixture.expectation}` : "Validated the pinned commit and its contract.";
+      handoff = ["--accept", sha, "--summary", evidence];
     }
   }
 
+  if (gate) {
+    report(gate.state, harness);
+    const until = Date.now() + 20_000;
+    while (!existsSync(gate.path)) {
+      if (Date.now() >= until) throw new Error("The smoke runner did not acknowledge the pending handoff");
+      await Bun.sleep(50);
+    }
+    report("working", harness);
+  }
   team(run.root, "task", "handoff", taskId, ...options, ...handoff);
   view.completed("Saved the result for the next step.");
   report("done", harness);

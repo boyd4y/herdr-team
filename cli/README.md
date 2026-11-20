@@ -298,7 +298,7 @@ Claude、Codex 只有在对应 transcript 中出现真实的 user/assistant 消�
 一个 worktree，也各自恢复自己的原生会话。任务角色仍由队列实际投递时启动，不由 `up`
 预先拉起。恢复会话不会重放任务、改变 delivery 状态或绕过 `uncertain` 的人工核对。
 Team 从 Herdr 的 `agent_session` 取得 ID，无需另装 Team 专用 hook。Claude、Codex 的 transcript 只用于确认是否已有真实消息，不复制或同步对话内容。
-GitHub 安装请通过 Herdr 插件管理器更新或重新安装。更新本地 link 的检出时，在仓库根目录运行 `herdr plugin link .` 以加载更新后的 manifest 和事件钩子，再运行 `herdr plugin action invoke herdr-team.install` 更新内置 CLI、skill 并应用托管配置。`herdr-team.configure` 只应用托管布局/配置并 reload config，不会注册更新后的 hook，也不会更新 CLI 或 skill。
+GitHub 安装请通过 Herdr 插件管理器更新或重新安装。更新本地 link 的检出时，在仓库根目录运行 `herdr plugin link ./tui` 以加载更新后的 manifest 和事件钩子，再运行 `herdr plugin action invoke herdr-team.install` 更新内置 CLI、skill 并应用托管配置。`herdr-team.configure` 只应用托管布局/配置并 reload config，不会注册更新后的 hook，也不会更新 CLI 或 skill。
 
 `dispatch <id>` 将指定的一张 todo 卡持久化入箱，并尝试立即投递一条符合条件的任务。
 任务 ID 必填且只能传一个；`--all`、不存在的 ID 或非 todo 的 ID 都会报错。Inbox 的待投递任务按 priority、入箱时间和 ID 排序，只有显式依赖全部 `done` 后才可投递。取消不代表接口已经交付。不要因计划顺序添加依赖。

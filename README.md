@@ -6,7 +6,7 @@ Herdr Team brings together native **Herdr Desktop** layouts and mods, the `herdr
 
 The preview includes a visibly marked sample, newest-first tasks, remaining assignees, a compact role list, and native animation. With explicit bindings it can read existing project tasks/roles and display scoped Core terminals. The mod itself does not start agents, dispatch tasks, hand off, merge, or clean worktrees; runtime operations belong to the shared CLI.
 
-The Desktop layout and mods live in `layouts/` and `mods/`, the team CLI in `cli/`, and its agent Skill in `skill/`. See the [team runtime guide](docs/team-runtime.md) for CLI operations and Skill installation.
+`desktop/` contains the native mods, layout and hot-reload setup. `tui/` contains the Herdr terminal plugin and sidebar configuration. Both use the team CLI in `cli/` and the agent Skill in `skill/`. See the [team runtime guide](docs/team-runtime.md) for CLI operations and Skill installation.
 Run `herdr-team up --demo` in the prepared demo project's Desktop Space. The
 Team Board and Agents sidebar show mock Codex, Claude and Grok as the release runs.
 A local Space without an initialized project opens a centered setup view.
@@ -40,20 +40,18 @@ npm run typecheck
 Install Herdr Desktop, Node.js 22+ and Bun 1.3.14+. From a single checkout of this repository, install the CLI and Skill and register the Desktop development layout:
 
 ```sh
-npm run setup
+npm run setup:desktop
 ```
 
 In Herdr, select the `herdr-desktop-team-dev` layout. Inside a project terminal,
 run `herdr-team team up` to establish the binding and start resident roles.
 Isolated roles start when dispatched.
 
-### TUI plugin
-
-For a checkout linked as a Herdr TUI plugin, the root `herdr-plugin.toml` installs the same CLI and Skill. The plugin's setup hook also configures the TUI sidebar and action keys. See the [team runtime guide](docs/team-runtime.md) for CLI-only or Skill-only installation.
+### Desktop hot reload
 
 For local development (Node.js 22+), run `npm run dev`. It registers a separate
 `herdr-desktop-team-dev` mod and layout under `HERDR_APP_HOME` (default
-`~/.config/herdr-app`), then watches the mod sources and `layouts/team.json`
+`~/.config/herdr-app`), then watches `desktop/mods/` and `desktop/layouts/team.json`
 and syncs changes for the app's native hot reload. No dependencies or repeated
 installation are needed. Generated types, `jsconfig.json`, hidden files and
 `node_modules` are excluded. The script never launches the app, starts agents,
@@ -107,7 +105,7 @@ the routing reasons in Trash.
 
 For a regular preview installation:
 
-Copy `mods/team-console/`, `mods/team-agents/` and `layouts/team.json` into the corresponding folders under your Herdr app home, normally `~/.config/herdr-app`. Preserve any existing personal copies. Then choose the `team` layout in Herdr. The shipped Spaces, Tabs, Files and Changes mods are reused. Team Agents extends the installed native Agents interface under its own name.
+Copy `desktop/mods/team-console/`, `desktop/mods/team-agents/` and `desktop/layouts/team.json` into the corresponding folders under your Herdr app home, normally `~/.config/herdr-app`. Preserve any existing personal copies. Then choose the `team` layout in Herdr. The shipped Spaces, Tabs, Files and Changes mods are reused. Team Agents extends the installed native Agents interface under its own name.
 
 Team Agents retains native **Priority / Grouped by space** sorting, pins and
 sub-agent trees. It defaults to grouped when no explicit sort preference exists.
@@ -157,6 +155,17 @@ it is not replaced or extended. The CLI registry maps task space IDs to their
 parent team. Switching between them preserves the Team view, filter, selection
 and local watcher; another project resolves to another team. A registered task
 space never borrows ownership from its display name or checkout path.
+
+## Herdr TUI
+
+With Herdr 0.9.3+, Node.js 22+ and Bun 1.3.14+, link the plugin from the checkout root and install the shared CLI, Skill and managed sidebar configuration:
+
+```sh
+herdr plugin link ./tui
+npm run setup:tui
+```
+
+From within a managed TUI session, `herdr plugin action invoke herdr-team.install` also applies the setup and reloads the config. For a GitHub install, use `herdr plugin install boyd4y/herdr-team/tui --ref main`. Existing repo-root installs can continue to update through the original source. The [team runtime guide](docs/team-runtime.md) covers CLI-only and Skill-only installs.
 
 ## Design and contribution
 

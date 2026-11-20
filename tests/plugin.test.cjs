@@ -6,9 +6,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { read, edit } = require('../bin/managed');
-const { locations } = require('../bin/paths');
-const { existingKey, SIDEBAR } = require('../bin/configure');
+const { read, edit } = require('../tui/bin/managed.cjs');
+const { locations } = require('../tui/bin/paths.cjs');
+const { existingKey, SIDEBAR } = require('../tui/bin/configure.cjs');
 const { installNpxStub } = require('./skills-fixture.cjs');
 
 const root = path.resolve(__dirname, '..');
@@ -49,7 +49,7 @@ if (args.join(' ') === 'config check') {
     return file;
   }
   function run(script, args = [], overrides = {}) {
-    return spawnSync(process.execPath, [path.join(root, 'bin', script), ...args], {
+    return spawnSync(process.execPath, [path.join(root, 'tui', 'bin', script), ...args], {
       cwd: dir, env: { ...env, ...overrides }, encoding: 'utf8', timeout: 10000,
     });
   }
@@ -99,7 +99,7 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
   for (const original of [null, '', '# my keys\n\n[ui]\nsidebar_width = 31', '[theme]\r\nname = "nord"\r\n\r\n']) {
     if (original === null) fs.rmSync(f.herdrConfig, { force: true });
     else f.put(f.herdrConfig, original);
-    f.ok('configure.js', ['--apply', '--reload']);
+    f.ok('configure.cjs', ['--apply', '--reload']);
     const applied = fs.readFileSync(f.herdrConfig, 'utf8');
     assert(applied.includes('{ token = "$team_workspace_c0", fg = "#89b4fa", bold = true, dim = false }'));
     assert(!applied.includes('$harness_logo'));
@@ -111,10 +111,10 @@ test('configure/unconfigure are idempotent, reload and restore exact files', (t)
     assert(!applied.includes('"agent", "$team_harness"'));
     assert(!applied.includes(', "workspace"]'));
     assert(applied.startsWith(original || ''));
-    f.ok('configure.js', ['--apply', '--reload']);
+    f.ok('configure.cjs', ['--apply', '--reload']);
     assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), applied);
-    f.ok('configure.js', ['--uninstall', '--reload']);
-    f.ok('configure.js', ['--uninstall', '--reload']);
+    f.ok('configure.cjs', ['--uninstall', '--reload']);
+    f.ok('configure.cjs', ['--uninstall', '--reload']);
     if (original === null) assert(!fs.existsSync(f.herdrConfig));
     else assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
   }
@@ -142,14 +142,14 @@ test('user action keys are preserved, not duplicated or removed', (t) => {
   f.put(f.herdrConfig, original);
   assert(existingKey(original, 'prefix+t'));
   assert(!existingKey(original, 'prefix+shift+t'));
-  f.ok('configure.js');
-  f.ok('configure.js');
+  f.ok('configure.cjs');
+  f.ok('configure.cjs');
   const applied = fs.readFileSync(f.herdrConfig, 'utf8');
   assert.equal(applied.match(/key = "prefix\+t"/g).length, 1);
   assert(!applied.includes('herdr-team.open-console'));
   assert(!applied.includes('prefix+shift+t'));
   assert(applied.startsWith(original));
-  f.ok('configure.js', ['--uninstall']);
+  f.ok('configure.cjs', ['--uninstall']);
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
 });
 
@@ -157,7 +157,7 @@ test('configuration validation failure preserves the original and never reloads'
   const f = fixture(t);
   const original = '# REJECT_CANDIDATE\n[ui.sidebar.agents]\nrows=[["agent"]]\n';
   f.put(f.herdrConfig, original);
-  assert.notEqual(f.run('configure.js', ['--apply', '--reload']).status, 0);
+  assert.notEqual(f.run('configure.cjs', ['--apply', '--reload']).status, 0);
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
   assert(!fs.readFileSync(f.env.TEST_LOG, 'utf8').includes('reload-config'));
 });
@@ -167,15 +167,15 @@ test('upgrade replaces the old sidebar and preserves user configuration', (t) =>
   const original = '# my config\n[ui]\nsidebar_width=30\n';
   f.put(f.herdrConfig, edit({ text: original, exists: true }, 'config',
     `[[keys.command]]\nkey = "prefix+t"\ntype = "popup"\ncommand = "herdr-team console --observe"\n\n[ui.sidebar.agents]\nrows=[["state_icon", "$harness_logo", "agent"]]\n\n[ui.sidebar.spaces]\nrows=[["workspace"], ["branch", "$team_git_files", "git_status"]]`).text);
-  f.ok('configure.js');
+  f.ok('configure.cjs');
   const config = fs.readFileSync(f.herdrConfig, 'utf8');
   assert(config.startsWith(original));
   assert(!config.includes('$harness_logo'));
   assert(config.includes('{ token = "$team_workspace_c1", fg = "#cba6f7", bold = true, dim = false }'));
   assert(config.includes(SIDEBAR));
-  f.ok('configure.js');
+  f.ok('configure.cjs');
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), config);
-  f.ok('configure.js', ['--uninstall']);
+  f.ok('configure.cjs', ['--uninstall']);
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
 });
 
@@ -187,8 +187,8 @@ test('configure and removal leave terminal settings and fonts untouched', (t) =>
     f.put(path.join(f.env.XDG_DATA_HOME, 'fonts', 'HerdrTeamAgentIconsMax-Regular.ttf'), 'user font'),
   ];
   const contents = files.map((file) => fs.readFileSync(file));
-  f.ok('configure.js');
-  f.ok('configure.js', ['--uninstall']);
+  f.ok('configure.cjs');
+  f.ok('configure.cjs', ['--uninstall']);
   files.forEach((file, index) => assert.deepEqual(fs.readFileSync(file), contents[index]));
 });
 
@@ -197,13 +197,13 @@ test('writes preserve dotfile symlinks and reject non-UTF8 config', (t) => {
   const target = f.put(path.join(f.dir, 'dotfiles', 'herdr.toml'), '[ui]\n# dotfile\n');
   fs.mkdirSync(path.dirname(f.herdrConfig), { recursive: true });
   fs.symlinkSync(target, f.herdrConfig);
-  f.ok('configure.js');
+  f.ok('configure.cjs');
   assert(fs.lstatSync(f.herdrConfig).isSymbolicLink());
-  f.ok('configure.js', ['--uninstall']);
+  f.ok('configure.cjs', ['--uninstall']);
   assert.equal(fs.readFileSync(target, 'utf8'), '[ui]\n# dotfile\n');
   fs.writeFileSync(target, Buffer.from([0xff]));
   assert.throws(() => read(target), /UTF-8/);
-  assert.notEqual(f.run('configure.js').status, 0);
+  assert.notEqual(f.run('configure.cjs').status, 0);
   assert.deepEqual(fs.readFileSync(target), Buffer.from([0xff]));
   const dangling = path.join(f.dir, 'dangling');
   const absent = path.join(f.dir, 'absent');
@@ -219,21 +219,24 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   const terminal = path.join(f.config, 'ghostty', 'config');
   f.put(terminal, '# ghostty');
   const standalone = path.join(f.dir, 'standalone');
-  fs.cpSync(root, standalone, { recursive: true, filter: (file) => !['tests', 'node_modules', '.git', '.herdr'].includes(path.basename(file)) });
-  const manifest = fs.readFileSync(path.join(standalone, 'herdr-plugin.toml'), 'utf8');
+  fs.cpSync(root, standalone, { recursive: true, verbatimSymlinks: true, filter: (file) => !['tests', 'node_modules', '.git', '.herdr'].includes(path.basename(file)) });
+  const plugin = path.join(standalone, 'tui');
+  const manifestPath = path.join(plugin, 'herdr-plugin.toml');
+  assert.equal(fs.realpathSync(path.join(standalone, 'herdr-plugin.toml')), fs.realpathSync(manifestPath));
+  const manifest = fs.readFileSync(manifestPath, 'utf8');
   const build = JSON.parse(manifest.match(/\[\[build\]\]\s*command = (\[[^\n]+\])/)[1]);
-  const setup = () => {
+  const setup = (cwd) => {
     const result = spawnSync(build[0], build.slice(1), {
-      cwd: standalone, env: f.env, encoding: 'utf8', timeout: 10000,
+      cwd, env: f.env, encoding: 'utf8', timeout: 10000,
     });
     assert.equal(result.status, 0, result.stdout + result.stderr);
   };
-  setup();
+  setup(standalone);
   assert(!fs.readFileSync(f.herdrConfig, 'utf8').includes('$harness_logo'));
   assert.equal(fs.readFileSync(terminal, 'utf8'), '# ghostty');
   const skillFile = path.join(f.dir, '.agents/skills/herdr-team/SKILL.md');
   assert(fs.readFileSync(skillFile, 'utf8').includes('name: herdr-team'));
-  setup();
+  setup(plugin);
   const actions = [...manifest.matchAll(/\[\[actions\]\]\nid = "([^"]+)"\ntitle = "[^"]+"\ncommand = (\[[^\n]+\])/g)];
   assert.deepEqual(actions.map(([, id]) => id), ['install', 'configure', 'unconfigure', 'install-skill', 'uninstall-skill', 'install-cli', 'uninstall-cli']);
   assert(manifest.includes('id = "open-console"'));
@@ -243,7 +246,7 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   assert(fs.existsSync(path.join(f.env.XDG_BIN_HOME, 'herdr-team')));
   for (const id of ['install', 'configure', 'install-skill', 'install-cli', 'unconfigure', 'uninstall-skill', 'uninstall-cli']) {
     const command = JSON.parse(actions.find((a) => a[1] === id)[2]);
-    const result = spawnSync(command[0], command.slice(1), { cwd: standalone, env: f.env, encoding: 'utf8' });
+    const result = spawnSync(command[0], command.slice(1), { cwd: plugin, env: f.env, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
   assert.equal(fs.readFileSync(f.herdrConfig, 'utf8'), original);
@@ -253,7 +256,7 @@ test('standalone plugin build hook and actions install CLI, skill and configurat
   assert(manifest.includes('on = "workspace.created"'));
   assert(manifest.includes('on = "pane.agent_detected"'));
   assert(manifest.includes('on = "pane.agent_status_changed"'));
-  assert(manifest.includes('"cli/scripts/refresh-sidebar.ts", "--sessions-only"'));
-  assert(manifest.includes('"bun", "cli/scripts/refresh-sidebar.ts"'));
+  assert(manifest.includes('"../cli/scripts/refresh-sidebar.ts", "--sessions-only"'));
+  assert(manifest.includes('"bun", "../cli/scripts/refresh-sidebar.ts"'));
   assert(!manifest.includes('"sidebar",'));
 });

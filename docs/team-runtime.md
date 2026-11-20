@@ -108,6 +108,8 @@ any changes or other sessions that prevent safe removal.
 ## Source ownership
 
 - `skill/`: the single Skill and reusable assets.
+- `desktop/`: native layout, mods and development registration.
+- `tui/`: Herdr plugin manifest and sidebar/key setup.
 - `cli/scripts/lib/team`, `tasks`, `dispatch`, `integration`: shared records and explicit operations.
 - `cli/scripts/lib/runtime`: runtime clients, caller detection, bindings and lifecycle.
 - `cli/scripts/lib/ui`: legacy Console presentation and read-only CLI projections.
@@ -137,6 +139,32 @@ The showcase integrates the changes, confirms the release and reclaims its task
 worktrees. Use `--fast` for a shorter validation run.
 
 ## Validation
+
+For a one-task smoke with a manual merge gate, run the following from a terminal in
+the registered `herdr-team-test` Desktop space.
+
+```sh
+bun /path/to/herdr-team/tests/desktop-smoke.ts v1.2-smoke.4 --await-merge --keywords "依赖 退回 阻塞" --seed 42
+```
+
+The mock uses local keyword rules in English and Chinese. Topics include deduplication
+(`去重`), priority (`优先级`), dependencies (`依赖`), recovery (`恢复`) and filtering (`筛选`).
+Flow keywords include `direct` (`直通`), `rework` (`退回`), `awaiting handoff` (`待交接`)
+and `blocked` (`阻塞`). Rework can be combined with either wait scenario. Unspecified
+choices are sampled, and the same keywords and seed produce the same plan. A run with
+no seed generates one and records it in the result. The seed also picks the example
+shown by the mock within the selected topic. Every assertion still runs.
+
+Preview the selected fixture and flow from any directory without starting a team.
+
+```sh
+bun /path/to/herdr-team/tests/desktop-smoke.ts --plan --keywords "依赖 退回 阻塞" --seed 42
+```
+
+Each fixture runs local assertions. In wait scenarios, Core reports `Done` or
+`Blocked` while the review delivery remains claimed in the Inbox. The smoke stops
+at `Awaiting merge` and prints the reviewed SHA and checkout path. Inspect the task
+and its evidence before using `herdr-team task merge <id>`.
 
 From a terminal in the registered `herdr-team-test` Desktop space, run
 `bun /path/to/herdr-team/tests/desktop-smoke.ts v1.2-smoke.4 --paired`.

@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const managed = require('./managed');
-const { locations } = require('./paths');
+const managed = require('./managed.cjs');
+const { locations } = require('./paths.cjs');
 
 // Eight stable color slots; each token holds the compact badge + name label.
 const BADGE_COLORS = ['#89b4fa', '#cba6f7', '#94e2d5', '#fab387', '#f5c2e7', '#a6e3a1', '#74c7ec', '#f9e2af'];
@@ -79,7 +79,7 @@ function applyPlan(plan, reload = false) {
 }
 
 function refreshSidebar() {
-  const result = spawnSync('bun', [path.join(__dirname, '..', 'cli', 'scripts', 'refresh-sidebar.ts')], { env: process.env, encoding: 'utf8', timeout: 30000 });
+  const result = spawnSync('bun', [path.join(__dirname, '../../cli/scripts/refresh-sidebar.ts')], { env: process.env, encoding: 'utf8', timeout: 30000 });
   if (result.status !== 0) console.log('Sidebar refresh failed; run the herdr-team.configure plugin action inside Herdr to retry.');
 }
 
@@ -91,7 +91,7 @@ function reloadConfig() {
 
 function main(args) {
   if (args.includes('--help')) {
-    console.log('Usage: node bin/configure.js [--apply|--uninstall] [--reload]');
+    console.log('Usage: node bin/configure.cjs [--apply|--uninstall] [--reload]');
     return;
   }
   if (args.some((arg) => !['--apply', '--uninstall', '--reload'].includes(arg)) ||

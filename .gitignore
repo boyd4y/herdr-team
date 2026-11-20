@@ -2,5 +2,5 @@
 .herdr/
 node_modules/
 /artifacts/
-mods/**/jsconfig.json
-mods/**/*.d.ts
+/desktop/mods/**/jsconfig.json
+/desktop/mods/**/*.d.ts

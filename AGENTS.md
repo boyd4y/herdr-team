@@ -1,6 +1,6 @@
 # Boundaries
 
-- Keep Desktop presentation in `mods/` and `layouts/`, the team CLI and its runtime adapters in `cli/`, and the shared Skill and templates in `skill/`. Use the installed Herdr app guide and generated types as the authority for its version.
+- Keep Desktop presentation in `desktop/mods/` and `desktop/layouts/`, the Herdr TUI plugin in `tui/`, the team CLI and its runtime adapters in `cli/`, and the shared Skill and templates in `skill/`. Use the installed Herdr app guide and generated types as the authority for its version.
 - Read `herdr-app --skill` and `hc --skill` before controlling the window or terminals. The old `herdr` runtime and `herdr-plugin.toml` are different APIs.
 - Layout JSON arranges the window. Mods use the host's `gpui-kit`, `gpui-base`, and `herdr` modules. Do not add a webview, DOM renderer, terminal emulator, or custom widget toolkit.
 - Core owns terminals, lifecycle, labels, input gating and events. The desktop app owns spaces, tabs, panes and their layout document. A terminal address is not a pane ID.

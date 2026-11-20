@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-const { planConfigure, applyPlan, reloadConfig, refreshSidebar } = require('./configure');
-const { installSkill } = require('./install-skill');
-const { installCLI } = require('./install-cli');
+const { planConfigure, applyPlan, reloadConfig, refreshSidebar } = require('./configure.cjs');
+const { installSkill } = require('../../bin/install-skill');
+const { installCLI } = require('../../bin/install-cli');
 
 // One-shot install hook: npx installs the bundled local skill; no daemon or agent startup.
 async function setup() {

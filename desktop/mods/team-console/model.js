@@ -97,34 +97,44 @@ function modelArgument(argv, kind) {
   return model;
 }
 
+function sentDelivery(task) {
+  const delivery = task.meta?.delivery;
+  return delivery?.role === task.role && ["sending", "submitted", "claimed", "uncertain"].includes(delivery?.state) ? delivery : null;
+}
+
+function taskTerminal(task, role, delivery) {
+  if (delivery?.runtime !== "desktop" || typeof delivery.id !== "string" || !delivery.id || !delivery.space) return null;
+  const instances = role?.instances?.filter(terminal => {
+    const labels = terminal.labels;
+    return labels?.["team.runtime"] === "desktop" && labels["team.role"] === task.role && labels["team.task"] === task.id &&
+      labels["team.delivery"] === delivery.id && (labels["team.owner_space"] ?? labels["herdr.space"]) === delivery.space &&
+      (!delivery.terminal || terminal.address === delivery.terminal) &&
+      (!delivery.process_id || terminal.pid === delivery.process_id) && terminal.program?.agent === true;
+  });
+  return instances?.length === 1 ? instances[0] : null;
+}
+
 /** Roles and instances have already been scoped to the visible project and space. */
 export function taskAssignee(task, roles, programs) {
   const name = task.role || "Unassigned";
   const role = roles.find(role => role.name === task.role);
-  const delivery = task.meta?.delivery;
-  const sent = delivery?.role === task.role && ["sending", "submitted", "claimed", "uncertain"].includes(delivery?.state);
+  const delivery = sentDelivery(task);
   const completed = task.meta?.completed_deliveries;
-  const historical = !delivery && Array.isArray(completed) && completed.some(id => typeof id === "string" && id.length > 0);
-  if (!role || (!sent && !historical)) return { name, program: null, model: null, live: false, modelSource: null };
-
-  const live = sent && delivery.runtime === "desktop" && typeof delivery.id === "string" && delivery.id && delivery.space
-    ? role.instances?.filter(terminal => {
-      const labels = terminal.labels;
-      return labels?.["team.runtime"] === "desktop" && labels["team.role"] === task.role && labels["team.task"] === task.id &&
-        labels["team.delivery"] === delivery.id && (labels["team.owner_space"] ?? labels["herdr.space"]) === delivery.space &&
-        (!delivery.terminal || terminal.address === delivery.terminal) &&
-        (!delivery.process_id || terminal.pid === delivery.process_id) && terminal.program?.agent === true;
-    }) ?? [] : [];
-  const terminal = live.length === 1 ? live[0] : null;
+  const historical = !task.meta?.delivery && Array.isArray(completed) && completed.some(id => typeof id === "string" && id.length > 0);
+  if (!role || (!delivery && !historical)) return { name, program: null, model: null, live: false, modelSource: null };
+  const terminal = taskTerminal(task, role, delivery);
   const launched = terminal ? modelArgument(terminal.argv?.slice(1) ?? [], terminal.program.key) : null;
   const configured = modelArgument(role.args ?? [], role.kind) ?? explicitModel(role.model);
   const program = terminal?.program ?? programs.get(role.kind) ?? null;
   return { name, program, model: launched ?? configured, live: Boolean(terminal), modelSource: launched ? "launch" : configured ? "role" : null };
 }
 
+function terminalStatus(terminal) {
+  return typeof terminal?.status === "string" ? terminal.status : terminal?.status?.state;
+}
+
 function reportedStatus(instances) {
-  return instances.map(terminal => typeof terminal.status === "string" ? terminal.status : terminal.status?.state)
-    .filter(value => rank[value]).sort((a, b) => rank[b] - rank[a])[0] ?? "unknown";
+  return instances.map(terminalStatus).filter(value => rank[value]).sort((a, b) => rank[b] - rank[a])[0] ?? "unknown";
 }
 
 /** Show recorded current/remaining assignees; never invent previous approvals. */
@@ -132,8 +142,8 @@ export function flowNodes(task, roles) {
   if (!task) return [];
   return [task.role, ...(task.handoff ?? [])].map((name, index) => {
     const role = roles.find(role => role.name === name);
-    const report = reportedStatus(role?.instances?.filter(terminal => terminal.labels?.["team.task"] === task.id) ?? []);
-    const status = index ? "next" : task.status === "done" ? "done" : task.status === "cancelled" ? "cancelled" : task.status === "todo" ? "ready" : report === "unknown" ? "assigned" : report === "done" ? "awaiting handoff" : report;
+    const report = index === 0 ? terminalStatus(taskTerminal(task, role, sentDelivery(task))) : undefined;
+    const status = index ? "next" : task.status === "done" ? "done" : task.status === "cancelled" ? "cancelled" : task.status === "todo" ? "ready" : !rank[report] ? "assigned" : report === "done" ? "awaiting handoff" : report;
     return { name, status, harness: role?.harness ?? "—", model: role?.model ?? "default" };
   });
 }

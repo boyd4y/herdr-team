@@ -95,9 +95,14 @@ export function sample() {
     card.status = card.acceptedAt ? "accepted" : total > 0 && done === total ? "ready"
       : card.tasks.some(task => task.status !== "todo") ? "in-progress" : card.iteration ? "planned" : "backlog";
   }
-  const terminal = (role, task, status) => ({ address: `sample-${role}`, state: "live", status,
-    labels: { "team.project": binding.root, "herdr.space": binding.space, "team.role": role, "team.task": task, "team.session": "task" } });
+  const terminal = (role, task, status) => ({ address: `sample-${role}`, state: "live", status, program: { agent: true },
+    labels: { "team.project": binding.root, "herdr.space": binding.space, "team.role": role, "team.task": task, "team.session": "task",
+      "team.runtime": "desktop", "team.delivery": `sample-${task}` } });
   const terminals = [terminal("dev", "0045", "working"), terminal("test", "0042", "working"), terminal("doc", "0041", "blocked")];
+  for (const id of ["0045", "0041"]) {
+    const task = tasks.find(task => task.id === id);
+    task.meta = { ...task.meta, delivery: { id: `sample-${id}`, role: task.role, state: "claimed", runtime: "desktop", space: binding.space } };
+  }
   const inbox = {
     active: [
       { id: "0045", title: tasks.find(task => task.id === "0045").title, role: "dev", state: "claimed", label: "In progress" },
