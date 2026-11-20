@@ -3,12 +3,19 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "A native Herdr desktop layout and team console mod, backed by herdr-core.",
+  "description": "Herdr Team's Desktop integration, team CLI, and agent skill.",
   "scripts": {
     "setup": "node scripts/setup.mjs",
+    "install:team": "node bin/setup.js",
+    "install:cli": "node bin/install-cli.js",
+    "install:skill": "node bin/install-skill.js",
+    "install:mock": "node bin/install-cli.js --mock",
     "dev": "node scripts/dev.mjs",
     "dev:register": "node scripts/dev.mjs --once",
     "check": "herdr-app check mods/team-console && herdr-app check mods/team-agents",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:cli": "cd cli && bun test",
+    "test:install": "node --test tests/*.test.cjs",
+    "typecheck": "cd cli && bun run typecheck"
   }
 }

@@ -1,0 +1,141 @@
+import { describe, expect, test } from "bun:test";
+import { readFileSync, symlinkSync } from "node:fs";
+import { join } from "node:path";
+import { desktopAgentProgram, desktopUp, bindDesktop, showDesktopBinding, unbindDesktop, type DesktopClient, type DesktopTerminal } from "../scripts/lib/runtime/desktop.ts";
+import { callerSpace, managedContext } from "../scripts/lib/runtime/context.ts";
+import { loadProject } from "../scripts/lib/team/project.ts";
+import { makeProject, writeRole } from "./helpers.ts";
+
+test("the Desktop adapter recognizes Grok lifecycle operations for labeled demo sessions", () => {
+  const terminal: DesktopTerminal = { address: "t1", state: "live", argv: ["/demo/mock-bin/grok"], cwd: "/demo", labels: {} };
+  expect(desktopAgentProgram(terminal)).toBeUndefined();
+  expect(desktopAgentProgram({ ...terminal, labels: { "team.mock": "1" } })).toBe("grok");
+});
+
+function fixture() {
+  const project = makeProject();
+  writeRole(project.root, "lead", { kind: "codex" });
+  writeRole(project.root, "developer", { kind: "codex", worktree: true });
+  let document: any = null, version = 0;
+  const terminals: DesktopTerminal[] = [];
+  const calls: { method: string; params: Record<string, any> }[] = [];
+  const space = { id: "space-one", machine: null, tabs: [{ terminals: [{ terminal: "caller" }] }] };
+  const client: DesktopClient = {
+    spaces: () => [space],
+    executable: kind => `/bin/${kind}`,
+    park() { throw new Error("Unexpected native detach"); },
+    closeEmptyTaskSpace() { throw new Error("Unexpected native space close"); },
+    rpc<T>(method: string, params: Record<string, any>): T {
+      calls.push({ method, params });
+      if (method === "doc.get") return structuredClone({ value: document, version }) as T;
+      if (method === "doc.set") {
+        if (params.version !== version) throw new Error("conflict");
+        document = structuredClone(params.value); version++;
+        return { version } as T;
+      }
+      if (method === "terminal.list") return { terminals } as T;
+      if (method === "terminal.run") {
+        const terminal = { address: `t${terminals.length + 1}`, state: "live", argv: params.argv,
+          cwd: params.cwd, labels: params.labels, status: null };
+        terminals.push(terminal);
+        return terminal as T;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    },
+  };
+  return { ...project, client, terminals, calls, space };
+}
+
+describe("verified runtime context", () => {
+  const terminal: DesktopTerminal = { address: "caller", state: "live", argv: ["codex"], cwd: "/project", labels: { "herdr.space": "space-one" } };
+  test("uses live runtime evidence and rejects stale, missing or ambiguous contexts", () => {
+    const probes = { core: () => terminal, tui: () => "w1:p1" };
+    expect(managedContext({ HC_TERMINAL_ID: "caller" }, probes).kind).toBe("desktop");
+    expect(managedContext({ HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" }, probes).kind).toBe("tui");
+    expect(() => managedContext({}, probes)).toThrow("Cannot verify");
+    expect(() => managedContext({ HC_TERMINAL_ID: "stale" }, probes)).toThrow("Cannot verify");
+    expect(() => managedContext({ HERDR_ENV: "1", HERDR_PANE_ID: "wrong" }, probes)).toThrow("Cannot verify");
+    expect(() => managedContext({ HC_TERMINAL_ID: "caller", HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" }, probes)).toThrow("Two managed");
+    expect(() => managedContext({ HC_TERMINAL_ID: "caller" }, { ...probes, core: () => ({ ...terminal, state: "finished" }) })).toThrow("Cannot verify");
+  });
+  test("uses explicit Core opt-in before UI attachment and rejects conflicting ownership", () => {
+    const f = fixture();
+    try {
+      expect(callerSpace(terminal, f.client)).toBe("space-one");
+      expect(callerSpace({ ...terminal, address: "newly-created" }, f.client)).toBe("space-one");
+      expect(() => callerSpace({ ...terminal, labels: {} }, f.client)).toThrow("no space binding");
+      const list = f.client.spaces;
+      f.client.spaces = () => [...list(), { ...f.space, id: "other-space" }];
+      expect(() => callerSpace(terminal, f.client)).toThrow("conflicting space ownership");
+    } finally { f.cleanup(); }
+  });
+});
+
+test("up binds persistently, reuses one resident, defers isolated roles and leaves task files alone", () => {
+  const f = fixture();
+  try {
+    const project = loadProject(f.root);
+    const initial = desktopUp(project, f.client, { space: "space-one" });
+    expect(initial.roles.map(role => [role.role, role.action])).toEqual([["developer", "deferred"], ["lead", "started"]]);
+    const saved = JSON.parse(readFileSync(join(f.root, ".herdr/desktop.json"), "utf8"));
+    expect(showDesktopBinding(f.client, "space-one")).toEqual(saved);
+    expect(f.terminals[0]!.argv).toContain("--no-daemon");
+    const trust = f.terminals[0]!.argv.find(arg => arg.startsWith("projects="))!;
+    expect(Bun.TOML.parse(trust)).toEqual({ projects: { [saved.root]: { trust_level: "trusted" } } });
+    expect(f.terminals[0]!.labels["team.project"]).toBe(saved.root);
+    expect(f.terminals[0]!.labels["herdr.space"]).toBe("space-one");
+    expect(f.calls.find(call => call.method === "terminal.run")!.params.no_parent).toBe(true);
+    expect(f.calls.find(call => call.method === "terminal.run")!.params.env.PATH).toBe(process.env["PATH"]);
+    expect(desktopUp(project, f.client).roles.find(role => role.role === "lead")!.action).toBe("reused");
+    expect(f.calls.filter(call => call.method === "terminal.run")).toHaveLength(1);
+    expect(loadProject(f.root).tasks).toEqual([]);
+    expect(() => unbindDesktop(project, f.client)).toThrow("still live");
+    f.terminals[0]!.argv = ["/bin/zsh"];
+    expect(desktopUp(project, f.client).roles.find(role => role.role === "lead")!.action).toBe("failed");
+    expect(f.calls.filter(call => call.method === "terminal.run")).toHaveLength(1);
+    f.terminals[0]!.state = "finished";
+    unbindDesktop(project, f.client);
+    expect(showDesktopBinding(f.client, "space-one")).toBeNull();
+  } finally { f.cleanup(); }
+});
+
+test("Desktop up binds an initialized project with no roles and launches no agents", () => {
+  const runtime = fixture(), project = makeProject("without-roles");
+  try {
+    const result = desktopUp(loadProject(project.root), runtime.client, { space: runtime.space.id });
+    expect(result.binding.space).toBe(runtime.space.id);
+    expect(result.roles).toEqual([]);
+    expect(runtime.calls.some(call => call.method === "terminal.run")).toBe(false);
+  } finally { runtime.cleanup(); project.cleanup(); }
+});
+
+test("Desktop up leaves Codex's default trust checks when a role starts outside the bound project", () => {
+  const f = fixture(), other = makeProject("outside");
+  try {
+    symlinkSync(other.root, join(f.root, "outside"));
+    writeRole(f.root, "lead", { kind: "codex", cwd: "outside" });
+    desktopUp(loadProject(f.root), f.client, { space: "space-one" });
+    expect(f.terminals[0]!.argv).toContain("--no-daemon");
+    expect(f.terminals[0]!.argv.some(arg => arg.startsWith("projects="))).toBe(false);
+  } finally { f.cleanup(); other.cleanup(); }
+});
+
+test("another project cannot take over a bound space and absent spaces are never guessed", () => {
+  const f = fixture(), other = makeProject("other");
+  try {
+    bindDesktop({ root: f.root }, f.client, "space-one");
+    expect(() => bindDesktop({ root: other.root }, f.client, "space-one")).toThrow("already bound");
+    expect(() => bindDesktop({ root: other.root }, f.client, "display-name")).toThrow("No local Desktop space");
+    expect(f.calls.filter(call => call.method === "terminal.run")).toHaveLength(0);
+  } finally { f.cleanup(); other.cleanup(); }
+});
+
+test("concurrent binding conflict stops before any resident launch", () => {
+  const f = fixture();
+  try {
+    const rpc = f.client.rpc;
+    f.client.rpc = (method, params) => { if (method === "doc.set") throw new Error("conflict"); return rpc(method, params); };
+    expect(() => desktopUp(loadProject(f.root), f.client, { space: "space-one" })).toThrow("conflict");
+    expect(f.terminals).toEqual([]);
+  } finally { f.cleanup(); }
+});

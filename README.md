@@ -1,12 +1,12 @@
-# Herdr Desktop Team
+# Herdr Team
 
 [中文](README.zh-CN.md)
 
-A layout and native team console mod for **Herdr desktop**, using **herdr-core (`hc`)** for terminal facts. This is the initial research and preview repository, separate from the terminal-multiplexer plugin [herdr-team](https://github.com/boyd4y/herdr-team).
+Herdr Team brings together native **Herdr Desktop** layouts and mods, the `herdr-team` CLI, and the agent Skill. Desktop uses **herdr-core (`hc`)** for terminal facts.
 
 The preview includes a visibly marked sample, newest-first tasks, remaining assignees, a compact role list, and native animation. With explicit bindings it can read existing project tasks/roles and display scoped Core terminals. The mod itself does not start agents, dispatch tasks, hand off, merge, or clean worktrees; runtime operations belong to the shared CLI.
 
-The shared Skill and CLI now live in the sibling `herdr-team-skill` repository.
+The Desktop layout and mods live in `layouts/` and `mods/`, the team CLI in `cli/`, and its agent Skill in `skill/`. See the [team runtime guide](docs/team-runtime.md) for CLI operations and Skill installation.
 Run `herdr-team up --demo` in the prepared demo project's Desktop Space. The
 Team Board and Agents sidebar show mock Codex, Claude and Grok as the release runs.
 A local Space without an initialized project opens a centered setup view.
@@ -16,12 +16,9 @@ configure the team with the shared Skill, or select **View demo** to explore
 sample data. After initialization, **Up** starts the team in the same Space.
 The panel checks the team's daemon status to show whether it is running.
 
-This repository owns only the native Desktop presentation. The shared CLI
-implements verified caller detection, persistent space bindings and resident
-startup/reuse with `herdr-team up`. Local Core dispatch, claim, handoff and inbox
-recovery use the shared delivery engine. Task sessions receive isolated Git
-checkouts; automatic Desktop cleanup and native conversation recovery remain
-unsupported. Completed checkouts are retained with an explicit receipt.
+The CLI verifies the caller, records the Space binding, and starts resident
+roles with `herdr-team team up`. Task sessions receive isolated Git checkouts.
+`herdr-team task clean` reclaims finished task worktrees and their Desktop resources.
 
 ## Check locally
 
@@ -30,24 +27,25 @@ Requires the Herdr desktop app and Node.js. Development baseline: app **0.1.16**
 ```sh
 npm test
 npm run check
+(cd cli && bun install --frozen-lockfile)
+npm run test:cli
+npm run test:install
+npm run typecheck
 ```
 
-`check` uses the real app's initial-render validator. It does not install the mod, select a layout, or prove live interaction. No npm dependencies are required.
+`check` uses the real app's initial-render validator. CLI development dependencies are installed under `cli/`.
 
 ## Try the preview
 
-To install the shared CLI/Skill and register the Desktop development layout,
-place `herdr-team-skill` beside this checkout, then run:
+Install Herdr Desktop, Node.js 22+ and Bun 1.3.14+. From a single checkout of this repository, install the CLI and Skill and register the Desktop development layout:
 
 ```sh
 npm run setup
 ```
 
-`HERDR_TEAM_SOURCE` can select a different shared checkout. This install does not
-switch your layout or start agents. Inside a project terminal in Herdr, run
-`herdr-team up` to establish/reuse its project binding and resident roles.
-The CLI verifies the caller and chooses its runtime; no runtime flag or
-environment-specific Skill is needed. Isolated roles start only when dispatched.
+In Herdr, select the `herdr-desktop-team-dev` layout. Inside a project terminal,
+run `herdr-team team up` to establish the binding and start resident roles.
+Isolated roles start when dispatched.
 
 For local development (Node.js 22+), run `npm run dev`. It registers a separate
 `herdr-desktop-team-dev` mod and layout under `HERDR_APP_HOME` (default

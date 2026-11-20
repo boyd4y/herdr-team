@@ -1,18 +1,15 @@
-# Herdr Desktop Team
+# Herdr Team
 
 [English](README.md)
 
 面向 **Herdr 桌面版**的 layout＋原生 mod 插件，底层终端与 agent 运行在 **herdr-core（`hc`）**。
 
-这是独立于旧版 [herdr-team](https://github.com/boyd4y/herdr-team) 的原生桌面展示仓库。
-
-共享 Skill 与 CLI 现在位于同级 `herdr-team-skill` 仓库；这里负责原生面板和布局。
-共享 CLI 已实现调用终端校验、持久 space 绑定及 `herdr-team up` 的常驻角色启动/复用。
+桌面布局和原生面板位于 `layouts/` 和 `mods/`，团队 CLI 位于 `cli/`，Agent Skill 位于 `skill/`。CLI 操作和独立安装见[团队运行指南](docs/team-runtime.md)。
 
 在准备好的演示项目对应的 Desktop Space 中运行 `herdr-team up -demo`。右侧任务看板和 Agents 列表会随模拟 Codex、Claude、Grok 的任务和状态更新。加 `--fast` 可快速验证。
 
 未初始化项目的本地 Space 显示居中的设置页。点 **Initialize now** 使用当前终端目录初始化并注册项目，取不到时使用 Space 的目录。也可以直接选择本机已安装的 agent，用共享 Skill 配置团队。点击 **View demo** 可查看示例数据。初始化成功后，项目视图中央显示 **Up**，用于启动当前 Space 的团队。面板通过 daemon 状态判断团队是否已运行。
-本地 Core 的 dispatch、claim、handoff 和 inbox 重试复用共享投递逻辑，任务会话使用隔离 Git checkout。桌面自动清理和原生对话恢复仍未实现，已完成任务的 checkout 明确保留。
+本地 Core 的 dispatch、claim、handoff 和 inbox 重试复用共享投递逻辑，任务会话使用隔离 Git checkout。用 `herdr-team task clean` 回收已结束任务的工作树和 Desktop 资源。
 
 ## 当前可以做什么
 
@@ -32,15 +29,13 @@
 
 ### 开发时注册与热加载
 
-将 `herdr-team-skill` 与本仓库并排放置后，可一次安装共享 CLI、Skill 并注册桌面开发副本：
+安装 Herdr Desktop、Node.js 22+ 和 Bun 1.3.14+ 后，在本仓库根目录一次安装 CLI、Skill 并注册桌面开发布局：
 
 ```sh
 npm run setup
 ```
 
-可用 `HERDR_TEAM_SOURCE` 指定其他共享源码检出。安装不切换布局、不启动 agent。
-随后在 Herdr 的项目终端中运行 `herdr-team up`，CLI 自动校验运行环境，创建或复用主项目与 space 的绑定，
-启动或复用常驻角色；隔离角色保留为 deferred。Skill 无需判断环境或传运行模式参数。
+在 Herdr 里选择 `herdr-desktop-team-dev` 布局。随后在项目终端中运行 `herdr-team team up` 建立 Space 绑定并启动常驻角色。隔离角色在接到任务时启动。
 
 需要 Node.js 22 或更新版本。在仓库目录运行：
 
@@ -77,6 +72,10 @@ npm run dev:register
 ```sh
 npm test
 npm run check
+(cd cli && bun install --frozen-lockfile)
+npm run test:cli
+npm run test:install
+npm run typecheck
 ```
 
 无 npm 依赖。`check` 使用桌面版自带检查器，只验证初始加载和渲染，不会安装、切换当前布局，也不等同于完整视觉验收。
