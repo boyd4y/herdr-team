@@ -66,7 +66,6 @@ export default class TeamConsole extends View {
     this.section = "tasks"; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
     this.inboxFolder = "active"; this.inboxRows = []; this.inboxRequest = 0; this.mail = null;
     this.bodies = new Map();
-    this.taskDocumentTab = "description";
     this.taskFolder = "current"; this.taskAction = null;
     this.view = localStorage.getItem("view") === "board" ? "board" : "list";
     this.demoView = "board";
@@ -179,7 +178,7 @@ export default class TeamConsole extends View {
     this.issueFolder = "current"; this.issueAction = null;
     this.iteration = null; this.iterationMenu = false; this.requirementType = null;
     this.taskFolder = "current"; this.taskAction = null;
-    this.bodies.clear();
+    this.bodies = new Map();
   }
 
   follow(cx, force = false) {
@@ -335,7 +334,7 @@ export default class TeamConsole extends View {
           if (this.selectedRequirement) this.loadRequirement(this.selectedRequirement, cx);
         }
         // Bodies may have changed with the records; refetch the one on screen.
-        this.bodies.clear();
+        this.bodies = new Map();
         if (this.selected) this.loadBody(this.selected, cx);
       } catch (error) { if (!this.preview && this.binding === binding) this.error = errorMessage(error); }
       finally {
@@ -371,16 +370,17 @@ export default class TeamConsole extends View {
 
   // List JSON omits bodies; read one task's Markdown on demand.
   loadBody(id, cx) {
-    const binding = this.binding;
-    if (this.preview || !binding || this.bodies.has(id)) return;
-    this.bodies.set(id, null);
+    const binding = this.binding, cache = this.bodies;
+    if (this.preview || !binding || cache.has(id)) return;
+    cache.set(id, null);
     cx.spawn(async cx => {
       try {
         const result = await team(["task", "show", id, "--root", binding.root, "--json"], { cwd: binding.root, on: binding.machine, timeout: 10000 });
-        if (this.binding !== binding) return;
-        this.bodies.set(id, String(teamJson(result, "task show").body ?? ""));
-      } catch (error) { if (this.binding === binding) this.bodies.set(id, errorMessage(error)); }
-      cx.notify();
+        const { body } = teamJson(result, "task show");
+        if (typeof body !== "string") throw new Error("Task details did not include the document.");
+        cache.set(id, { body });
+      } catch (error) { cache.set(id, { error: errorMessage(error) }); }
+      if (!this.closed && this.binding === binding && this.bodies === cache) cx.notify();
     });
   }
 
@@ -650,7 +650,6 @@ export default class TeamConsole extends View {
     this.stopInboxWatch();
     this.section = "tasks";
     this.selected = id;
-    this.taskDocumentTab = "description";
     this.taskAction = null;
     this.selectedRequirement = null;
     this.iterationMenu = false;
@@ -820,10 +819,8 @@ export default class TeamConsole extends View {
       .child(div().flex_1().min_w(0))
       .child(div().max_w(140).truncate().text_size(11).text_color(t.dim).child(`${node.harness} · ${node.model}`))));
     const detailPage = task => {
-      const body = this.preview ? task.body ?? "" : this.bodies.get(task.id);
-      const document = taskDocument(body ?? "");
-      const tab = this.taskDocumentTab;
-      const content = tab === "description" ? readableDescription(document.description) : document.history;
+      const detail = this.preview ? { body: task.body ?? "" } : this.bodies.get(task.id);
+      const { description, history } = taskDocument(detail?.body ?? "");
       const linkedId = task.meta?.requirement;
       const linked = requirements.find(card => card.id === linkedId);
       const linkedType = linked ? (linked.type === "defect" ? "Defect" : "Requirement") : "Issue";
@@ -880,15 +877,25 @@ export default class TeamConsole extends View {
           .child(steps(task))
           .when(Boolean(task.dependsOn?.length), el => el.child(div().text_size(11).text_color(t.dim)
             .child(`Depends on ${task.dependsOn.map(id => `#${id}`).join(", ")}${routeNote(task) ? " · not finished" : ""}`))))
-        .child(h_flex().self_start().gap(2).p(2).rounded(7).bg(t.raised)
-          .child(segment("task-description", "Description", tab === "description", cx => { this.taskDocumentTab = "description"; cx.notify(); }))
-          .child(segment("task-history", "History", tab === "history", cx => { this.taskDocumentTab = "history"; cx.notify(); })))
         // Selecting text must not drag a popped-out window.
-        .child(div().id("body").w_full().max_w(570).min_w(0).pt(12).pb(8).border_t(1).border_color(t.border)
+        .child(v_flex().id("body").w_full().max_w(570).min_w(0).gap(14).pb(8)
           .text_size(13).line_height(1.6).on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-          .child(body == null ? div().text_color(t.dim).child("Loading…")
-            : content ? TextView.markdown(`body-${task.id}-${tab}`, content).w_full().selectable(true).scrollable(false)
-            : div().text_color(t.dim).child(tab === "history" ? "No history recorded." : "No description recorded.")));
+          .when(detail == null, el => el.child(div().text_color(t.dim).child("Loading task details…")))
+          .when(Boolean(detail?.error), el => el.child(v_flex().gap(6).items_start()
+            .child(div().text_color(t.blocked).child(`Could not load task details. ${detail?.error}`))
+            .child(actionButton("task-body-retry", "Retry", cx => {
+              this.bodies.delete(task.id);
+              this.loadBody(task.id, cx);
+              cx.notify();
+            }))))
+          .when(detail?.body !== undefined && !description && !history,
+            el => el.child(div().text_color(t.dim).child("No description or history recorded.")))
+          .when(Boolean(description), el => el.child(TextView.markdown(`body-${task.id}-description`, readableDescription(description))
+            .w_full().selectable(true).scrollable(false)))
+          .when(Boolean(history), el => el.child(v_flex().id("task-history").gap(6)
+            .when(Boolean(description), section => section.pt(12).border_t(1).border_color(t.border))
+            .child(div().text_size(12).font_semibold().text_color(t.muted).child("History"))
+            .child(TextView.markdown(`body-${task.id}-history`, history).w_full().selectable(true).scrollable(false)))));
     };
 
     // A. List: narrow-sidebar rows, explicit status filters and attention order.
