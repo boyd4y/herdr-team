@@ -78,17 +78,20 @@ stops adding new default shortcuts to it):
 ```
 
 **Board** groups tasks by their recorded status: Todo, In progress, Review,
-Blocked and Done. Cards include the current assignee. Cancelled tasks get a
-separate column when present. Narrow panels scroll horizontally; agent reports
-never move a task between columns.
+Blocked and Done. Cards include the current assignee. In narrow panels,
+populated columns wrap and empty statuses appear as counts.
 Hover over the Team icon to see the binding path, machine and Space.
 
 **List** is the compact sidebar view. Its status filters show counts and wrap
 to fit the panel. **All** is the default, ordered by newest task first. **Open**
-orders blocked, review, in progress, then todo. Done and cancelled tasks have their own
-filters. Rows show the title, task ID, owner and recorded status; P0/P1 stays
+orders blocked, review, in progress, then todo. Done has its own filter.
+Rows show the title, task ID, owner and recorded status; P0/P1 stays
 visible, with full titles and handoff details available on hover or selection.
 List / Board switching remembers the view and preserves the current List filter.
+
+From a local task detail, use **Archive** to move a card to Archive or **Delete**
+to send it to Trash after confirmation. Both folders support **Restore**.
+Historical cancelled tasks appear in Archive.
 For keyboard bindings or app commands, the console accepts `<mod>.list`,
 `<mod>.board` and `<mod>.filter-<status>` (including `open`). The development
 mod name is `herdr-desktop-team-dev`.

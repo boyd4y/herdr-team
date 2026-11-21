@@ -20,7 +20,7 @@
 
 1. 读取项目 AGENTS.md、根 TEAM.md、角色说明和已有反馈报告，理解实际约定及之前建议的处理情况。
 2. 用只读 `herdr-team task list --json --root <team-root>` 获取索引，再读候选卡的 `.task.yaml`、task.md 历史与交付摘要。
-   纳入时间窗内有执行事件或与时间窗重叠的任务，包含进行中、blocked、cancelled 和窗口前开始的任务。
+   纳入时间窗内有执行事件或与时间窗重叠的任务，包含进行中、blocked、已存档、已移到回收站和窗口前开始的任务。
    不能只看当前 doing/done，也不能把列表中的当前角色或已缩短的 handoff 当成原始执行链。
 3. 按需核对引用报告、测试日志、Git commit/变更路径、PR 与 CI 记录。只为候选异常补读相关证据，
    不为复盘重跑测试、启动 agent 或遍历全部 harness 对话。Herdr 实时状态只能证明当前状态，不能还原历史。

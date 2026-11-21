@@ -536,7 +536,7 @@ herdr-team task handoff <id> --delivery <delivery-id> --summary-file summary.md
 下游通过 `herdr-team task show <id>`（可加 `--json`）读取交付内容；`herdr agent read` 仅用于排障，不能替代任务产物。
 
 最后一次 `handoff` 到 `done` 时会尝试回收 worktree；`clean <id>` 只回收指定的终态任务，省略 ID 则回收所有
-`done` / `cancelled` 任务留下的 worktree。两者都在任务 `repo`（缺省 `.`）中
+终态任务留下的 worktree。两者都在任务 `repo`（缺省 `.`）中
 按 `feat/<id>-<slug>` 查找，不受当前角色是否隔离影响，交棒给常驻角色后仍能回收。
 没有匹配分支时返回 `absent`（原常驻角色的 `not-isolated` 结果已移除），不动其他
 checkout；Herdr workspace 已关闭时报告 `closed`，Git 拒绝删除时报告 `dirty`。

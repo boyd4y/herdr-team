@@ -4,7 +4,7 @@ import { sanitize } from "../shared/text.ts";
 import type { FlowState, TaskFlow } from "./console-model.ts";
 import { consoleColors } from "./console-theme.ts";
 const colors: Record<FlowState, string> = { done: consoleColors.green, running: consoleColors.blue,
-  sending: consoleColors.yellow, blocked: consoleColors.red, waiting: consoleColors.border, idle: consoleColors.purple, cancelled: consoleColors.muted };
+  sending: consoleColors.yellow, blocked: consoleColors.red, waiting: consoleColors.border, idle: consoleColors.purple, inactive: consoleColors.muted };
 
 const mix = (from: RGBA, to: RGBA, amount: number) => RGBA.fromValues(
   from.r + (to.r - from.r) * amount, from.g + (to.g - from.g) * amount, from.b + (to.b - from.b) * amount, 1);

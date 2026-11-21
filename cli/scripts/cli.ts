@@ -19,13 +19,13 @@ import { refreshSidebar } from "./lib/ui/sidebar.ts";
 import { claimTask, queueRows, retryDelivery } from "./lib/dispatch/queue.ts";
 import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/dispatch/launch.ts";
 import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
-import { cancelTask, createTask, editTask, findTask, linkRequirementTask, TaskError } from "./lib/tasks/cards.ts";
+import { createTask, editTask, findTask, linkRequirementTask, setTaskDisposition, TaskError } from "./lib/tasks/cards.ts";
 import { stamp } from "./lib/tasks/records.ts";
 import { acceptRequirement, addRequirement, editRequirements, findRequirement, iterationRows, iterationVersion,
   readHiddenIterations, readRequirements, requirementDetail, RequirementError, requirementSummary, requirementType,
   setIterationState, taskIteration, validateIteration, type Requirement } from "./lib/team/requirements.ts";
 import { formatProblems, validateProject } from "./lib/team/validate.ts";
-import { canonicalKind, isRoleLifecycle, isTerminal, NAME_RE, STATUSES, type Project } from "./lib/shared/types.ts";
+import { canonicalKind, isRoleLifecycle, isTerminal, NAME_RE, STATUSES, TASK_DISPOSITIONS, taskDisposition, type Project } from "./lib/shared/types.ts";
 import { confirmedFeatures, FeatureError, featureKey, finishFeature, validateFeature, type FeatureScope } from "./lib/team/features.ts";
 import { callerSpace, managedContext } from "./lib/runtime/context.ts";
 import { readProxyEnv } from "./lib/runtime/agent-env.ts";
@@ -144,7 +144,9 @@ const TASK_USAGE = `Usage: herdr-team task <subcommand> [arguments] [options]
   show ID                     Show one task and its history
   create "TITLE" --role ROLE  Create a task
   update ID [fields]          Change task fields
-  delete ID                   Cancel a task and retain its history
+  archive ID                  Move a task to Archive
+  restore ID                  Return a task from Archive or Trash
+  delete ID                   Move a task to Trash
   dispatch ID                 Enqueue one task for delivery
   claim ID                    Claim a delivery
   handoff ID                  Advance a claimed delivery
@@ -1302,7 +1304,8 @@ function cmdTasks(args: string[], mode?: "list" | "show"): number {
   }
   checkOptions(parsed, parsed.pos.length ? ["root"] : ["root", "role", "status", "iteration"], parsed.pos.length ? [] : ["all"]);
   const statusFilter = parsed.values.get("status");
-  if (statusFilter !== undefined && !(STATUSES as readonly string[]).includes(statusFilter)) throw new UsageError(`Use one of these task statuses: ${STATUSES.join(", ")}.`);
+  const taskFilters: readonly string[] = [...STATUSES, ...TASK_DISPOSITIONS];
+  if (statusFilter !== undefined && !taskFilters.includes(statusFilter)) throw new UsageError(`Use one of these task filters: ${taskFilters.join(", ")}.`);
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
   const id = parsed.pos[0];
@@ -1327,7 +1330,7 @@ function cmdTasks(args: string[], mode?: "list" | "show"): number {
     })
     .filter((t) => parsed.flags.has("all") || statusFilter !== undefined || !isTerminal(t.status))
     .filter((t) => roleFilter === undefined || t.role === roleFilter)
-    .filter((t) => statusFilter === undefined || t.status === statusFilter)
+    .filter((t) => statusFilter === undefined || (taskDisposition(t) ?? t.status) === statusFilter)
     .sort((a, b) =>
       a.priority === b.priority ? a.id.localeCompare(b.id) : a.priority.localeCompare(b.priority),
     );
@@ -1340,24 +1343,27 @@ function cmdTasks(args: string[], mode?: "list" | "show"): number {
     return out(parsed, tasks, "No tasks match these filters.");
   }
   return out(parsed, tasks, project.tasks.length
-    ? "No open tasks. Run herdr-team task list --all to include completed and cancelled tasks."
+    ? "No open tasks. Run herdr-team task list --all to include completed, archived and deleted tasks."
     : 'No tasks yet. Run herdr-team task create "TITLE" --role ROLE to add one.');
 }
 
-async function cmdTaskDelete(args: string[]): Promise<number> {
+async function cmdTaskDisposition(args: string[], action: "archive" | "delete" | "restore"): Promise<number> {
   const parsed = parseArgs(args, ["root"]);
+  const disposition = action === "archive" ? "archived" : action === "delete" ? "deleted" : undefined;
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team task delete ID [--force] [--root DIR | --project ID] [--json]\nCancel the task and retain its history. --force allows cancellation of an in-progress task.\n");
+    process.stdout.write(`Usage: herdr-team task ${action} ID${disposition ? " [--force]" : ""} [--root DIR | --project ID] [--json]\n`
+      + (disposition ? `Move a task to ${action === "archive" ? "Archive" : "Trash"}. --force allows ending an in-progress assignment.\n`
+        : "Restore a task from Archive or Trash. Unfinished tasks return to Todo.\n"));
     return 0;
   }
-  checkOptions(parsed, ["root"], ["force"]);
+  checkOptions(parsed, ["root"], disposition ? ["force"] : []);
   const id = parsed.pos[0];
-  if (!id || parsed.pos.length !== 1) throw new UsageError("Provide one task ID, for example herdr-team task delete 0001.");
+  if (!id || parsed.pos.length !== 1) throw new UsageError(`Provide one task ID to ${action}.`);
   const root = resolveRoot(parsed.values.get("root"));
-  const task = cancelTask(loadValidated(root), id, parsed.flags.has("force"));
-  logDaemon("task.edited", { project: root, task: id, state: "cancelled" });
-  await wakeDaemon(root);
-  return out(parsed, task, `Cancelled task #${id}. Its history is retained.`);
+  const task = setTaskDisposition(loadValidated(root), id, disposition, parsed.flags.has("force"));
+  logDaemon("task.edited", { project: root, task: id, state: disposition ?? task.status });
+  if (task.status !== "done") await wakeDaemon(root);
+  return out(parsed, task, `${action === "archive" ? "Archived" : action === "delete" ? "Moved to Trash:" : "Restored"} task #${id}.`);
 }
 
 function cleanTasks(project: Project, ids?: readonly string[]): CleanupResult[] {
@@ -1590,7 +1596,9 @@ async function main(argv: string[]): Promise<number> {
         show: args => cmdTasks(args, "show"),
         create: args => cmdAdd(args, "task create"),
         update: args => cmdEdit(args, "task update"),
-        delete: cmdTaskDelete,
+        archive: args => cmdTaskDisposition(args, "archive"),
+        restore: args => cmdTaskDisposition(args, "restore"),
+        delete: args => cmdTaskDisposition(args, "delete"),
         dispatch: args => cmdDispatch(args, "task dispatch"),
         claim: args => cmdClaim(args, "task claim"),
         handoff: args => cmdHandoff(args, "task handoff"),

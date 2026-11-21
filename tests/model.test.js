@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boardColumns, consoleBinding, flowNodes, groupTasks, iterationOptions, listFilters, listTasks,
-  requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/team-console/model.js";
+import { boardColumns, consoleBinding, flowNodes, groupTasks, iterationOptions, listFilters, listTasks, readableDescription,
+  requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/team-console/model.js";
 
 test("task assignee uses native agent and launch model only for the recorded live delivery", () => {
   const binding = { root: "/repo", space: "main", machine: null };
@@ -85,6 +85,19 @@ test("task detail separates description and recorded history and hides internal 
   });
   assert.deepEqual(taskDocument("## 流转记录\n- 完成"), { description: "", history: "- 完成" });
   assert.deepEqual(taskDocument("Only the assignment."), { description: "Only the assignment.", history: "" });
+});
+
+test("task detail paragraphs improve older prose without cutting Markdown or text", () => {
+  const first = "在指定目录启动任务并保留当前会话上下文。";
+  const second = "等待服务完成准备，然后在当前会话提交一条消息。";
+  const prose = first.repeat(8) + second.repeat(8);
+  const display = readableDescription(prose);
+  assert.ok(display.includes("\n\n"));
+  assert.equal(display.replaceAll("\n\n", ""), prose);
+  const structured = `## 交付\n\n${prose}\n\n- 第一项\n- 第二项\n\n\`\`\`sh\nherdr-team status\n\`\`\``;
+  assert.equal(readableDescription(structured), structured);
+  const inline = prose + " [查看说明](https://example.test).";
+  assert.equal(readableDescription(inline), inline);
 });
 
 test("space lookup never selects a project by a stale folder, cwd or display name", () => {
@@ -227,11 +240,11 @@ test("board places each task once by recorded status, retaining owner and handof
   const tasks = [
     { id: "2", status: "doing", role: "dev", handoff: ["test", "lead"] },
     { id: "10", status: "doing", role: "other", handoff: ["dev"] },
-    ...["todo", "review", "blocked", "done", "cancelled", "future"].map((status, i) => ({ id: String(i + 11), status, role: "lead" })),
+    ...["todo", "review", "blocked", "done", "future"].map((status, i) => ({ id: String(i + 11), status, role: "lead" })),
   ];
   const before = structuredClone(tasks);
   const columns = boardColumns(tasks);
-  assert.deepEqual(columns.map(column => column.status), ["todo", "doing", "review", "blocked", "done", "cancelled", "future"]);
+  assert.deepEqual(columns.map(column => column.status), ["todo", "doing", "review", "blocked", "done", "future"]);
   assert.deepEqual(columns[1].tasks.map(task => [task.id, task.role]), [["10", "other"], ["2", "dev"]]);
   assert.equal(columns.flatMap(column => column.tasks).length, tasks.length);
   assert.equal(new Set(columns.flatMap(column => column.tasks.map(task => task.id))).size, tasks.length);
@@ -251,16 +264,29 @@ test("sidebar prioritizes attention and hides finished tasks only in Open", () =
     { id: "13", status: "future" },
   ];
   const before = structuredClone(tasks);
-  assert.deepEqual(listTasks(tasks).map(task => task.id), ["13", "12", "11", "10", "9", "4", "3", "1"]);
+  assert.deepEqual(listTasks(tasks).map(task => task.id), ["13", "11", "10", "9", "4", "3", "1"]);
   assert.deepEqual(listTasks(tasks, "open").map(task => task.id), ["9", "1", "3", "4", "10", "13"]);
   const filters = listFilters(tasks);
   assert.deepEqual(filters.map(filter => [filter.status, filter.count]), [
-    ["all", 8], ["open", 6], ["blocked", 2], ["review", 1], ["doing", 1], ["todo", 1], ["future", 1], ["done", 1], ["cancelled", 1],
+    ["all", 7], ["open", 6], ["blocked", 2], ["review", 1], ["doing", 1], ["todo", 1], ["future", 1], ["done", 1],
   ]);
   for (const filter of filters) assert.equal(listTasks(tasks, filter.status).length, filter.count);
   assert.deepEqual(listTasks(tasks, "done").map(task => task.id), ["11"]);
-  assert.deepEqual(listTasks(tasks, "cancelled").map(task => task.id), ["12"]);
   assert.deepEqual(tasks, before);
+});
+
+test("Archive includes historical cancelled cards and Trash keeps deleted cards off the current board", () => {
+  const tasks = [
+    { id: "1", status: "cancelled" },
+    { id: "2", status: "archived" },
+    { id: "3", status: "deleted" },
+    { id: "4", status: "done", meta: { disposition: "archived" } },
+    { id: "5", status: "done", meta: { disposition: "deleted" } },
+    { id: "6", status: "todo", dependsOn: ["1", "2", "3", "4", "5"] },
+  ];
+  assert.deepEqual(tasks.map(taskFolder), ["archive", "archive", "trash", "archive", "trash", "current"]);
+  assert.deepEqual(boardColumns(tasks).flatMap(column => column.tasks.map(task => task.id)), ["6"]);
+  assert.deepEqual(waitingOn(tasks[5], tasks), ["1", "2", "3"]);
 });
 
 test("empty sidebar filters stay available with zero counts", () => {

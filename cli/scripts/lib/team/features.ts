@@ -30,7 +30,7 @@ export function deliveredTask(
 ): task is TaskCard {
   if (!task || !feature || !iteration || !delivery || !isTerminal(task.status) || task.meta.pending_history) return false;
   const confirmed = confirmations.get(featureKey({ feature, iteration }));
-  return Boolean(confirmed?.tasks.includes(task.id) && (task.status === "cancelled" || completedDeliveries(task).includes(delivery)));
+  return Boolean(confirmed?.tasks.includes(task.id) && (task.status !== "done" || completedDeliveries(task).includes(delivery)));
 }
 
 const filename = (project: Project) => join(project.herdrDir, "feature-deliveries.json");

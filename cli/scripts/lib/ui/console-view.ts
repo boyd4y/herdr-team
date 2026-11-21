@@ -4,7 +4,7 @@ import {
   createCliRenderer, fg, t, type CliRenderer, type KeyEvent,
 } from "@opentui/core";
 import type { Project } from "../shared/types.ts";
-import { worktreeBranch } from "../shared/types.ts";
+import { taskDisposition, worktreeBranch } from "../shared/types.ts";
 import type { Herdr } from "../runtime/herdr.ts";
 import { deliveryFor } from "../dispatch/delivery.ts";
 import { reviewFor, taskScoped } from "../tasks/verification.ts";
@@ -107,7 +107,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     try { commit = reviewFor(task)?.commit; } catch { /* Visible in validation issues. */ }
     selectedTitle.content = t`${fg(c.blue)(`#${task.id}`)} ${sanitize(task.title)}`;
     detailText.content = sanitize([
-      `${task.priority} · ${task.status} · ${task.role}`,
+      `${task.priority} · ${taskDisposition(task) ?? task.status} · ${task.role}`,
       `Delivery: ${integration?.state ?? deliveryStatus}${delivery ? ` · ${delivery.id.slice(0, 8)}` : ""}`,
       ...(age !== undefined ? [`Delivery age: ${Math.floor(age / 60)}m ${age % 60}s`] : []),
       ...(delivery?.reason ? [delivery.reason] : []),
@@ -173,7 +173,7 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     updating = true;
     try {
       const taskOptions = model.tasks.map((task) => ({ name: sanitize(`#${task.id} ${task.title}`),
-        description: sanitize(`${task.priority} · ${task.status} · ${task.role}`), value: task.id }));
+        description: sanitize(`${task.priority} · ${taskDisposition(task) ?? task.status} · ${task.role}`), value: task.id }));
       const signature = JSON.stringify(taskOptions);
       if (signature !== taskOptionsSignature) { tasks.options = taskOptions; taskOptionsSignature = signature; }
       if (tasks.getSelectedIndex() !== model.selectedIndex) tasks.setSelectedIndex(model.selectedIndex);

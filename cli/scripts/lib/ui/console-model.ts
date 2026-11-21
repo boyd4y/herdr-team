@@ -5,7 +5,7 @@ import { roleAgents, projectAgents } from "../dispatch/team-scope.ts";
 import { deliveryState } from "../dispatch/delivery.ts";
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
 import { findInconsistencies, roleStatusesFrom, integrationStatus, formatReport, formatTaskDetail, type Inconsistency, type RoleStatus } from "./status.ts";
-import { isTerminal, type Project, type TaskCard } from "../shared/types.ts";
+import { isTerminal, taskDisposition, type Project, type TaskCard } from "../shared/types.ts";
 import { validateProject } from "../team/validate.ts";
 
 export function fuzzyScore(text: string, query: string): number | null {
@@ -131,7 +131,7 @@ export function modelFromAgents(project: Project, agents: AgentInfo[], state: Co
   };
 }
 
-export type FlowState = "done" | "running" | "waiting" | "sending" | "blocked" | "idle" | "cancelled";
+export type FlowState = "done" | "running" | "waiting" | "sending" | "blocked" | "idle" | "inactive";
 export interface FlowNode { kind: "role" | "integration"; role: string; label: string; state: FlowState; model: string }
 export interface TaskFlow { nodes: FlowNode[]; current: number }
 
@@ -152,17 +152,20 @@ export function taskFlow(task: TaskCard, project: Project, model: ConsoleModel):
   const blocked = task.status === "blocked" || live?.agent_status === "blocked" ||
     ["uncertain", "invalid"].includes(delivery ?? "") || ["blocked", "invalid"].includes(integration?.state ?? "");
   let active: FlowState = "idle";
-  if (isTerminal(task.status)) active = task.status === "done" ? "done" : "cancelled";
+  const disposition = taskDisposition(task);
+  if (disposition) active = "inactive";
+  else if (task.status === "done") active = "done";
   else if (blocked) active = "blocked";
   else if (integration) active = integration.state === "running" || integration.state === "done" ? integration.state : "waiting";
   else if (delivery === "sending" || delivery === "submitted") active = "sending";
   else if (delivery === "queued") active = "waiting";
   else if (live?.agent_status === "working") active = "running";
-  const labels: Record<FlowState, string> = { done: "Done", running: "Running", waiting: "Waiting", sending: "Delivering", blocked: "Needs input", idle: delivery === "claimed" ? "Claimed" : "Ready", cancelled: "Cancelled" };
+  const labels: Record<FlowState, string> = { done: "Done", running: "Running", waiting: "Waiting", sending: "Delivering",
+    blocked: "Needs input", idle: delivery === "claimed" ? "Claimed" : "Ready", inactive: disposition === "deleted" ? "In Trash" : "Archived" };
   return { current, nodes: participants.map((name, i) => {
     const kind = integration && i === participants.length - 1 ? "integration" : "role";
     const role = kind === "role" && project.roles.find(role => role.name === name);
-    const state = i < current || task.status === "done" ? "done" : i === current ? active : "waiting";
+    const state = i < current ? "done" : i === current ? active : "waiting";
     return { kind, role: name, state, label: i > current ? "Next" : labels[state],
       model: kind === "integration" ? "serial integration" : role ? `${role.kind} · ${role.model ?? "default"}` : "unconfigured role" };
   }) };

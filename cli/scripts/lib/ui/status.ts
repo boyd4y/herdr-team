@@ -5,6 +5,7 @@ import { padTo, truncate } from "../shared/text.ts";
 import { deliveryState, waitingDelivery } from "../dispatch/delivery.ts";
 import {
   isTerminal,
+  taskDisposition,
   isolatedAgentName,
   worktreeBranch,
   type Project,
@@ -177,7 +178,7 @@ export function formatTasks(tasks: (TaskCard & { iteration?: string })[], roles:
     const role = roles.find((r) => r.name === t.role);
     const branch = taskScoped(t, role) ? worktreeBranch(t) : "—";
     lines.push(
-      `  ${pad(t.id, 6)}${pad(t.title, 30)}${pad(t.priority, 10)}${pad(t.status, 10)}${pad(t.role, 16)}${hasIterations ? pad(t.iteration || "—", 14) : ""}${branch}`,
+      `  ${pad(t.id, 6)}${pad(t.title, 30)}${pad(t.priority, 10)}${pad(taskDisposition(t) ?? t.status, 10)}${pad(t.role, 16)}${hasIterations ? pad(t.iteration || "—", 14) : ""}${branch}`,
     );
   }
   return lines.join("\n");
@@ -192,7 +193,7 @@ export function formatTaskDetail(task: TaskCard & { iteration?: string }): strin
     `priority: ${task.priority}`,
     ...(typeof task.meta.feature === "string" ? [`feature: ${task.meta.feature}`] : []),
     ...(task.iteration ? [`iteration: ${task.iteration}${task.meta.iteration ? "" : " (from issue)"}`] : []),
-    `status: ${task.status}`,
+    `status: ${taskDisposition(task) ?? task.status}`,
     `role: ${task.role}`,
     `handoff: [${task.handoff.join(", ")}]`,
     `dependsOn: [${task.dependsOn.join(", ")}]`,
@@ -215,7 +216,7 @@ export function formatReport(report: StatusReport): string {
   } else {
     lines.push(`  ${pad("id", 6)}${pad("title", 28)}${pad("priority", 10)}${pad("status", 10)}${pad("role", 16)}delivery`);
     for (const t of report.tasks) {
-      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(t.status, 10)}${pad(t.role, 16)}${integrationStatus(t) ? `merge-${integrationStatus(t)!.state}` : deliveryState(t) ?? "—"}`);
+      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(taskDisposition(t) ?? t.status, 10)}${pad(t.role, 16)}${integrationStatus(t) ? `merge-${integrationStatus(t)!.state}` : deliveryState(t) ?? "—"}`);
     }
   }
 

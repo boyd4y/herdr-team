@@ -9,8 +9,10 @@ import {
   TASK_BODY,
   TASK_META,
   isTerminal,
+  taskDisposition,
   type Project,
   type TaskCard,
+  type TaskDisposition,
 } from "../shared/types.ts";
 import { emitYaml } from "../shared/yaml.ts";
 import { formatProblems, validateTaskDependencies } from "../team/validate.ts";
@@ -21,7 +23,7 @@ import { findRequirement, readRequirements, RequirementError, validateIteration 
 import { validateFeature } from "../team/features.ts";
 
 /** 元数据里键的顺序，写出去时保持稳定，diff 才好看。 */
-export const TASK_FIELD_ORDER = ["title", "priority", "status", "role", "handoff", "depends_on", "requirement", "feature", "iteration"];
+export const TASK_FIELD_ORDER = ["title", "priority", "status", "role", "handoff", "depends_on", "requirement", "feature", "iteration", "disposition"];
 
 const ID_CEILING = 9999;
 
@@ -231,16 +233,32 @@ export function editTask(
   return withTeamLock(project, "queue", () => editTaskLocked(loadProject(project.root), id, patch, force));
 }
 
-export function cancelTask(project: Project, id: string, force: boolean): TaskCard {
+const clearedAssignment = { delivery: null, review: null, acceptance: null, integration: null, test_result: null, pr_decision: null };
+
+export function setTaskDisposition(project: Project, id: string, disposition?: TaskDisposition, force = false): TaskCard {
   return withTeamLock(project, "queue", () => {
     const fresh = loadProject(project.root);
     const card = findTask(fresh, id);
-    if (card.status === "cancelled") return card;
-    const dependents = fresh.tasks.filter(task => !isTerminal(task.status) && task.dependsOn.includes(id));
-    if (dependents.length) {
-      throw new TaskError(`Tasks ${dependents.map(task => "#" + task.id).join(", ")} depend on #${id}. Update their dependencies first.`);
+    if (taskDisposition(card) === disposition) return card;
+    if (card.status === "done") {
+      // A hidden completed task still satisfies dependencies and issue acceptance.
+      writeTaskMeta(fresh, card, { disposition });
+    } else if (!disposition) {
+      assertRole(fresh, card.role, "role");
+      for (const role of card.handoff) assertRole(fresh, role, "handoff entry");
+      if (typeof card.meta.requirement === "string" && findRequirement(readRequirements(fresh), card.meta.requirement).acceptedAt) {
+        throw new TaskError(`Task #${id} belongs to an accepted issue. Create a follow-up task instead.`);
+      }
+      writeTaskMeta(fresh, card, { status: "todo", ...clearedAssignment });
+    } else if (isTerminal(card.status)) {
+      writeTaskMeta(fresh, card, { status: disposition });
+    } else {
+      const dependents = fresh.tasks.filter(task => !isTerminal(task.status) && task.dependsOn.includes(id));
+      if (dependents.length) {
+        throw new TaskError(`Tasks ${dependents.map(task => "#" + task.id).join(", ")} depend on #${id}. Update their dependencies first.`);
+      }
+      editTaskLocked(fresh, id, { status: disposition }, force);
     }
-    editTaskLocked(fresh, id, { status: "cancelled" }, force);
     return findTask(loadProject(project.root), id);
   });
 }
@@ -265,7 +283,7 @@ function editTaskLocked(project: Project, id: string, patch: EditOptions, force:
 
   if (integrationFor(card)?.state === "running") throw new TaskError("Integration is running; wait for it to finish before editing this task");
   if (isTerminal(card.status)) {
-    throw new TaskError(`${id} is terminal (${card.status}); create a new task instead of editing it`);
+    throw new TaskError(`${id} is terminal (${taskDisposition(card) ?? card.status}); create a new task instead of editing it`);
   }
   if (card.status !== "todo" && !force) {
     throw new TaskError(
@@ -294,13 +312,9 @@ function editTaskLocked(project: Project, id: string, patch: EditOptions, force:
   if (patch.dependsOn !== undefined) meta["depends_on"] = patch.dependsOn;
   if (patch.priority !== undefined) meta["priority"] = patch.priority;
   if (patch.status !== undefined) meta["status"] = patch.status;
-  if (patch.role !== undefined && patch.role !== card.role || patch.status === "todo" || patch.status === "cancelled") {
-    meta["delivery"] = null;
-    meta["review"] = null;
-    meta["acceptance"] = null;
-    meta["integration"] = null;
-    meta["test_result"] = null;
-    meta["pr_decision"] = null;
+  if (patch.role !== undefined && patch.role !== card.role ||
+      patch.status !== undefined && (patch.status === "todo" || patch.status !== "done" && isTerminal(patch.status))) {
+    Object.assign(meta, clearedAssignment);
   }
   if (Object.keys(meta).length > 0) writeTaskMeta(project, card, meta);
 

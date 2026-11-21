@@ -29,7 +29,7 @@ test("CLI confirms a feature iteration once and only after all work is recorded"
     json("iteration", "archive", "v1.2");
     expect(confirmedFeatures(loadProject(f.root)).size).toBe(0);
     json("edit", a.id, "--status", "done");
-    json("edit", b.id, "--status", "cancelled");
+    json("task", "archive", b.id);
     const confirmation = json(...finish);
     expect(confirmation).toMatchObject({ feature: "search", iteration: "v1.2", tasks: [a.id, b.id] });
     expect(json(...finish)).toEqual(confirmation);

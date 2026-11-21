@@ -115,8 +115,11 @@ function validateTask(t: TaskCard, roles: Set<string>, ids: Set<string>, out: Pr
   if (t.priority !== "" && !(PRIORITIES as readonly string[]).includes(t.priority)) {
     at("2", `Unsupported priority "${t.priority}"`);
   }
-  if (t.status !== "" && !(STATUSES as readonly string[]).includes(t.status)) {
+  if (t.status !== "" && !(STATUSES as readonly string[]).includes(t.status) && !isTerminal(t.status)) {
     at("2", `Unsupported status "${t.status}"`);
+  }
+  if (t.meta.disposition !== undefined && (t.status !== "done" || t.meta.disposition !== "archived" && t.meta.disposition !== "deleted")) {
+    at("1", "disposition must be archived or deleted on a completed task");
   }
 
   // 终态任务不再被派活，它的 role / handoff 只是历史记录。

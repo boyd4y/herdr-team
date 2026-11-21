@@ -12,6 +12,7 @@ import { availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents,
 import { findTask } from "../tasks/cards.ts";
 import { taskRuntime, type TaskRuntime } from "./runtime.ts";
 import {
+  isTerminal,
   startsResident,
   worktreeBranch,
   type Project,
@@ -205,7 +206,7 @@ export function dispatch(project: Project, herdr: Herdr | TaskRuntime, id: strin
   const runtime = taskRuntime(herdr);
   for (const task of project.tasks) {
     const delivery = deliveryFor(task);
-    if (delivery && task.status !== "done" && task.status !== "cancelled") runtime.assertDelivery(delivery);
+    if (delivery && !isTerminal(task.status)) runtime.assertDelivery(delivery);
   }
   enqueueTask(project, id, new Date(), runtime.scope);
   pumpQueue(project, herdr);

@@ -116,7 +116,7 @@ test("task iterations can override an issue and be archived independently", () =
     json("edit", override.id, "--iteration", "");
     expect(json("tasks", override.id)).toMatchObject({ iteration: "v1.4", status: "todo" });
     expect(json("tasks", override.id).meta).not.toHaveProperty("iteration");
-    json("edit", independent.id, "--status", "cancelled");
+    json("task", "archive", independent.id);
     const terminal = json("tasks", independent.id);
     json("edit", independent.id, "--iteration", "");
     const rescheduled = json("tasks", independent.id);

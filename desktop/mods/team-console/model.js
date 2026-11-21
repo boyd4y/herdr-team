@@ -141,15 +141,22 @@ function reportedStatus(instances) {
 /** Show recorded current/remaining assignees; never invent previous approvals. */
 export function flowNodes(task, roles) {
   if (!task) return [];
-  return [task.role, ...(task.handoff ?? [])].map((name, index) => {
+  const folder = taskFolder(task);
+  return [task.role, ...(folder === "current" ? task.handoff ?? [] : [])].map((name, index) => {
     const role = roles.find(role => role.name === name);
     const report = index === 0 ? terminalStatus(taskTerminal(task, role, sentDelivery(task))) : undefined;
-    const status = index ? "next" : task.status === "done" ? "done" : task.status === "cancelled" ? "cancelled" : task.status === "todo" ? "ready" : !rank[report] ? "assigned" : report === "done" ? "awaiting handoff" : report;
+    const status = index ? "next" : folder !== "current" ? folder : task.status === "done" ? "done" : task.status === "todo" ? "ready" : !rank[report] ? "assigned" : report === "done" ? "awaiting handoff" : report;
     return { name, status, harness: role?.harness ?? "—", model: role?.model ?? "default" };
   });
 }
 
-const finished = task => task.status === "done" || task.status === "cancelled";
+export function taskFolder(task) {
+  if (task.status === "deleted" || task.meta?.disposition === "deleted") return "trash";
+  if (task.status === "archived" || task.status === "cancelled" || task.meta?.disposition === "archived") return "archive";
+  return "current";
+}
+
+const finished = task => task.status === "done" || taskFolder(task) !== "current";
 
 /** Review remains the recorded Task status until the integration succeeds. */
 export function taskReviewPhase(task) {
@@ -162,19 +169,20 @@ export function taskReviewPhase(task) {
   }
 }
 
-const attentionOrder = { blocked: 0, review: 1, doing: 2, todo: 3, done: 5, cancelled: 6 };
+const attentionOrder = { blocked: 0, review: 1, doing: 2, todo: 3, done: 5 };
 
 /** Sidebar list: recorded blockers/reviews first, newest first within each status. */
 export function listTasks(tasks, filter = "all") {
-  if (filter === "all") return sortTasks(tasks);
-  return sortTasks(tasks)
+  const current = sortTasks(tasks.filter(task => taskFolder(task) === "current"));
+  if (filter === "all") return current;
+  return current
     .filter(task => filter === "open" ? !finished(task) : task.status === filter)
     .sort((a, b) => (attentionOrder[a.status] ?? 4) - (attentionOrder[b.status] ?? 4));
 }
 
 export function listFilters(tasks) {
   return [
-    { status: "all", title: "All", count: tasks.length },
+    { status: "all", title: "All", count: tasks.filter(task => taskFolder(task) === "current").length },
     { status: "open", title: "Open", count: tasks.filter(task => !finished(task)).length },
     ...boardColumns(tasks)
       .sort((a, b) => (attentionOrder[a.status] ?? 4) - (attentionOrder[b.status] ?? 4))
@@ -191,9 +199,29 @@ export function taskDocument(body) {
   };
 }
 
+/** Give legacy one-paragraph descriptions breathing room without changing Markdown blocks. */
+export function readableDescription(markdown) {
+  if (markdown.length < 240 || /[\r\n`]|^[#>]|^(?:[-+*]|\d+[.)])\s|\[[^\]]*\]\s*[([]|[*_~]{2}|<\/?[A-Za-z][^>]*>/u.test(markdown)) return markdown;
+  const sentences = markdown.match(/.+?(?:[。！？]+|[.!?]+(?=\s+[A-Z])|$)/gu) ?? [];
+  const paragraphs = [];
+  let paragraph = "";
+  for (const sentence of sentences) {
+    paragraph += sentence;
+    if (paragraph.length >= 140) {
+      paragraphs.push(paragraph.trim());
+      paragraph = "";
+    }
+  }
+  if (paragraph.trim()) {
+    if (paragraph.trim().length < 50 && paragraphs.length) paragraphs[paragraphs.length - 1] += paragraph.trimEnd();
+    else paragraphs.push(paragraph.trim());
+  }
+  return paragraphs.length > 1 ? paragraphs.join("\n\n") : markdown;
+}
+
 /** List view sections: in flight, not started, finished. Each keeps newest first. */
 export function groupTasks(tasks) {
-  const sorted = sortTasks(tasks);
+  const sorted = sortTasks(tasks.filter(task => taskFolder(task) === "current"));
   return {
     active: sorted.filter(task => !finished(task) && task.status !== "todo"),
     todo: sorted.filter(task => task.status === "todo"),
@@ -203,12 +231,12 @@ export function groupTasks(tasks) {
 
 /** Dependencies not yet finished, as recorded; unknown IDs count as unfinished. */
 export function waitingOn(task, tasks) {
-  return (task.dependsOn ?? []).filter(id => !finished(tasks.find(other => other.id === id) ?? {}));
+  return (task.dependsOn ?? []).filter(id => tasks.find(other => other.id === id)?.status !== "done");
 }
 
 /** Recorded task status alone chooses the column; handoffs and agent reports do not. */
 export function boardColumns(tasks) {
-  const sorted = sortTasks(tasks);
+  const sorted = sortTasks(tasks.filter(task => taskFolder(task) === "current"));
   const columns = [
     { status: "todo", title: "Todo" },
     { status: "doing", title: "In progress" },
@@ -216,8 +244,7 @@ export function boardColumns(tasks) {
     { status: "blocked", title: "Blocked" },
     { status: "done", title: "Done" },
   ];
-  // Keep cancellations distinct from successful completion, and retain future statuses.
-  if (sorted.some(task => task.status === "cancelled")) columns.push({ status: "cancelled", title: "Cancelled" });
+  // Retain future workflow statuses in the current view.
   const known = new Set(columns.map(column => column.status));
   for (const task of sorted) {
     if (!known.has(task.status)) {

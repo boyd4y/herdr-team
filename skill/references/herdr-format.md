@@ -150,7 +150,7 @@ AGENTS.md 维护工程约束；交棒、协作、PR、队列与收尾属于 Skil
 
 `feature finish <name> --iteration <version>` 确认整个批次交付。daemon 只关闭属于该批次、没有在途工作的临时会话，并保留 worktree 和分支。
 旧任务在 Herdr TUI 最后一次 `handoff` 到 `done` 时沿用原来的 worktree 回收流程。`clean <id>` 回收指定终态任务，不带 ID 时扫描所有
-`done` / `cancelled` 任务。两者都在任务的 `repo`（缺省 `.`）中按
+终态任务。两者都在任务的 `repo`（缺省 `.`）中按
 `feat/<id>-<slug>` 查找 worktree，与卡片当前角色的 `worktree` 配置无关，
 因此交棒给常驻角色后仍能回收。没有匹配分支时返回 `absent`，不动其他 checkout。
 CLI 会报告阻止清理的原因，包括工作树改动、归属不明和任务仍在使用。回收保留分支，供 lead 后续合并。
@@ -250,13 +250,14 @@ qoder 由适配层转换为 Herdr 原生 qodercli；配置与 CLI 始终使用 q
 | `review` | 已交付，等待下游角色接手 |
 | `done` | 终态 |
 | `blocked` | 卡住，等外部输入 |
-| `cancelled` | 终态，放弃 |
+| `archived` | 未完成任务已存档 |
+| `deleted` | 未完成任务已移至回收站 |
 
 注意：`status` 是**任务的**生命周期，与 Herdr 的 agent 状态（`working` / `blocked` /
 `done` / `idle` / `unknown`）是两回事，不要混用。
 
-**终态是 `done` 和 `cancelled`。** 终态的任务不再被派活，且 `depends_on` 引用终态任务
-仅在 done 时视为**已满足**。
+终态任务不再被派活。依赖仅在被引用任务为 `done` 时满足，包括已存档或放入回收站的已完成任务。
+旧记录中的 `cancelled` 仍可读取，并归入存档。
 
 ## 校验规则
 
@@ -275,16 +276,10 @@ qoder 由适配层转换为 Herdr 原生 qodercli；配置与 CLI 始终使用 q
 | 8 | `cwd` 不逃逸项目根 |
 | 9 | 根 `TEAM.md` 是存在的文件 |
 
-## 取消与删除
+## 存档、删除与恢复
 
-删除分两档。**默认用取消，不删目录。**
-
-### 取消（`cancel`）
-
-把 `status` 改成 `cancelled`，**目录留在 `tasks/`**，追加一条流转记录。
-
-- 是终态，不再被派活。
-- 依赖它的任务不视为满足；由 lead 核对后明确调整依赖。
-- 记录和散文都保留 —— 任务本身就是"谁做过、为什么放弃"的历史。
+- `herdr-team task archive ID` 将任务移入 Archive，`herdr-team task delete ID` 将任务移入 Trash。任务目录、编号、正文和交接历史仍保存在 `tasks/`。
+- 未完成任务的状态改为 `archived` 或 `deleted`，存在未完成的下游依赖时 CLI 会拒绝操作。已完成任务保留 `done`，通过 `disposition` 记录位置。
+- `herdr-team task restore ID` 将已完成任务移回 Done，将未完成任务移回 Todo 等待重新派活。
 
 任务目录和 retired ID 由 CLI 管理，不手动删除。清理 worktree 使用 clean；不等于删除任务历史。

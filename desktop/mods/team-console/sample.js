@@ -9,7 +9,7 @@ export function sample() {
   const tasks = [
     { id: "0050", title: "Reproduce missing delivery notices after reconnect", status: "todo", priority: "P1", role: "test", handoff: ["dev"], dependsOn: [], meta: { iteration: "v1.1" } },
     { id: "0049", title: "Restore the sidebar selection after reconnect", status: "done", priority: "P2", role: "dev", handoff: [], dependsOn: [] },
-    { id: "0048", title: "Try the layout at minimum sidebar width", status: "cancelled", priority: "P3", role: "test", handoff: [], dependsOn: [], meta: { iteration: "v1.3" } },
+    { id: "0048", title: "Try the layout at minimum sidebar width", status: "archived", priority: "P3", role: "test", handoff: [], dependsOn: [], meta: { iteration: "v1.3" } },
     { id: "0047", title: "Keep task titles readable in compact mode", status: "review", priority: "P2", role: "dev", handoff: ["test"], dependsOn: [] },
     { id: "0046", title: "Regression pass on the board view", status: "todo", priority: "P2", role: "test", handoff: [], dependsOn: ["0045"] },
     { id: "0045", title: "Add a board view to the team console", status: "doing", priority: "P1", role: "dev", handoff: ["test", "doc"], dependsOn: [], meta: { feature: "team-board" } },
@@ -27,7 +27,7 @@ export function sample() {
       "## Scope",
       "- Todo, In progress, Review, Blocked and Done columns",
       "- One card per task, including its current assignee",
-      "- Narrow panels scroll horizontally; Cancelled stays separate when present",
+      "- Columns wrap in narrow panels and empty statuses appear as counts",
       "",
       "## Acceptance",
       "1. Recorded status changes move cards without a manual refresh",

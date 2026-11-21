@@ -1,13 +1,13 @@
 import { View, div, image, svg } from "gpui-kit";
 import { Button, Popover, TextView, h_flex, v_flex } from "gpui-base";
 import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder } from "herdr";
-import { boardColumns, consoleBinding, flowNodes, iterationOptions, iterationVersion, listFilters, listTasks, requirementsForIteration,
-  roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
+import { boardColumns, consoleBinding, flowNodes, iterationOptions, iterationVersion, listFilters, listTasks, readableDescription, requirementsForIteration,
+  roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
 import { sample } from "./sample.js";
 
 const ICON = name => `mods/workspace-chrome/${name}.svg`;
 const LABEL = { blocked: "Needs you", error: "Error", working: "Working", done: "Done", idle: "Idle", unknown: "Unknown",
-  next: "Next", ready: "Ready", assigned: "Assigned", "awaiting handoff": "Awaiting handoff", cancelled: "Cancelled",
+  next: "Next", ready: "Ready", assigned: "Assigned", "awaiting handoff": "Awaiting handoff", archive: "Archived", trash: "In Trash",
   doing: "In progress", todo: "Todo", review: "Review" };
 const label = status => LABEL[status] ?? status;
 const REQUIREMENT_STATUS = { backlog: "Backlog", planned: "Planned", "in-progress": "In progress", ready: "Ready for acceptance", accepted: "Accepted" };
@@ -65,7 +65,8 @@ export default class TeamConsole extends View {
     this.section = "tasks"; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
     this.inboxFolder = "active"; this.inboxRows = []; this.inboxRequest = 0; this.mail = null;
     this.bodies = new Map();
-    this.taskDocumentTab = "description"; this.taskExpanded = false;
+    this.taskDocumentTab = "description";
+    this.taskFolder = "current"; this.taskAction = null;
     this.view = localStorage.getItem("view") === "board" ? "board" : "list";
     this.demoView = "board";
     this.setup = null;
@@ -175,6 +176,7 @@ export default class TeamConsole extends View {
     this.binding = null; this.tasks = []; this.roles = []; this.selected = null; this.error = null; this.watchError = null; this.viewBinding = null;
     this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
     this.iteration = null; this.iterationMenu = false; this.requirementType = null;
+    this.taskFolder = "current"; this.taskAction = null;
     this.bodies.clear();
   }
 
@@ -635,6 +637,7 @@ export default class TeamConsole extends View {
     if (showcase) this.demoView = view;
     else this.view = view;
     this.selected = null;
+    this.taskFolder = "current"; this.taskAction = null;
     this.selectedRequirement = null;
     this.iterationMenu = false;
     if (!showcase) localStorage.setItem("view", view);
@@ -645,11 +648,37 @@ export default class TeamConsole extends View {
     this.stopInboxWatch();
     this.section = "tasks";
     this.selected = id;
-    this.taskDocumentTab = "description"; this.taskExpanded = false;
+    this.taskDocumentTab = "description";
+    this.taskAction = null;
     this.selectedRequirement = null;
     this.iterationMenu = false;
     if (id) this.loadBody(id, cx);
     cx.notify();
+  }
+
+  changeTask(task, action, cx) {
+    const binding = this.binding;
+    if (this.preview || !binding || binding.machine || this.taskAction?.busy) return;
+    const inProgress = taskFolder(task) === "current" && task.status !== "todo" && task.status !== "done";
+    const request = this.taskAction = { id: task.id, action, busy: true };
+    cx.notify();
+    cx.spawn(async cx => {
+      try {
+        const args = ["task", action, task.id, "--root", binding.root, "--json"];
+        if (inProgress && action !== "restore") args.push("--force");
+        const result = await team(args, { cwd: binding.root, timeout: 50_000 });
+        const updated = teamJson(result, `task ${action}`);
+        if (this.closed || this.binding !== binding) return;
+        this.tasks = this.tasks.map(card => card.id === task.id ? { ...card, status: updated.status, meta: updated.meta } : card);
+        if (this.taskAction === request) {
+          this.taskFolder = taskFolder(updated);
+          this.taskAction = null;
+        }
+        this.load(cx);
+      } catch (error) {
+        if (this.taskAction === request) this.taskAction = { ...request, busy: false, error: errorMessage(error) };
+      } finally { if (!this.closed) cx.notify(); }
+    });
   }
 
   showRequirements(id, cx) {
@@ -675,7 +704,8 @@ export default class TeamConsole extends View {
     const setup = !this.binding && !this.resolving ? this.setup : null;
     const requirements = demo?.requirements ?? this.requirements;
     const tasks = sortTasks(tasksWithIterations(demo?.tasks ?? this.tasks, requirements));
-    const iterationTasks = tasksForIteration(tasks, this.iteration);
+    const folderTasks = tasksForIteration(tasks, this.iteration);
+    const iterationTasks = folderTasks.filter(task => taskFolder(task) === "current");
     const inbox = demo?.inbox?.[this.inboxFolder] ?? this.inboxRows;
     const live = scopedTerminals(demo?.terminals ?? terminals(), binding);
     const roles = roleRows(demo?.roles ?? this.roles, live);
@@ -690,8 +720,8 @@ export default class TeamConsole extends View {
       .when(count !== undefined, el => el.child(div().text_size(10.5).text_color(t.dim).child(String(count))));
     const statusColor = status => status === "doing" ? t.working : status === "review" ? t.accent : status === "blocked" ? t.blocked : status === "done" ? t.done : t.dim;
     const taskLabel = status => status === "blocked" ? "Blocked" : label(status);
-    const taskDisplayLabel = task => taskReviewPhase(task) ?? taskLabel(task.status);
-    const taskDisplayColor = task => task.status === "review" && task.meta?.integration?.state === "blocked"
+    const taskDisplayLabel = task => taskFolder(task) === "current" ? taskReviewPhase(task) ?? taskLabel(task.status) : label(taskFolder(task));
+    const taskDisplayColor = task => taskFolder(task) !== "current" ? t.muted : task.status === "review" && task.meta?.integration?.state === "blocked"
       ? t.blocked : statusColor(task.status);
     const emptyState = (title, description, icon = this.teamIcon(), detail) => v_flex().w_full().flex_1().min_h(220)
       .px(22).py(32).gap(10).items_center().justify_center().text_center()
@@ -713,23 +743,22 @@ export default class TeamConsole extends View {
       program?.name && `${live ? "Live agent" : "Configured agent"} · ${program.name}`,
       model && `${modelSource === "launch" ? "Launch model" : "Configured model"} · ${model}`,
     ].filter(Boolean).join("\n");
-    const assignee = (assignment, stacked = false) => {
+    const assignee = (assignment, compact = false) => {
       const { name, program, model } = assignment;
       const icon = program?.icon ? program.tint ? svg(program.icon).size(15).flex_none().text_color(t.foreground)
-        : image(program.icon).size(15).flex_none() : stacked ? avatar(name, 16) : null;
-      const text = stacked ? v_flex().gap(2) : h_flex().gap(4).items_center();
+        : image(program.icon).size(15).flex_none() : compact ? avatar(name, 16) : null;
       return h_flex().gap(5).items_center().flex_1().min_w(0)
         .when(Boolean(icon), el => el.child(icon))
-        .child(text.flex_1().min_w(0)
+        .child(h_flex().gap(4).items_center().flex_1().min_w(0)
           .child(div().min_w(0).truncate().text_size(11).text_color(t.muted).child(name))
-          .when(Boolean(model), el => el.child(div().min_w(0).truncate().text_size(10.5).text_color(t.dim)
-            .child(stacked ? model : `· ${model}`))));
+          .when(!compact && Boolean(model), el => el.child(div().min_w(0).truncate().text_size(10.5).text_color(t.dim)
+            .child(`· ${model}`))));
     };
     const priorityColor = p => p === "P0" ? t.blocked : p === "P1" ? t.working : t.muted;
     // Per-task glyph: recorded task status first, then what its current agent reports.
     const taskGlyph = task => {
+      if (taskFolder(task) !== "current") return svg(ICON("minus")).size(14).flex_none().text_color(t.dim);
       if (task.status === "done") return svg(ICON("circle-check")).size(14).flex_none().text_color(t.done);
-      if (task.status === "cancelled") return svg(ICON("minus")).size(14).flex_none().text_color(t.dim);
       if (task.status === "todo") return div().size(10).m(2).flex_none().rounded(5).border(1.5).border_color(t.dim);
       const report = flowNodes(task, roles)[0]?.status;
       if (report === "working") return svg(ICON("spinner")).size(14).flex_none().text_color(t.working).spin(900);
@@ -740,9 +769,7 @@ export default class TeamConsole extends View {
 
     const routeNote = task => {
       const waiting = waitingOn(task, tasks);
-      if (waiting.length) return `waiting on ${waiting.map(id => `#${id}`).join(", ")}`;
-      if (task.status === "done" || task.status === "cancelled") return "";
-      return task.handoff?.length ? "" : "last step";
+      return waiting.length ? `Waiting on ${waiting.map(id => `#${id}`).join(", ")}` : "";
     };
 
     // Detail: one line per assignee with its harness and report.
@@ -756,23 +783,46 @@ export default class TeamConsole extends View {
       const body = this.preview ? task.body ?? "" : this.bodies.get(task.id);
       const document = taskDocument(body ?? "");
       const tab = this.taskDocumentTab;
-      const content = document[tab];
-      const longDescription = tab === "description" && content.length > 950;
-      const descriptionPreview = longDescription && !this.taskExpanded
-        ? [...content].slice(0, 360).join("").trimEnd() + "…"
-        : "";
+      const content = tab === "description" ? readableDescription(document.description) : document.history;
       const linkedId = task.meta?.requirement;
       const linked = requirements.find(card => card.id === linkedId);
       const linkedType = linked ? (linked.type === "defect" ? "Defect" : "Requirement") : "Issue";
       const linkedLabel = `${linkedType} ${linkedId}`;
+      const folder = taskFolder(task);
+      const action = this.taskAction?.id === task.id ? this.taskAction : null;
+      const canEditTask = !this.preview && Boolean(binding) && !binding.machine;
+      const running = folder === "current" && (Boolean(task.meta?.delivery) || !["todo", "done"].includes(task.status));
+      const actionButton = (id, title, click, danger = false, disabled = false) => Button.new(id).flex_none().h(25).px(8)
+        .rounded(6).border(1).border_color(t.border).text_size(11.5).text_color(disabled ? t.dim : danger ? t.blocked : t.foreground)
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .when(!disabled, el => el.hover(s => s.bg(t.hover)).on_click((_e, cx) => click(cx))).child(title);
+      const ask = (operation, cx) => { this.taskAction = { id: task.id, action: operation }; cx.notify(); };
       const back = div().id("back").h(24).pl(2).pr(8).gap(2).flex().items_center().rounded(6).hover(s => s.bg(t.hover))
         .on_click((_e, cx) => this.select(null, cx))
         .child(svg(ICON("chevron-left")).size(14).text_color(t.muted)).child(div().text_size(12).text_color(t.muted).child("Tasks"));
       const popOut = div().id("pop-out").h(24).px(8).flex().items_center().rounded(6).border(1).border_color(t.border)
         .text_size(11.5).text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
         .on_click(() => this.popOut(task)).child("Pop out");
-      return v_flex().gap(14)
-        .when(!this.popout, el => el.child(h_flex().items_center().child(back).child(div().flex_1()).child(popOut)))
+      return v_flex().w_full().max_w(680).min_w(0).gap(14)
+        .when(!this.popout || canEditTask, el => el.child(h_flex().gap(6).items_center().flex_wrap()
+          .when(!this.popout, el => el.child(back)).child(div().flex_1())
+          .when(canEditTask && folder === "current", el => el.child(actionButton("task-archive", "Archive",
+            cx => running ? ask("archive", cx) : this.changeTask(task, "archive", cx), false, action?.busy)))
+          .when(canEditTask && folder !== "current", el => el.child(actionButton("task-restore", "Restore",
+            cx => this.changeTask(task, "restore", cx), false, action?.busy)))
+          .when(canEditTask && folder !== "trash", el => el.child(actionButton("task-delete", "Delete", cx => ask("delete", cx), true, action?.busy)))
+          .when(!this.popout, el => el.child(popOut))))
+        .when(Boolean(action && !action.busy && !action.error), el => el.child(v_flex().p(10).gap(8).rounded(7).bg(t.surface)
+          .child(div().font_semibold().child(action.action === "delete" ? `Move #${task.id} to Trash?` : `Archive #${task.id}?`))
+          .child(div().text_size(12).text_color(t.muted).child(running
+            ? "The current delivery will end. Task history and Git work are kept."
+            : "The task can be restored from Trash."))
+          .child(h_flex().gap(6).flex_wrap()
+            .child(actionButton("task-action-back", "Go back", cx => { this.taskAction = null; cx.notify(); }))
+            .child(actionButton("task-action-confirm", action.action === "delete" ? "Move to Trash" : "Archive task",
+              cx => this.changeTask(task, action.action, cx), action.action === "delete")))))
+        .when(Boolean(action?.busy), el => el.child(div().text_size(12).text_color(t.muted).child("Updating task…")))
+        .when(Boolean(action?.error), el => el.child(div().text_size(12).text_color(t.blocked).child(action?.error)))
         .child(v_flex().gap(7)
           .child(h_flex().gap(7).items_center().flex_wrap()
             .child(taskGlyph(task))
@@ -793,20 +843,16 @@ export default class TeamConsole extends View {
           .when(Boolean(task.handoff?.length), el => el.child(heading("Handoff")))
           .child(steps(task))
           .when(Boolean(task.dependsOn?.length), el => el.child(div().text_size(11).text_color(t.dim)
-            .child(`Depends on ${task.dependsOn.map(id => `#${id}`).join(", ")}${routeNote(task).startsWith("waiting") ? " · not finished" : ""}`))))
+            .child(`Depends on ${task.dependsOn.map(id => `#${id}`).join(", ")}${routeNote(task) ? " · not finished" : ""}`))))
         .child(h_flex().self_start().gap(2).p(2).rounded(7).bg(t.raised)
           .child(segment("task-description", "Description", tab === "description", cx => { this.taskDocumentTab = "description"; cx.notify(); }))
           .child(segment("task-history", "History", tab === "history", cx => { this.taskDocumentTab = "history"; cx.notify(); })))
         // Selecting text must not drag a popped-out window.
-        .child(div().id("body").on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .child(div().id("body").w_full().max_w(570).min_w(0).pt(12).pb(8).border_t(1).border_color(t.border)
+          .text_size(13).line_height(1.6).on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .child(body == null ? div().text_color(t.dim).child("Loading…")
-            : descriptionPreview ? div().line_height(1.55).child(descriptionPreview)
-            : content ? TextView.markdown(`body-${task.id}-${tab}`, content).selectable(true)
-            : div().text_color(t.dim).child(tab === "history" ? "No history recorded." : "No description recorded.")))
-        .when(longDescription, el => el.child(div().id("expand-description").self_start().text_size(11.5).text_color(t.accent)
-          .hover(s => s.text_color(t.foreground))
-          .on_click((_e, cx) => { this.taskExpanded = !this.taskExpanded; cx.notify(); })
-          .child(this.taskExpanded ? "Collapse description" : "Show full description")));
+            : content ? TextView.markdown(`body-${task.id}-${tab}`, content).w_full().selectable(true).scrollable(false)
+            : div().text_color(t.dim).child(tab === "history" ? "No history recorded." : "No description recorded.")));
     };
 
     // A. List: narrow-sidebar rows, explicit status filters and attention order.
@@ -833,7 +879,7 @@ export default class TeamConsole extends View {
     const filterButton = ({ status, title, count }) => h_flex().id(`filter-${status}`).flex_none().h(25).px(7).gap(5).items_center().rounded(5)
       .bg(activeFilter === status ? t.selected : t.background)
       .text_color(activeFilter === status ? t.foreground : t.muted)
-      .tooltip(status === "open" ? "Open tasks · blocked, review and in progress first. Done and cancelled are hidden." : `${title} tasks`)
+      .tooltip(status === "open" ? "Open tasks · blocked, review and in progress first." : `${title} tasks`)
       .hover(s => s.bg(t.hover))
       .on_click((_e, cx) => { this.filter = status; cx.notify(); })
       .child(div().text_size(11.5).font_medium().child(title))
@@ -847,34 +893,43 @@ export default class TeamConsole extends View {
 
     // B. Board: one card in its recorded status column, with its current assignee.
     const card = task => {
-      const next = visibleRole(task.handoff?.[0]), phase = taskReviewPhase(task), note = phase ?? routeNote(task);
+      const next = visibleRole(task.handoff?.[0]), phase = taskReviewPhase(task);
+      const note = phase ?? (routeNote(task) || (next ? `Next: ${next}` : ""));
       const owner = taskAssignee(task, roles, this.agentPrograms);
       owner.name = visibleRole(owner.name);
-      return v_flex().id(`card-${task.id}`).p(10).gap(6).rounded(8).bg(t.surface).border(1)
-        .border_color(t.border).hover(s => s.border_color(t.input))
+      return v_flex().id(`card-${task.id}`).min_w(0).p(8).gap(6).rounded(6).bg(t.background).border(1)
+        .border_color(t.border).hover(s => s.bg(t.hover).border_color(t.input))
+        .tooltip([`#${task.id} · ${task.title}`, [taskDisplayLabel(task), task.priority].filter(Boolean).join(" · "),
+          assigneeTooltip(owner), task.iteration, note].filter(Boolean).join("\n"))
         .on_click((_e, cx) => this.select(task.id, cx))
-        .child(h_flex().gap(6).items_center()
-          .child(taskGlyph(task))
-          .child(div().flex_1().font_family(mono).text_size(10.5).text_color(t.dim).child(`#${task.id}`))
-          .when(Boolean(task.priority), el => el.child(pill(task.priority, priorityColor(task.priority)))))
-        .child(div().text_size(12.5).line_height(1.35).child(task.title))
-        .child(h_flex().gap(5).items_center().min_w(0)
-          .child(assignee(owner, true).tooltip(assigneeTooltip(owner)))
-          .when(Boolean(task.iteration), el => el.child(div().max_w(76).truncate().text_size(10.5).text_color(t.dim)
-            .tooltip(task.iteration).child(task.iteration))))
-        .when(Boolean(note || next), el => el.child(div().text_size(10.5).text_color(phase ? taskDisplayColor(task) : t.dim).child(note || `→ ${next}`)));
+        .child(div().text_size(12).font_semibold().line_height(1.35).text_color(t.foreground).child(task.title))
+        .child(h_flex().gap(5).items_center().min_w(0).child(assignee(owner, true))
+          .when(task.priority === "P0" || task.priority === "P1", el => el.child(pill(task.priority, priorityColor(task.priority)))))
+        .when(Boolean(note), el => el.child(div().min_w(0).text_size(10.5).line_height(1.35)
+          .text_color(phase ? taskDisplayColor(task) : t.muted).child(note)))
+        .child(div().font_family(mono).text_size(10).text_color(t.dim).child(`#${task.id}`));
     };
-    // Keep cards readable in narrow panels; the native scrollbar exposes later columns.
     const columns = boardColumns(iterationTasks);
-    const columnWidth = Math.max(190, Math.floor(((this.width ?? WIDE) - 30 - 10 * (columns.length - 1)) / columns.length));
-    const column = ({ status, title, tasks: cards }) => v_flex().w(columnWidth).flex_none().gap(8)
-      .child(h_flex().gap(7).items_center().px(2).pb(2)
+    const columnGap = 8;
+    const boardWidth = Math.max(0, (this.width ?? WIDE) - 38);
+    const fit = Math.max(1, Math.floor((boardWidth + columnGap) / (144 + columnGap)));
+    const populated = columns.filter(column => column.tasks.length);
+    const compactBoard = populated.length > 0 && fit < columns.length;
+    const visibleColumns = compactBoard ? populated : columns;
+    const columnsPerRow = Math.min(visibleColumns.length, fit);
+    const columnWidth = Math.floor((boardWidth - (columnsPerRow - 1) * columnGap) / columnsPerRow);
+    const column = ({ status, title, tasks: cards }) => v_flex().w(columnWidth).flex_none().p(6).gap(6).rounded(8).bg(t.surface)
+      .child(h_flex().gap(6).items_center().h(24).px(3)
         .child(div().size(7).flex_none().rounded(4).bg(statusColor(status)))
-        .child(div().flex_1().text_size(12).font_semibold().child(title))
-        .child(div().text_size(10.5).text_color(t.dim).child(String(cards.length))))
-      .children(cards.map(card))
-      .when(!cards.length, el => el.child(div().px(10).py(12).text_size(11).text_color(t.dim).child("No tasks")));
-    const boardView = h_flex().id("status-board").overflow_x_scrollbar().gap(10).items_start().pb(4).children(columns.map(column));
+        .child(div().flex_1().min_w(0).truncate().text_size(11.5).font_semibold().tooltip(title).child(title))
+        .child(div().text_size(10.5).text_color(t.muted).child(String(cards.length))))
+      .children(cards.map(card));
+    const emptyColumns = compactBoard ? columns.filter(column => !column.tasks.length) : [];
+    const boardView = v_flex().id("status-board").w_full().min_w(0).gap(8).pb(4)
+      .when(emptyColumns.length > 0, el => el.child(h_flex().gap(8).flex_wrap().px(3).children(emptyColumns.map(({ status, title }) =>
+        h_flex().gap(4).items_center().text_size(10.5).text_color(t.muted)
+          .child(div().size(5).flex_none().rounded(3).bg(statusColor(status))).child(`${title} 0`)))))
+      .child(h_flex().w_full().min_w(0).flex_wrap().gap(columnGap).items_start().children(visibleColumns.map(column)));
 
     const compactHeader = (this.width ?? WIDE) < 465;
     const narrowHeader = (this.width ?? WIDE) < 365;
@@ -922,7 +977,8 @@ export default class TeamConsole extends View {
           .child(requirements.length ? "No items match these filters." : "No requirements or defects yet."))));
     const requirementPage = card => {
       const detail = this.preview ? card : this.requirementDetails.get(card.id);
-      const linked = (detail?.tasks ?? []).map(task => h_flex().id(`linked-task-${task.id}`).min_w(0)
+      const linked = (detail?.tasks ?? []).map(task => tasks.find(item => item.id === task.id) ?? task)
+        .map(task => h_flex().id(`linked-task-${task.id}`).min_w(0)
         .gap(6).items_center().px(6).py(6).rounded(5).hover(s => s.bg(t.hover)).on_click((_e, cx) => this.select(task.id, cx))
         .child(div().font_family(mono).flex_none().text_size(10.5).text_color(t.muted).child(`#${task.id}`))
         .child(div().flex_1().min_w(0).truncate().text_size(12).child(task.title))
@@ -967,8 +1023,8 @@ export default class TeamConsole extends View {
     };
     const email = inbox.filter(row => row.source === "agentmail");
     const deliveries = inbox.filter(row => row.source !== "agentmail");
-    const inboxList = v_flex().min_w(0).gap(12)
-      .child(h_flex().self_start().gap(2).p(2).rounded(7).bg(t.raised)
+    const inboxList = v_flex().min_w(0).gap(12).when(!inbox.length, el => el.flex_1().min_h(0))
+      .child(h_flex().self_start().flex_none().gap(2).p(2).rounded(7).bg(t.raised)
         .child(segment("inbox-active", "Active", this.inboxFolder === "active", cx => this.showInbox("active", cx)))
         .child(segment("inbox-trash", "Trash", this.inboxFolder === "trash", cx => this.showInbox("trash", cx))))
       .when(Boolean(inbox.length), el => el.child(v_flex().min_w(0).gap(4).child(heading("Email", email.length))
@@ -1053,7 +1109,7 @@ export default class TeamConsole extends View {
         .child(segment("section-requirements", "Issues", this.section === "requirements", cx => this.showRequirements(null, cx)))
         .child(segment("section-inbox", "Inbox", this.section === "inbox", cx => this.showInbox(this.inboxFolder, cx)))))
       .child(div().flex_1().min_w(0))
-      .when(hasTeamView && this.section === "tasks", el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
+      .when(hasTeamView && this.section === "tasks" && this.taskFolder === "current", el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
         .child(segment("view-list", "List", displayView === "list", cx => this.setView("list", cx)))
         .child(segment("view-board", "Board", displayView === "board", cx => this.setView("board", cx)))))
       .when(Boolean(binding) && this.section !== "inbox" && !this.selected && !this.selectedRequirement,
@@ -1092,14 +1148,27 @@ export default class TeamConsole extends View {
           .when(!runtime.busy, el => el.hover(s => s.bg(t.hover)).on_click((_e, cx) => this.startStoppedTeam(cx)))
           .child(runtime.busy ? "Working…" : "Up"))
       : null;
+    const hiddenTasks = folderTasks.filter(task => taskFolder(task) === this.taskFolder);
+    const overviewEmpty = this.taskFolder === "current" ? Boolean(runtimePrompt) : !hiddenTasks.length;
+    const taskOverview = v_flex().min_w(0).gap(12).when(overviewEmpty, el => el.flex_1().min_h(0))
+      .child(h_flex().self_start().flex_none().flex_wrap().gap(2).p(2).rounded(7).bg(t.raised)
+        .children([["current", "Current"], ["archive", "Archive"], ["trash", "Trash"]].map(([folder, name]) =>
+          segment(`task-folder-${folder}`, name, this.taskFolder === folder, cx => {
+            this.taskFolder = folder;
+            this.taskAction = null;
+            cx.notify();
+          }))))
+      .child(this.taskFolder === "current" ? runtimePrompt ?? (displayView === "board" ? boardView : listView)
+        : hiddenTasks.length ? v_flex().gap(1).children(hiddenTasks.map(taskRow))
+        : emptyState(this.taskFolder === "archive" ? "Archive is empty" : "Trash is empty",
+          this.taskFolder === "archive" ? "Archived tasks appear here." : "Deleted tasks can be restored from here."));
     const content = setupLoading ? emptyState("Loading team…", "Checking the project for this Space.")
       : setup?.action === "up" ? emptyState("Project initialized", "Start the team in this Space.").child(setupButton())
       : !this.preview && setup?.action === "init" ? setupPage()
-      : runtimePrompt ? runtimePrompt
       : open ? detailPage(open) : this.popout ? div().text_color(t.dim).child(this.loading ? "Loading…" : "Task not found.")
       : this.section === "requirements" ? binding && (!this.error || this.preview) ? issues : empty
       : this.section === "inbox" ? binding && (!this.error || this.preview) ? this.mail ? mailPage(this.mail) : inboxList : empty
-      : displayView === "board" && (tasks.length || binding && !this.loading && !this.error) ? boardView : !tasks.length ? empty : listView;
+      : binding && (!this.error || this.preview) && (tasks.length || !this.loading) ? taskOverview : empty;
 
     // A popped-out window: the window frame is the app's; its title bar drags it.
     if (this.popout) return v_flex().id("team-root").size_full().overflow_hidden().bg(t.background).text_color(t.foreground).text_size(12.8)
