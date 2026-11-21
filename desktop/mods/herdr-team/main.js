@@ -748,6 +748,8 @@ export default class TeamConsole extends View {
     // Small building blocks, in the shipped sidebar's vocabulary.
     const pill = (text, c) => div().flex_none().px(6).h(18).rounded(5).bg(c + "22").text_size(10.5).font_semibold().text_color(c)
       .flex().items_center().child(text);
+    const iterationTag = (id, version) => div().id(id).flex_none().max_w(88).truncate().rounded(4).px(5).py(1)
+      .bg(t.raised).text_color(t.muted).text_size(10.5).font_family(mono).tooltip(`Iteration ${version}`).child(version);
     const heading = (text, count) => h_flex().items_center().gap(6).px(2)
       .child(div().text_size(11).font_semibold().text_color(t.dim).child(text))
       .when(count !== undefined, el => el.child(div().text_size(10.5).text_color(t.dim).child(String(count))));
@@ -908,18 +910,18 @@ export default class TeamConsole extends View {
       const needsInput = taskReport(task) === "needs input";
       owner.name = visibleRole(owner.name);
       return v_flex().id(`task-${task.id}`).px(6).py(7).gap(4).rounded(6).min_w(0)
-        .tooltip([`#${task.id} · ${task.title}`, taskDisplayLabel(task), needsInput && "Needs input", assigneeTooltip(owner)].filter(Boolean).join("\n"))
+        .tooltip([`#${task.id} · ${task.title}`, taskDisplayLabel(task), task.iteration, needsInput && "Needs input", assigneeTooltip(owner)].filter(Boolean).join("\n"))
         .hover(s => s.bg(t.hover))
         .on_click((_e, cx) => this.select(task.id, cx))
         .child(h_flex().gap(8).items_center().min_w(0)
           .child(div().size(7).mx(3.5).flex_none().rounded(4).bg(taskDisplayColor(task)))
           .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(task.status === "done" ? t.muted : t.foreground).child(task.title))
+          .when(Boolean(task.iteration), el => el.child(iterationTag(`list-iteration-${task.id}`, task.iteration)))
           .when(task.priority === "P0" || task.priority === "P1", el => el.child(pill(task.priority, priorityColor(task.priority)))))
         .child(h_flex().pl(22).gap(6).items_center().min_w(0).text_size(11)
           .child(div().flex_none().font_family(mono).text_color(t.dim).child(`#${task.id}`))
           .child(assignee(owner))
           .when(needsInput, el => el.child(div().flex_none().text_color(inputColor).child("Needs input")))
-          .when(Boolean(task.iteration), el => el.child(div().max_w(76).truncate().text_color(t.dim).tooltip(task.iteration).child(task.iteration)))
           .child(div().flex_none().text_color(taskDisplayColor(task)).child(taskDisplayLabel(task))));
     };
     const filters = listFilters(iterationTasks);
@@ -957,7 +959,9 @@ export default class TeamConsole extends View {
           .when(task.priority === "P0" || task.priority === "P1", el => el.child(pill(task.priority, priorityColor(task.priority)))))
         .when(Boolean(note), el => el.child(div().min_w(0).text_size(10.5).line_height(1.35)
           .text_color(needsInput ? inputColor : phase ? taskDisplayColor(task) : t.muted).child(note)))
-        .child(div().font_family(mono).text_size(10).text_color(t.dim).child(`#${task.id}`));
+        .child(h_flex().gap(6).items_center().flex_wrap().min_w(0)
+          .child(div().flex_none().font_family(mono).text_size(10).text_color(t.dim).child(`#${task.id}`))
+          .when(Boolean(task.iteration), el => el.child(iterationTag(`board-iteration-${task.id}`, task.iteration))));
     };
     const columns = boardColumns(iterationTasks);
     const columnGap = 8;
@@ -1000,6 +1004,7 @@ export default class TeamConsole extends View {
       .hover(s => s.bg(t.hover)).on_click((_e, cx) => this.showRequirements(card.id, cx))
       .child(div().size(7).flex_none().rounded(4).bg(issueFolder(card) === "current" ? requirementColor(card.status) : t.dim))
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(card.title))
+      .when(Boolean(iterationVersion(card.iteration)), el => el.child(iterationTag(`issue-iteration-${card.id}`, iterationVersion(card.iteration))))
       .child(typePill(card.type))
       .child(div().flex_none().font_family(mono).text_size(11).text_color(t.muted).child(`${card.progress.done}/${card.progress.total}`));
     const options = [null, ...iterationOptions([...tasks, ...requirements])];
