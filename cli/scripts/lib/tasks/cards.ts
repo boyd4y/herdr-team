@@ -12,7 +12,7 @@ import {
   taskDisposition,
   type Project,
   type TaskCard,
-  type TaskDisposition,
+  type CardDisposition,
 } from "../shared/types.ts";
 import { emitYaml } from "../shared/yaml.ts";
 import { formatProblems, validateTaskDependencies } from "../team/validate.ts";
@@ -228,7 +228,7 @@ export function editTask(
 
 const clearedAssignment = { delivery: null, review: null, acceptance: null, integration: null, test_result: null, pr_decision: null };
 
-export function setTaskDisposition(project: Project, id: string, disposition?: TaskDisposition, force = false): TaskCard {
+export function setTaskDisposition(project: Project, id: string, disposition?: CardDisposition, force = false): TaskCard {
   return withTeamLock(project, "queue", () => {
     const fresh = loadProject(project.root);
     const card = findTask(fresh, id);

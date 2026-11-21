@@ -83,6 +83,48 @@ test("requirements and defects share an optional iteration; old and independent 
   } finally { fixture.cleanup(); }
 });
 
+test("single-issue archive, Trash and restore preserve linked work and acceptance", () => {
+  const fixture = makeProject();
+  try {
+    const { root } = fixture;
+    twoRoles(root);
+    const run = (...args: string[]) => Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), ...args, "--json"], {
+      cwd: root, env: { ...process.env, HERDR_ENV: "0" },
+    });
+    const json = (...args: string[]) => {
+      const result = run(...args);
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      return JSON.parse(result.stdout.toString());
+    };
+    const { id } = json("issue", "create", "Fix CSV", "--type", "defect", "--iteration", "v1.2", "--body", "## Reproduction");
+    const task = json("task", "create", "Fix export", "--role", "dev", "--requirement", id);
+    const original = json("issue", "show", id);
+    const linked = json("task", "show", task.id);
+    expect(run("issue", "accept", id).exitCode).toBe(2);
+
+    expect(json("issue", "archive", id)).toMatchObject({ id, disposition: "archived", acceptedAt: null });
+    expect(json("issue", "archive", id)).toMatchObject({ id, disposition: "archived" });
+    expect(json("issue", "list")).toEqual([]);
+    expect(json("issue", "list", "--status", "archived", "--type", "defect", "--iteration", "v1.2")).toMatchObject([{ id }]);
+    expect(json("issue", "list", "--all")).toMatchObject([{ id, disposition: "archived" }]);
+    expect(json("issue", "show", id)).toEqual({ ...original, disposition: "archived" });
+    expect(json("task", "show", task.id)).toEqual(linked);
+
+    expect(json("issue", "delete", id)).toMatchObject({ id, disposition: "deleted" });
+    expect(json("issue", "list", "--status", "archived")).toEqual([]);
+    expect(json("issue", "list", "--status", "deleted")).toMatchObject([{ id }]);
+    json("issue", "restore", id);
+    expect(json("issue", "show", id)).toEqual(original);
+
+    json("issue", "unlink", id, task.id);
+    const { acceptedAt } = json("issue", "accept", id);
+    expect(typeof acceptedAt).toBe("string");
+    json("issue", "delete", id);
+    json("issue", "restore", id);
+    expect(json("issue", "list", "--status", "accepted")).toMatchObject([{ id, acceptedAt, status: "accepted" }]);
+  } finally { fixture.cleanup(); }
+});
+
 test("legacy issues migrate once, keep their IDs and exact prose, and list independently of Markdown", () => {
   const { root, cleanup } = makeProject();
   try {

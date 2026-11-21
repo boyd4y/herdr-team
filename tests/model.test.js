@@ -65,6 +65,18 @@ test("the requirements filter offers only versions and keeps unscheduled cards u
   assert.deepEqual(requirementsForIteration(cards, null), cards);
 });
 
+test("issue folders compose with the type and iteration filters", () => {
+  const cards = [
+    { id: "R0001", iteration: "v1.2", type: "requirement" },
+    { id: "R0002", iteration: "v1.2", type: "defect", disposition: "archived" },
+    { id: "R0003", iteration: "v1.2", type: "requirement", disposition: "deleted" },
+    { id: "R0004", iteration: "v1.3", type: "defect", disposition: "archived" },
+  ];
+  assert.deepEqual(requirementsForIteration(cards, null), [cards[0]]);
+  assert.deepEqual(requirementsForIteration(cards, "v1.2", "defect", "archive"), [cards[1]]);
+  assert.deepEqual(requirementsForIteration(cards, null, null, "trash"), [cards[2]]);
+});
+
 test("both task views use the shared iteration and retain task-only versions", () => {
   const issues = [{ id: "R0001", iteration: "v1.2" }];
   const tasks = tasksWithIterations([

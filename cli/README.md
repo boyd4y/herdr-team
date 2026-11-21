@@ -186,7 +186,7 @@ ccremote = "/absolute/path/to/ccremote"
 
 ### 需求和缺陷
 
-`backlog` 管理需求和缺陷。迭代是可选的版本号，例如 `v1.1`。尚未排期、也未开始执行的条目显示为 Backlog 状态。批量修改迭代只改动排期。
+`issue` 管理需求和缺陷。迭代是可选的版本号，例如 `v1.1`。尚未排期、也未开始执行的条目显示为 Backlog 状态。批量修改迭代只改动排期。
 
 ```sh
 herdr-team issue create "Export CSV" --acceptance "Exported rows match the filtered list"
@@ -195,11 +195,18 @@ herdr-team issue update R0001 R0002 --iteration v0.2
 herdr-team issue list --iteration v0.2
 herdr-team issue list --type defect
 herdr-team issue show R0001
+herdr-team issue archive R0001
+herdr-team issue list --status archived
+herdr-team issue delete R0002
+herdr-team issue list --all
+herdr-team issue restore R0002
 ```
 
-每条 Issue 保存在 `.herdr/issues/<ID>/`，由 `.issue.yaml`、`issue.md` 和 `acceptance.md` 组成。Issue 和 Task 的列表只读取元数据，正文在查详情时按 ID 读取。已有项目可用 `herdr-team issue migrate` 提前迁移，首次新增、编辑或验收 Issue 也会自动迁移。旧文件备份保存在 `.herdr/issues/.legacy-requirements.json`。
+Team 面板的 Issue 详情页可以归档、删除和恢复。Current 显示当前 Issue，Archive 和 Trash 保留原卡，可打开详情恢复。CLI 的 `--all` 也会包含归档和回收站中的卡。单卡归档或删除只改变该 Issue 的位置，关联任务按原状态继续流转。整批隐藏的迭代仍需通过 `iteration restore` 恢复。
 
-任务可以独立存在。新任务可用 `herdr-team task create "Implement CSV export" --role dev --requirement R0001` 关联，已有任务可用 `herdr-team issue link R0001 0007` 关联。用 `backlog unlink` 撤销关联，任务状态和交付记录保持原样。任务仍按单个 ID 派发。需求的关联任务完成后，由负责人用 `backlog accept R0001` 确认验收。用 `backlog edit R0001 --iteration ''` 清空排期。
+每条 Issue 保存在 `.herdr/issues/<ID>/`，由 `.issue.yaml`、`issue.md` 和 `acceptance.md` 组成。Issue 和 Task 的列表只读取元数据，正文在查详情时按 ID 读取。首次写入 Issue 时会自动迁移旧格式，也可用 `herdr-team issue migrate` 提前迁移。旧文件备份保存在 `.herdr/issues/.legacy-requirements.json`。
+
+任务可以独立存在。新任务可用 `herdr-team task create "Implement CSV export" --role dev --requirement R0001` 关联，已有任务可用 `herdr-team issue link R0001 0007` 关联。用 `issue unlink` 撤销关联，任务状态和交付记录保持原样。任务仍按单个 ID 派发。关联任务全部完成后，可以在 Team 面板或用 `herdr-team issue accept R0001` 确认验收。用 `herdr-team issue update R0001 --iteration ''` 清空排期。
 
 任务也可设置独立迭代。未设置时沿用关联需求或缺陷的版本，独立任务则保持未排期。
 

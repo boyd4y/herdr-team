@@ -11,9 +11,9 @@ export function canonicalKind(kind: string): string {
 
 export const PRIORITIES = ["P0", "P1", "P2", "P3"] as const;
 export const STATUSES = ["todo", "doing", "review", "done", "blocked"] as const;
-export const TASK_DISPOSITIONS = ["archived", "deleted"] as const;
-export type TaskDisposition = typeof TASK_DISPOSITIONS[number];
-export const TERMINAL_STATUSES = ["done", ...TASK_DISPOSITIONS, "cancelled"] as const;
+export const CARD_DISPOSITIONS = ["archived", "deleted"] as const;
+export type CardDisposition = typeof CARD_DISPOSITIONS[number];
+export const TERMINAL_STATUSES = ["done", ...CARD_DISPOSITIONS, "cancelled"] as const;
 
 export const NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 export const ID_RE = /^[0-9]{4}$/;
@@ -115,7 +115,7 @@ export function isTerminal(status: string): boolean {
   return (TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
-export function taskDisposition(task: Pick<TaskCard, "status" | "meta">): TaskDisposition | undefined {
+export function taskDisposition(task: Pick<TaskCard, "status" | "meta">): CardDisposition | undefined {
   if (task.status === "deleted" || task.meta.disposition === "deleted") return "deleted";
   if (task.status === "archived" || task.status === "cancelled" || task.meta.disposition === "archived") return "archived";
 }

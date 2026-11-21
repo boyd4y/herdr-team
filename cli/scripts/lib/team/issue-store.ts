@@ -1,7 +1,7 @@
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { replaceFile } from "../shared/atomic-file.ts";
-import { PRIORITIES, type Project } from "../shared/types.ts";
+import { PRIORITIES, type CardDisposition, type Project } from "../shared/types.ts";
 import { emitYaml, parseYaml } from "../shared/yaml.ts";
 
 export type RequirementType = "requirement" | "defect";
@@ -14,6 +14,7 @@ export interface RequirementMetadata {
   priority: string;
   iteration: string;
   acceptedAt: string | null;
+  disposition?: CardDisposition;
 }
 
 export interface Requirement extends RequirementMetadata {
@@ -27,7 +28,7 @@ export const ISSUE_BACKUP = ".legacy-requirements.json";
 const metadataName = ".issue.yaml";
 const bodyName = "issue.md";
 const acceptanceName = "acceptance.md";
-const metadataOrder = ["title", "type", "priority", "iteration", "acceptedAt"];
+const metadataOrder = ["title", "type", "priority", "iteration", "acceptedAt", "disposition"];
 const idPattern = /^R\d{4}$/;
 type IssueProject = Pick<Project, "herdrDir">;
 
@@ -42,12 +43,13 @@ function exists(path: string, kind: "file" | "directory"): boolean {
 
 function metadata(raw: unknown, id: string): RequirementMetadata | undefined {
   if (!raw || typeof raw !== "object") return;
-  const { title, type, priority, iteration, acceptedAt } = raw as Record<string, unknown>;
+  const { title, type, priority, iteration, acceptedAt, disposition } = raw as Record<string, unknown>;
   if (!idPattern.test(id) || typeof title !== "string" || !title.trim() ||
       type !== "requirement" && type !== "defect" || typeof priority !== "string" ||
       !(PRIORITIES as readonly string[]).includes(priority) || typeof iteration !== "string" ||
-      acceptedAt !== null && (typeof acceptedAt !== "string" || !Number.isFinite(Date.parse(acceptedAt)))) return;
-  return { id, title, type, priority, iteration, acceptedAt };
+      acceptedAt !== null && (typeof acceptedAt !== "string" || !Number.isFinite(Date.parse(acceptedAt))) ||
+      disposition !== undefined && disposition !== "archived" && disposition !== "deleted") return;
+  return { id, title, type, priority, iteration, acceptedAt, ...(disposition === undefined ? {} : { disposition }) };
 }
 
 function readLegacy(project: IssueProject): { text: string; cards: Requirement[] } | undefined {
@@ -219,10 +221,16 @@ export function createIssue(project: IssueProject, card: Requirement): void {
 
 export function saveIssue(project: IssueProject, card: Requirement, previous: Requirement): void {
   const directory = join(issueRoot(project), card.id);
-  const { id: _id, body, acceptance, ...fields } = card;
-  const { id: _oldId, body: oldBody, acceptance: oldAcceptance, ...oldFields } = previous;
+  const { body, acceptance, ...metadata } = card;
+  const { body: oldBody, acceptance: oldAcceptance, ...oldMetadata } = previous;
   if (body !== oldBody) replaceFile(join(directory, bodyName), body, 0o600);
   if (acceptance !== oldAcceptance) replaceFile(join(directory, acceptanceName), acceptance, 0o600);
+  saveIssueMetadata(project, metadata, oldMetadata);
+}
+
+export function saveIssueMetadata(project: IssueProject, card: RequirementMetadata, previous: RequirementMetadata): void {
+  const { id, ...fields } = card;
+  const { id: _oldId, ...oldFields } = previous;
   const yaml = emitYaml(fields, metadataOrder);
-  if (yaml !== emitYaml(oldFields, metadataOrder)) replaceFile(join(directory, metadataName), yaml, 0o600);
+  if (yaml !== emitYaml(oldFields, metadataOrder)) replaceFile(join(issueRoot(project), id, metadataName), yaml, 0o600);
 }

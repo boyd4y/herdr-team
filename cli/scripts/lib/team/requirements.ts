@@ -2,12 +2,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { withTeamLock } from "../runtime/state.ts";
 import { replaceFile } from "../shared/atomic-file.ts";
-import { PRIORITIES, type Project, type TaskCard } from "../shared/types.ts";
-import { createIssue, issueIds, listIssueMetadata, migrateIssueStore, readIssue, RequirementError, saveIssue,
+import { PRIORITIES, type CardDisposition, type Project, type TaskCard } from "../shared/types.ts";
+import { createIssue, issueIds, listIssueMetadata, migrateIssueStore, readIssue, RequirementError, requireIssueMetadata, saveIssue, saveIssueMetadata,
   type Requirement, type RequirementMetadata, type RequirementType } from "./issue-store.ts";
 import { loadProject } from "./project.ts";
 
-type RequirementFields = Omit<Requirement, "id" | "acceptedAt">;
+type RequirementFields = Omit<Requirement, "id" | "acceptedAt" | "disposition">;
+export const REQUIREMENT_STATUSES = ["backlog", "planned", "in-progress", "ready", "accepted"] as const;
 const versionPattern = /^v?\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/;
 const iterationFilename = (project: Project) => join(project.herdrDir, "iterations.json");
 type HiddenIterationState = "archived" | "deleted";
@@ -154,11 +155,24 @@ export function acceptRequirement(project: Project, id: string): Requirement {
     migrateIssueStore(project);
     const card = readIssue(project, id);
     if (card.acceptedAt) return card;
+    if (card.disposition) throw new RequirementError(`Restore ${id} before accepting it`);
     const fresh = loadProject(project.root, { taskBodies: false, roleBodies: false });
     const unfinished = fresh.tasks.filter(task => task.meta.requirement === id && task.status !== "done");
     if (unfinished.length) throw new RequirementError(`Finish the linked tasks before accepting ${id}: ${unfinished.map(task => task.id).join(", ")}`);
     const accepted = { ...card, acceptedAt: new Date().toISOString() };
     saveIssue(project, accepted, card);
     return accepted;
+  });
+}
+
+export function setRequirementDisposition(project: Project, id: string, disposition?: CardDisposition): RequirementMetadata {
+  return withTeamLock(project, "queue", () => {
+    const card = requireIssueMetadata(project, id);
+    if (card.disposition === disposition) return card;
+    migrateIssueStore(project);
+    const { disposition: _previous, ...metadata } = card;
+    const updated = disposition === undefined ? metadata : { ...metadata, disposition };
+    saveIssueMetadata(project, updated, card);
+    return updated;
   });
 }

@@ -23,9 +23,15 @@ export function tasksForIteration(tasks, iteration) {
   return iteration === null ? tasks : tasks.filter(task => task.iteration === iteration);
 }
 
-export function requirementsForIteration(requirements, iteration, type = null) {
+export function issueFolder(card) {
+  if (card.disposition === "archived") return "archive";
+  if (card.disposition === "deleted") return "trash";
+  return "current";
+}
+
+export function requirementsForIteration(requirements, iteration, type = null, folder = "current") {
   return requirements.filter(card => (iteration === null || iterationVersion(card.iteration) === iteration) &&
-    (type === null || type === card.type));
+    (type === null || type === card.type) && issueFolder(card) === folder);
 }
 
 /** The shown space is a lookup key, never evidence of project ownership. */
