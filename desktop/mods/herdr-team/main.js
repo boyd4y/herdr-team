@@ -751,6 +751,11 @@ export default class TeamConsole extends View {
     const heading = (text, count) => h_flex().items_center().gap(6).px(2)
       .child(div().text_size(11).font_semibold().text_color(t.dim).child(text))
       .when(count !== undefined, el => el.child(div().text_size(10.5).text_color(t.dim).child(String(count))));
+    const detailSection = (id, title, count) => v_flex().id(id).w_full().min_w(0).gap(8)
+      .child(h_flex().items_center().gap(8)
+        .child(div().text_size(13.5).font_semibold().text_color(t.foreground).child(title))
+        .when(count !== undefined, el => el.child(div().text_size(11).text_color(t.muted).child(String(count))))
+        .child(div().flex_1().h(1).bg(t.border)));
     const statusColor = status => status === "doing" ? t.working : status === "review" ? t.accent : status === "blocked" ? t.blocked : status === "done" ? t.done : t.dim;
     const taskDisplayLabel = task => taskFolder(task) === "current" ? taskReviewPhase(task) ?? label(task.status) : label(taskFolder(task));
     const taskDisplayColor = task => taskFolder(task) !== "current" ? t.muted : task.status === "review" && task.meta?.integration?.state === "blocked"
@@ -872,13 +877,13 @@ export default class TeamConsole extends View {
                 .on_click((_e, cx) => this.showRequirements(linkedId, cx)))
               .child(linkedLabel))))
           .child(div().text_size(16).font_semibold().line_height(1.35).child(task.title)))
-        .child(v_flex().px(8).py(7).gap(5).rounded(7).bg(t.surface)
-          .when(Boolean(task.handoff?.length), el => el.child(heading("Handoff")))
-          .child(steps(task))
-          .when(Boolean(task.dependsOn?.length), el => el.child(div().text_size(11).text_color(t.dim)
-            .child(`Depends on ${task.dependsOn.map(id => `#${id}`).join(", ")}${routeNote(task) ? " · not finished" : ""}`))))
+        .child(detailSection("task-assignment", "Assignment").max_w(570)
+          .child(v_flex().px(8).py(7).gap(5).rounded(7).bg(t.surface)
+            .child(steps(task))
+            .when(Boolean(task.dependsOn?.length), el => el.child(div().text_size(11).text_color(t.dim)
+              .child(`Depends on ${task.dependsOn.map(id => `#${id}`).join(", ")}${routeNote(task) ? " · not finished" : ""}`)))))
         // Selecting text must not drag a popped-out window.
-        .child(v_flex().id("body").w_full().max_w(570).min_w(0).gap(14).pb(8)
+        .child(v_flex().id("body").w_full().max_w(570).min_w(0).gap(16).pb(8)
           .text_size(13).line_height(1.6).on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .when(detail == null, el => el.child(div().text_color(t.dim).child("Loading task details…")))
           .when(Boolean(detail?.error), el => el.child(v_flex().gap(6).items_start()
@@ -890,11 +895,9 @@ export default class TeamConsole extends View {
             }))))
           .when(detail?.body !== undefined && !description && !history,
             el => el.child(div().text_color(t.dim).child("No description or history recorded.")))
-          .when(Boolean(description), el => el.child(TextView.markdown(`body-${task.id}-description`, readableDescription(description))
-            .w_full().selectable(true).scrollable(false)))
-          .when(Boolean(history), el => el.child(v_flex().id("task-history").gap(6)
-            .when(Boolean(description), section => section.pt(12).border_t(1).border_color(t.border))
-            .child(div().text_size(12).font_semibold().text_color(t.muted).child("History"))
+          .when(Boolean(description), el => el.child(detailSection("task-description", "Description")
+            .child(TextView.markdown(`body-${task.id}-description`, readableDescription(description)).w_full().selectable(true).scrollable(false))))
+          .when(Boolean(history), el => el.child(detailSection("task-history", "History")
             .child(TextView.markdown(`body-${task.id}-history`, history).w_full().selectable(true).scrollable(false)))));
     };
 
@@ -1069,13 +1072,14 @@ export default class TeamConsole extends View {
         .child(div().text_size(16).font_semibold().line_height(1.35).child(card.title))
         .when(!detail, el => el.child(div().text_color(t.dim).child("Loading…")))
         .when(Boolean(detail?.error), el => el.child(div().text_color(t.blocked).child(detail?.error ?? "")))
-        .when(Boolean(detail?.body), el => el.child(TextView.markdown(`description-${card.id}`, detail?.body ?? "").selectable(true)))
-        .when(Boolean(detail && !detail.error), el => el
-          .child(heading("ACCEPTANCE CRITERIA"))
-          .child(detail?.acceptance ? TextView.markdown(`acceptance-${card.id}`, detail.acceptance).selectable(true)
-            : div().text_color(t.dim).child("No acceptance criteria recorded."))
-          .child(heading("TASKS", linked.length))
-          .child(v_flex().gap(2).children(linked)));
+        .when(Boolean(detail && !detail.error), el => el.child(v_flex().w_full().max_w(570).min_w(0).gap(16)
+          .when(Boolean(detail?.body), el => el.child(detailSection("issue-description", "Description")
+            .child(TextView.markdown(`description-${card.id}`, detail?.body ?? "").w_full().selectable(true).scrollable(false))))
+          .child(detailSection("issue-acceptance", "Acceptance criteria")
+            .child(detail?.acceptance ? TextView.markdown(`acceptance-${card.id}`, detail.acceptance).w_full().selectable(true).scrollable(false)
+              : div().text_color(t.dim).child("No acceptance criteria recorded.")))
+          .child(detailSection("issue-tasks", "Tasks", linked.length)
+            .when(linked.length > 0, el => el.child(v_flex().gap(2).children(linked))))));
     };
 
     const mailTime = row => row.received_at ? new Date(row.received_at).toLocaleString() : "";
