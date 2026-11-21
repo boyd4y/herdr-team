@@ -749,7 +749,8 @@ export default class TeamConsole extends View {
     const pill = (text, c) => div().flex_none().px(6).h(18).rounded(5).bg(c + "22").text_size(10.5).font_semibold().text_color(c)
       .flex().items_center().child(text);
     const iterationTag = (id, version) => div().id(id).flex_none().max_w(88).truncate().rounded(4).px(5).py(1)
-      .bg(t.raised).text_color(t.muted).text_size(10.5).font_family(mono).tooltip(`Iteration ${version}`).child(version);
+      .bg(t.raised).text_color(t.muted).text_size(10.5).font_family(mono)
+      .tooltip(version ? `Iteration ${version}` : "No iteration assigned").child(version || "Unscheduled");
     const heading = (text, count) => h_flex().items_center().gap(6).px(2)
       .child(div().text_size(11).font_semibold().text_color(t.dim).child(text))
       .when(count !== undefined, el => el.child(div().text_size(10.5).text_color(t.dim).child(String(count))));
@@ -998,6 +999,7 @@ export default class TeamConsole extends View {
       .children([["current", "Current"], ["archive", "Archive"], ["trash", "Trash"]].map(([folder, name]) =>
         segment(`${kind}-folder-${folder}`, name, selected === folder, cx => onSelect(folder, cx))));
     const requirementLabel = card => issueFolder(card) === "current" ? REQUIREMENT_STATUS[card.status] ?? card.status : label(issueFolder(card));
+    const issueIteration = card => iterationTag(`issue-iteration-${card.id}`, iterationVersion(card.iteration));
     const requirementStatus = card => {
       const current = issueFolder(card) === "current";
       const color = !current ? t.muted : card.status === "accepted" ? t.done
@@ -1011,7 +1013,7 @@ export default class TeamConsole extends View {
       .hover(s => s.bg(t.hover)).on_click((_e, cx) => this.showRequirements(card.id, cx))
       .child(h_flex().gap(7).items_center().min_w(0)
         .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(card.title))
-        .when(Boolean(card.iteration), el => el.child(iterationTag(`issue-iteration-${card.id}`, card.iteration))))
+        .child(issueIteration(card)))
       .child(h_flex().gap(6).items_center().flex_wrap().min_w(0)
         .child(div().flex_none().font_family(mono).text_size(11).text_color(t.dim).child(card.id))
         .child(requirementStatus(card))
@@ -1084,7 +1086,7 @@ export default class TeamConsole extends View {
           .child(div().text_size(11).font_family(mono).text_color(t.muted).child(card.id))
           .child(requirementStatus(card))
           .child(pill(card.priority, priorityColor(card.priority)))
-          .when(Boolean(iterationVersion(card.iteration)), el => el.child(div().text_size(11).text_color(t.muted).child(iterationVersion(card.iteration)))))
+          .child(issueIteration(card)))
         .child(div().text_size(16).font_semibold().line_height(1.35).child(card.title))
         .when(!detail, el => el.child(div().text_color(t.dim).child("Loading…")))
         .when(Boolean(detail?.error), el => el.child(div().text_color(t.blocked).child(detail?.error ?? "")))
