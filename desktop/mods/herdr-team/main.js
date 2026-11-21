@@ -998,15 +998,22 @@ export default class TeamConsole extends View {
       .children([["current", "Current"], ["archive", "Archive"], ["trash", "Trash"]].map(([folder, name]) =>
         segment(`${kind}-folder-${folder}`, name, selected === folder, cx => onSelect(folder, cx))));
     const requirementLabel = card => issueFolder(card) === "current" ? REQUIREMENT_STATUS[card.status] ?? card.status : label(issueFolder(card));
-    const requirementColor = status => status === "accepted" ? t.done : status === "ready" ? t.accent : status === "in-progress" ? t.working : t.dim;
-    const requirementRow = card => h_flex().id(`requirement-${card.id}`).gap(7).items_center().min_w(0).px(6).py(8).rounded(6)
+    const requirementStatus = card => {
+      const color = issueFolder(card) !== "current" ? t.muted : card.status === "accepted" ? t.done
+        : card.status === "ready" ? t.accent : card.status === "in-progress" ? t.working : t.muted;
+      return pill(requirementLabel(card), color).id(`issue-status-${card.id}`);
+    };
+    const requirementRow = card => v_flex().id(`requirement-${card.id}`).gap(4).min_w(0).px(6).py(8).rounded(6)
       .tooltip(`${card.id} · ${card.title}\n${requirementLabel(card)} · ${card.progress.done}/${card.progress.total} tasks complete`)
       .hover(s => s.bg(t.hover)).on_click((_e, cx) => this.showRequirements(card.id, cx))
-      .child(div().size(7).flex_none().rounded(4).bg(issueFolder(card) === "current" ? requirementColor(card.status) : t.dim))
-      .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(card.title))
-      .when(Boolean(iterationVersion(card.iteration)), el => el.child(iterationTag(`issue-iteration-${card.id}`, iterationVersion(card.iteration))))
-      .child(typePill(card.type))
-      .child(div().flex_none().font_family(mono).text_size(11).text_color(t.muted).child(`${card.progress.done}/${card.progress.total}`));
+      .child(h_flex().gap(7).items_center().min_w(0)
+        .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(card.title))
+        .when(Boolean(card.iteration), el => el.child(iterationTag(`issue-iteration-${card.id}`, card.iteration))))
+      .child(h_flex().gap(6).items_center().flex_wrap().min_w(0)
+        .child(div().flex_none().font_family(mono).text_size(11).text_color(t.dim).child(card.id))
+        .child(requirementStatus(card))
+        .child(typePill(card.type))
+        .child(div().flex_none().font_family(mono).text_size(11).text_color(t.muted).child(`${card.progress.done}/${card.progress.total}`)));
     const options = [null, ...iterationOptions([...tasks, ...requirements])];
     const iterationTitle = value => value ?? "All iterations";
     const visibleRequirements = requirementsForIteration(requirements, this.iteration, this.requirementType, this.issueFolder);
@@ -1072,7 +1079,7 @@ export default class TeamConsole extends View {
         .when(Boolean(action?.error), el => el.child(div().text_size(12).text_color(t.blocked).child(action?.error)))
         .child(h_flex().gap(6).items_center().flex_wrap().child(typePill(card.type))
           .child(div().text_size(11).font_family(mono).text_color(t.muted).child(card.id))
-          .child(pill(requirementLabel(card), folder === "current" ? requirementColor(card.status) : t.dim))
+          .child(requirementStatus(card))
           .child(pill(card.priority, priorityColor(card.priority)))
           .when(Boolean(iterationVersion(card.iteration)), el => el.child(div().text_size(11).text_color(t.muted).child(iterationVersion(card.iteration)))))
         .child(div().text_size(16).font_semibold().line_height(1.35).child(card.title))
