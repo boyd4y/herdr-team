@@ -13,3 +13,7 @@
 - Do not overwrite shipped layouts/mods or switch the user's active layout during development. Use namespaced files. Do not stop a core or close user terminals for tests.
 - Keep UI labels, errors and default agent instructions English. Chinese documentation and TEAM.md checklists are allowed; preserve user-authored Unicode content.
 - Before claiming a mod works, run the real `herdr-app check`. It validates initial rendering only; visual interaction and later async states need separate verification. Keep sample data visibly separate from live data.
+
+# Delivery
+
+- For a small, self-contained change, commit and push it to the current branch's upstream once implementation and verification are complete. Stage the files for that change and follow any branch or review instructions the user gives for it.
