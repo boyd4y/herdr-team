@@ -18,7 +18,7 @@ import { realHerdr, type Herdr } from "./lib/runtime/herdr.ts";
 import { refreshSidebar } from "./lib/ui/sidebar.ts";
 import { claimTask, queueRows, retryDelivery } from "./lib/dispatch/queue.ts";
 import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/dispatch/launch.ts";
-import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
+import { agentStatusLabel, buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
 import { createTask, editTask, findTask, linkRequirementTask, setTaskDisposition, TaskError } from "./lib/tasks/cards.ts";
 import { stamp } from "./lib/tasks/records.ts";
 import { acceptRequirement, addRequirement, editRequirements, indexRequirementTasks, iterationRows, iterationVersion,
@@ -741,7 +741,9 @@ function cmdStatus(args: string[], name = "status"): number {
     if (!binding || showDesktopBinding(client, binding.space)?.root !== binding.root) throw new DesktopError("No valid project space binding; run up first");
     const agents = client.rpc<{ terminals: DesktopTerminal[] }>("terminal.list", { labels: { "team.project": binding.root, "team.owner_space": binding.space } }).terminals;
     const result = { binding, agents, tasks: project.tasks.filter(task => parsed.flags.has("all") || !isTerminal(task.status)).map(cardForJson) };
-    return out(parsed, result, [`space ${binding.space}  ${binding.root}`, ...agents.map(agent => `${agent.labels["team.role"] ?? "?"}  ${agent.address}  ${agent.status?.state ?? "unknown"}`), formatTasks(project.tasks, project.roles)].join("\n"));
+    return out(parsed, result, [`space ${binding.space}  ${binding.root}`, ...agents.map(agent =>
+      `${agent.labels["team.role"] ?? "?"}  ${agent.address}  ${agentStatusLabel(agent.status?.state ?? "unknown")}`),
+    formatTasks(project.tasks, project.roles)].join("\n"));
   }
   const report = buildReport(project, herdrClient(), parsed.flags.has("all"));
 

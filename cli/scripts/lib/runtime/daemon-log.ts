@@ -1,6 +1,7 @@
 import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readSync, watch } from "node:fs";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { deliveryReasonLabel } from "../dispatch/delivery.ts";
 import { daemonDirectory } from "./daemon-binding.ts";
 import { sanitize } from "../shared/text.ts";
 import { stamp } from "../tasks/records.ts";
@@ -208,7 +209,8 @@ export function formatDaemonLog(record: unknown): string {
 /** Keep state and safe diagnostics. Raw adapter errors can include agent input or argv. */
 export function deliveryLogReason(reason?: string): string | undefined {
   if (!reason) return;
-  if (/^Agent is (?:working|blocked|error|unknown|done(?: \(Core requires idle\))?)$/.test(reason) ||
+  reason = deliveryReasonLabel(reason);
+  if (/^Agent is (?:working|waiting for input|error|unknown|done(?: \(Core requires idle\))?)$/.test(reason) ||
       /^Waiting for \d{4}(?:, \d{4})*$/.test(reason) ||
       /^Session is processing #\d{4}$/.test(reason) ||
       /^Herdr submission failed \([a-z_]+\); inspect the receiving agent before retrying$/.test(reason) ||

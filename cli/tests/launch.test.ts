@@ -118,7 +118,7 @@ describe("status", () => {
       (p) => {
         const herdr = runningWorkspace();
         herdr.state.agents[0]!.agent_status = "blocked";
-        expect(buildReport(p, herdr, false).inconsistencies.some((i) => i.kind === "blocked")).toBe(true);
+        expect(buildReport(p, herdr, false).inconsistencies).toMatchObject([{ kind: "agent-needs-input", id: "0001" }]);
       },
     );
   });

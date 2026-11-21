@@ -41,13 +41,13 @@ export function sampleConsole(state: ConsoleState, elapsedMs = 0) {
   blocked.meta.review = { commit, developer: "dev", reviewer: "test", reviewers: ["test"] };
   blocked.meta.delivery = { id: "sample-delivery-0082", role: "test", phase: "handoff", state: "claimed", queued_at: queued,
     reason: "Choose the expected keyboard behavior before continuing" };
-  blocked.body = "Confirm navigation at 62 columns.\n\n## History\n- 10:31  dev → test\n- 10:32  test requested clarification\n";
+  blocked.body = "Verify navigation on the shared test host. The host is unavailable.\n\n## History\n- 10:31  dev → test\n- 10:32  test recorded a test environment outage\n";
   const project: Project = { root: "/sample/herdr-team", herdrDir: "/sample/herdr-team/.herdr", hasTeamFile: true,
     roles: [role("dev", "codex", "gpt-6.1-sol"), role("test", "claude", "default"), role("doc", "codex", "gpt-6-luna")],
     tasks: [main, waiting, blocked], problems: [], retiredIds: [] };
   const agents: AgentInfo[] = [
     ...(phase === 9 ? [] : [{ name: `${owner}-0083`, agent_status: sending ? "idle" : "working", pane_id: "sample:1" }]),
-    { name: "test-0082", agent_status: "blocked", pane_id: "sample:3" },
+    { name: "test-0082", agent_status: "idle", pane_id: "sample:3" },
   ];
   return { project, model: modelFromAgents(project, agents, state, now.toLocaleTimeString("en-GB"), true, now.getTime()) };
 }

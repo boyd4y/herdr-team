@@ -98,7 +98,7 @@ export function sample() {
   const terminal = (role, task, status) => ({ address: `sample-${role}`, state: "live", status, program: { agent: true },
     labels: { "team.project": binding.root, "herdr.space": binding.space, "team.role": role, "team.task": task, "team.session": "task",
       "team.runtime": "desktop", "team.delivery": `sample-${task}` } });
-  const terminals = [terminal("dev", "0045", "working"), terminal("test", "0042", "working"), terminal("doc", "0041", "blocked")];
+  const terminals = [terminal("dev", "0045", "working"), terminal("test", "0042", "blocked"), terminal("doc", "0041", "idle")];
   for (const id of ["0045", "0041"]) {
     const task = tasks.find(task => task.id === id);
     task.meta = { ...task.meta, delivery: { id: `sample-${id}`, role: task.role, state: "claimed", runtime: "desktop", space: binding.space } };

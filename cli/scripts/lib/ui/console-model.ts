@@ -131,7 +131,7 @@ export function modelFromAgents(project: Project, agents: AgentInfo[], state: Co
   };
 }
 
-export type FlowState = "done" | "running" | "waiting" | "sending" | "blocked" | "idle" | "inactive";
+export type FlowState = "done" | "running" | "waiting" | "sending" | "input" | "attention" | "blocked" | "idle" | "inactive";
 export interface FlowNode { kind: "role" | "integration"; role: string; label: string; state: FlowState; model: string }
 export interface TaskFlow { nodes: FlowNode[]; current: number }
 
@@ -149,19 +149,20 @@ export function taskFlow(task: TaskCard, project: Project, model: ConsoleModel):
   if (integration) { participants.push("merge"); current = participants.length - 1; }
   const live = model.taskAgents.get(task.id);
   const delivery = deliveryState(task);
-  const blocked = task.status === "blocked" || live?.agent_status === "blocked" ||
-    ["uncertain", "invalid"].includes(delivery ?? "") || ["blocked", "invalid"].includes(integration?.state ?? "");
   let active: FlowState = "idle";
   const disposition = taskDisposition(task);
   if (disposition) active = "inactive";
   else if (task.status === "done") active = "done";
-  else if (blocked) active = "blocked";
+  else if (task.status === "blocked" || integration?.state === "blocked") active = "blocked";
+  else if (delivery === "uncertain" || delivery === "invalid" || integration?.state === "invalid") active = "attention";
   else if (integration) active = integration.state === "running" || integration.state === "done" ? integration.state : "waiting";
   else if (delivery === "sending" || delivery === "submitted") active = "sending";
   else if (delivery === "queued") active = "waiting";
+  else if (live?.agent_status === "blocked") active = "input";
   else if (live?.agent_status === "working") active = "running";
   const labels: Record<FlowState, string> = { done: "Done", running: "Running", waiting: "Waiting", sending: "Delivering",
-    blocked: "Needs input", idle: delivery === "claimed" ? "Claimed" : "Ready", inactive: disposition === "deleted" ? "In Trash" : "Archived" };
+    input: "Needs input", attention: "Needs review", blocked: integration?.state === "blocked" ? "Merge blocked" : "Blocked",
+    idle: delivery === "claimed" ? "Claimed" : "Ready", inactive: disposition === "deleted" ? "In Trash" : "Archived" };
   return { current, nodes: participants.map((name, i) => {
     const kind = integration && i === participants.length - 1 ? "integration" : "role";
     const role = kind === "role" && project.roles.find(role => role.name === name);
@@ -206,7 +207,7 @@ function pendingCounts(tasks: TaskCard[]): PendingCounts {
 
 const LINE_STATUS_ORDER = ["doing", "review", "todo"] as const;
 
-const NEEDS_ATTENTION = new Set(["blocked", "agent-missing", "maybe-finished", "delivery-uncertain", "integration-blocked", "agent-ambiguous"]);
+const NEEDS_ATTENTION = new Set(["agent-missing", "maybe-finished", "delivery-uncertain", "integration-blocked", "agent-ambiguous"]);
 
 export function formatStatusLine(model: ConsoleModel, tasks: readonly TaskCard[] = model.tasks): string {
   const counts = LINE_STATUS_ORDER.map((status) => ({
@@ -216,17 +217,20 @@ export function formatStatusLine(model: ConsoleModel, tasks: readonly TaskCard[]
     .filter((c) => c.count > 0)
     .map((c) => `${c.count} ${c.status}`);
 
+  const blocked = new Set(tasks.filter(task => task.status === "blocked").map(task => task.id));
+  const input = new Set<string>();
   const attention = new Set<string>();
-  for (const task of tasks) {
-    if (task.status === "blocked") attention.add(task.id);
-  }
   for (const item of model.inconsistencies) {
-    if (item.id !== undefined && NEEDS_ATTENTION.has(item.kind)) attention.add(item.id);
+    if (!item.id || blocked.has(item.id)) continue;
+    if (item.kind === "agent-needs-input") input.add(item.id);
+    else if (NEEDS_ATTENTION.has(item.kind)) attention.add(item.id);
   }
 
   const tail: string[] = [];
   if (model.pending.waiting > 0) tail.push(`${model.pending.waiting} queued`);
-  if (attention.size > 0) tail.push(`${attention.size} blocked`);
+  if (blocked.size > 0) tail.push(`${blocked.size} blocked`);
+  if (input.size > 0) tail.push(`${input.size} awaiting input`);
+  if (attention.size > 0) tail.push(`${attention.size} to check`);
   if (model.problems.length > 0) tail.push(`${model.problems.length} ✗`);
   if (!model.herdrOk) tail.push("herdr ✗");
 

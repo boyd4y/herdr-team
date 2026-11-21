@@ -62,6 +62,10 @@ test("dispatch and handoff carry the current root TEAM.md without executing its 
 test.each(["working", "blocked", "unknown"])("busy receiver %s waits on disk, then drains when idle", (status) => fixture((f) => {
   f.herdr.state.agents[0]!.agent_status = status;
   expect(dispatch(f.load(), f.herdr, "0001")[0]!.action).toBe("queued");
+  if (status === "blocked") {
+    expect(f.task().status).toBe("todo");
+    expect(deliveryFor(f.task())?.reason).toBe("Agent is waiting for input");
+  }
   const id = deliveryFor(f.task())!.id;
   enqueueTask(f.load(), "0001");
   expect(deliveryFor(f.task())!.id).toBe(id);

@@ -6,7 +6,7 @@ import { boardColumns, consoleBinding, flowNodes, iterationOptions, iterationVer
 import { sample } from "./sample.js";
 
 const ICON = name => `mods/workspace-chrome/${name}.svg`;
-const LABEL = { blocked: "Needs you", error: "Error", working: "Working", done: "Done", idle: "Idle", unknown: "Unknown",
+const LABEL = { blocked: "Blocked", "needs input": "Needs input", error: "Error", working: "Working", done: "Done", idle: "Idle", unknown: "Unknown",
   next: "Next", ready: "Ready", assigned: "Assigned", "awaiting handoff": "Awaiting handoff", archive: "Archived", trash: "In Trash",
   doing: "In progress", todo: "Todo", review: "Review" };
 const label = status => LABEL[status] ?? status;
@@ -708,7 +708,8 @@ export default class TeamConsole extends View {
     const inbox = demo?.inbox?.[this.inboxFolder] ?? this.inboxRows;
     const live = scopedTerminals(demo?.terminals ?? terminals(), binding);
     const roles = roleRows(demo?.roles ?? this.roles, live);
-    const color = status => status === "error" ? t.blocked : status === "ready" ? t.accent : status === "awaiting handoff" ? t.done
+    const inputColor = t.ansi3 ?? t.accent;
+    const color = status => status === "error" ? t.blocked : status === "needs input" ? inputColor : status === "ready" ? t.accent : status === "awaiting handoff" ? t.done
       : status === "assigned" ? t.muted : t[status] ?? t.dim;
 
     // Small building blocks, in the shipped sidebar's vocabulary.
@@ -718,8 +719,7 @@ export default class TeamConsole extends View {
       .child(div().text_size(11).font_semibold().text_color(t.dim).child(text))
       .when(count !== undefined, el => el.child(div().text_size(10.5).text_color(t.dim).child(String(count))));
     const statusColor = status => status === "doing" ? t.working : status === "review" ? t.accent : status === "blocked" ? t.blocked : status === "done" ? t.done : t.dim;
-    const taskLabel = status => status === "blocked" ? "Blocked" : label(status);
-    const taskDisplayLabel = task => taskFolder(task) === "current" ? taskReviewPhase(task) ?? taskLabel(task.status) : label(taskFolder(task));
+    const taskDisplayLabel = task => taskFolder(task) === "current" ? taskReviewPhase(task) ?? label(task.status) : label(taskFolder(task));
     const taskDisplayColor = task => taskFolder(task) !== "current" ? t.muted : task.status === "review" && task.meta?.integration?.state === "blocked"
       ? t.blocked : statusColor(task.status);
     const emptyState = (title, description, icon = this.teamIcon(), detail) => v_flex().w_full().flex_1().min_h(220)
@@ -754,13 +754,16 @@ export default class TeamConsole extends View {
             .child(`· ${model}`))));
     };
     const priorityColor = p => p === "P0" ? t.blocked : p === "P1" ? t.working : t.muted;
+    const taskReport = task => flowNodes(task, roles)[0]?.status;
     // Per-task glyph: recorded task status first, then what its current agent reports.
     const taskGlyph = task => {
       if (taskFolder(task) !== "current") return svg(ICON("minus")).size(14).flex_none().text_color(t.dim);
       if (task.status === "done") return svg(ICON("circle-check")).size(14).flex_none().text_color(t.done);
       if (task.status === "todo") return div().size(10).m(2).flex_none().rounded(5).border(1.5).border_color(t.dim);
-      const report = flowNodes(task, roles)[0]?.status;
+      const report = taskReport(task);
       if (report === "working") return svg(ICON("spinner")).size(14).flex_none().text_color(t.working).spin(900);
+      if (report === "needs input") return div().size(14).flex_none().rounded(4).bg(inputColor + "26")
+        .text_size(10.5).font_bold().text_color(inputColor).flex().items_center().justify_center().child("?");
       if (report === "blocked" || report === "error") return div().size(14).flex_none().rounded(4).bg(t.blocked + "26")
         .text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
       return div().size(10).m(2).flex_none().rounded(5).bg(t.accent);
@@ -857,9 +860,10 @@ export default class TeamConsole extends View {
     // A. List: narrow-sidebar rows, explicit status filters and attention order.
     const taskRow = task => {
       const owner = taskAssignee(task, roles, this.agentPrograms);
+      const needsInput = taskReport(task) === "needs input";
       owner.name = visibleRole(owner.name);
       return v_flex().id(`task-${task.id}`).px(6).py(7).gap(4).rounded(6).min_w(0)
-        .tooltip(`#${task.id} · ${task.title}\n${taskDisplayLabel(task)}\n${assigneeTooltip(owner)}`)
+        .tooltip([`#${task.id} · ${task.title}`, taskDisplayLabel(task), needsInput && "Needs input", assigneeTooltip(owner)].filter(Boolean).join("\n"))
         .hover(s => s.bg(t.hover))
         .on_click((_e, cx) => this.select(task.id, cx))
         .child(h_flex().gap(8).items_center().min_w(0)
@@ -869,6 +873,7 @@ export default class TeamConsole extends View {
         .child(h_flex().pl(22).gap(6).items_center().min_w(0).text_size(11)
           .child(div().flex_none().font_family(mono).text_color(t.dim).child(`#${task.id}`))
           .child(assignee(owner))
+          .when(needsInput, el => el.child(div().flex_none().text_color(inputColor).child("Needs input")))
           .when(Boolean(task.iteration), el => el.child(div().max_w(76).truncate().text_color(t.dim).tooltip(task.iteration).child(task.iteration)))
           .child(div().flex_none().text_color(taskDisplayColor(task)).child(taskDisplayLabel(task))));
     };
@@ -888,12 +893,13 @@ export default class TeamConsole extends View {
       .child(v_flex().min_w(0).gap(1).children(visibleTasks.map(taskRow))
         .when(!visibleTasks.length, el => el.child(div().px(6).py(14).text_size(12).text_color(t.muted)
           .child(this.iteration && !iterationTasks.length ? `No tasks in ${this.iteration}.`
-            : activeFilter === "open" ? "No open tasks. Use Done to see completed tasks." : `No ${taskLabel(activeFilter).toLowerCase()} tasks.`))));
+            : activeFilter === "open" ? "No open tasks. Use Done to see completed tasks." : `No ${label(activeFilter).toLowerCase()} tasks.`))));
 
     // B. Board: one card in its recorded status column, with its current assignee.
     const card = task => {
       const next = visibleRole(task.handoff?.[0]), phase = taskReviewPhase(task);
-      const note = phase ?? (routeNote(task) || (next ? `Next: ${next}` : ""));
+      const needsInput = taskReport(task) === "needs input";
+      const note = needsInput ? "Needs input" : phase ?? (routeNote(task) || (next ? `Next: ${next}` : ""));
       const owner = taskAssignee(task, roles, this.agentPrograms);
       owner.name = visibleRole(owner.name);
       return v_flex().id(`card-${task.id}`).min_w(0).p(8).gap(6).rounded(6).bg(t.background).border(1)
@@ -905,7 +911,7 @@ export default class TeamConsole extends View {
         .child(h_flex().gap(5).items_center().min_w(0).child(assignee(owner, true))
           .when(task.priority === "P0" || task.priority === "P1", el => el.child(pill(task.priority, priorityColor(task.priority)))))
         .when(Boolean(note), el => el.child(div().min_w(0).text_size(10.5).line_height(1.35)
-          .text_color(phase ? taskDisplayColor(task) : t.muted).child(note)))
+          .text_color(needsInput ? inputColor : phase ? taskDisplayColor(task) : t.muted).child(note)))
         .child(div().font_family(mono).text_size(10).text_color(t.dim).child(`#${task.id}`));
     };
     const columns = boardColumns(iterationTasks);

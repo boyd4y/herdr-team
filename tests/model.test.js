@@ -212,6 +212,12 @@ test("the flow uses only the current delivery, even when an older session is blo
   const task = { id: "0042", role: "dev", status: "doing", handoff: ["test"], meta: { delivery } };
   const flow = (task, terminals) => flowNodes(task, roleRows([{ name: "dev", kind: "codex" }], terminals)).map(node => node.status);
   assert.deepEqual(flow(task, [old, other, current]), ["working", "next"]);
+  assert.deepEqual(flow(task, [{ ...current, status: "blocked" }]), ["needs input", "next"]);
+  assert.equal(boardColumns([task]).find(column => column.status === "blocked").tasks.length, 0);
+  assert.deepEqual(flow({ ...task, status: "blocked" }, [current]), ["blocked", "next"]);
+  const merging = { ...task, status: "review", meta: { delivery, integration: { state: "blocked" } } };
+  assert.equal(taskReviewPhase(merging), "Merge blocked");
+  assert.deepEqual(flow(merging, [{ ...current, status: "blocked" }]), ["assigned", "next"]);
   assert.deepEqual(flow(task, [old, other, { ...current, status: "done" }]), ["awaiting handoff", "next"]);
   assert.deepEqual(flow(task, [old, other]), ["assigned", "next"]);
   assert.deepEqual(flow({ ...task, meta: { delivery: { ...delivery, state: "queued" } } }, [old, current]), ["assigned", "next"]);

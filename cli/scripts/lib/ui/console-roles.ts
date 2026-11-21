@@ -1,7 +1,7 @@
 import { BoxRenderable, ScrollBoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core";
 import { sanitize } from "../shared/text.ts";
 import { consoleColors as c } from "./console-theme.ts";
-import type { RoleStatus } from "./status.ts";
+import { agentStatusLabel, type RoleStatus } from "./status.ts";
 
 /** A keyed native table: changing one assignment must not recreate the entire team's widgets. */
 export function createRolesView(renderer: CliRenderer) {
@@ -17,9 +17,9 @@ export function createRolesView(renderer: CliRenderer) {
     signature = next;
     view.title = `ROLES ${roles.length}`;
     const data = [{ id: "roles-heading", values: ["ROLE", "HARNESS", "MODEL", "STATE", "TASKS", "Q"], color: c.muted }, ...roles.map(role => ({
-      id: `role-${role.role}`, values: [role.role, role.kind, role.model, role.herdrStatus === "per-task" ? "task" : role.herdrStatus,
+      id: `role-${role.role}`, values: [role.role, role.kind, role.model, role.herdrStatus === "per-task" ? "task" : agentStatusLabel(role.herdrStatus),
         role.current?.map(id => `#${id}`).join(", ") || "—", String(role.queued ?? 0)],
-      color: role.herdrStatus === "blocked" || role.herdrStatus === "ambiguous" ? c.red : role.current?.length ? c.green : c.text,
+      color: role.herdrStatus === "blocked" ? c.yellow : role.herdrStatus === "ambiguous" ? c.red : role.current?.length ? c.green : c.text,
     }))];
     for (const row of data) row.values = row.values.map(value => sanitize(value));
     const widths = data[0]!.values.map((_, index) => Math.max(...data.map(row => Bun.stringWidth(row.values[index]!))) + 1);

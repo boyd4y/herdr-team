@@ -81,6 +81,8 @@ stops adding new default shortcuts to it):
 Blocked and Done. Cards include the current assignee. In narrow panels,
 populated columns wrap and empty statuses appear as counts.
 Hover over the Team icon to see the binding path, machine and Space.
+Routine approvals and questions show **Needs input** on the current card and in
+Agents. Use the agent row to return to its terminal and reply.
 
 **List** is the compact sidebar view. Its status filters show counts and wrap
 to fit the panel. **All** is the default, ordered by newest task first. **Open**

@@ -203,11 +203,7 @@ describe("formatStatusLine", () => {
     ).toBe("team: 2 doing 1 todo");
   });
 
-  /**
-   * `blocked` **不在**前半段 —— 它归后面那个「卡住」计数器管。
-   * 两处都列会打出 `1 doing 1 blocked · 2 blocked`：同一个词两个意思。
-   */
-  test("blocked 不计入前半段，只在尾部出现一次", () => {
+  test("recorded blockers are counted separately from active statuses", () => {
     expect(
       line([
         task("0001", "a", "A", "P2", "todo", "dev"),
@@ -216,10 +212,10 @@ describe("formatStatusLine", () => {
     ).toBe("team: 1 todo · 1 blocked");
   });
 
-  test("agent 掉了算卡住", () => {
+  test("a missing agent is flagged for inspection", () => {
     // 没有 agent（fakeHerdr 空的）→ agent-missing
     expect(line([task("0001", "a", "A", "P2", "doing", "dev")])).toBe(
-      "team: 1 doing · 1 blocked",
+      "team: 1 doing · 1 to check",
     );
   });
 
@@ -229,13 +225,13 @@ describe("formatStatusLine", () => {
     );
   });
 
-  test("干完了没交棒也算卡住", () => {
+  test("an idle agent without handoff is flagged for inspection", () => {
     // live() 默认 idle
     const idle = fakeHerdr();
     idle.live("dev");
     idle.state.agents.at(-1)!.tokens = { team_project: projectKey(projectOf([])) };
     expect(line([task("0001", "a", "A", "P2", "doing", "dev")], idle)).toBe(
-      "team: 1 doing · 1 blocked",
+      "team: 1 doing · 1 to check",
     );
   });
 
@@ -247,13 +243,20 @@ describe("formatStatusLine", () => {
     );
   });
 
-  test("同一张卡只会被数一次（卡片状态和 agent 两侧都指向它）", () => {
-    // 防御性的：今天 findInconsistencies 对一张 doing 卡最多产出一条，
-    // 但按 id 去重的写法不该依赖这个巧合。
-    const blocked = task("0001", "a", "A", "P2", "blocked", "dev");
-    expect(line([blocked, task("0002", "b", "B", "P2", "todo", "dev")])).toBe(
-      "team: 1 todo · 1 blocked",
-    );
+  test("awaiting a human response keeps the recorded task in progress", () => {
+    const active = task("0001", "a", "A", "P2", "doing", "dev");
+    const blocked = task("0002", "b", "B", "P2", "blocked", "test");
+    const herdr = working();
+    const agent = herdr.state.agents.at(-1)!;
+    agent.agent_status = "blocked";
+    const project = projectOf([active, blocked], RESIDENT);
+    const model = buildModel(project, herdr, freshState(), "");
+    expect(formatStatusLine(model)).toBe("team: 1 doing · 1 blocked · 1 awaiting input");
+    expect(taskFlow(active, project, model).nodes[0]).toMatchObject({ state: "input", label: "Needs input" });
+    expect(taskFlow(blocked, project, model).nodes[0]).toMatchObject({ state: "blocked", label: "Blocked" });
+    expect(active.status).toBe("doing");
+    agent.agent_status = "working";
+    expect(line([active, blocked], herdr)).toBe("team: 1 doing · 1 blocked");
   });
 
   test("herdr 连不上时明说，而不是假装一切正常", () => {
@@ -271,7 +274,7 @@ describe("formatStatusLine", () => {
     const sending = deliveryTask("0002", "sending");
     const submitted = deliveryTask("0003", "submitted");
     const uncertain = deliveryTask("0004", "uncertain");
-    expect(line([queued, sending, submitted, uncertain])).toBe("team: 4 todo · 1 queued · 1 blocked");
+    expect(line([queued, sending, submitted, uncertain])).toBe("team: 4 todo · 1 queued · 1 to check");
     expect(line([sending, submitted])).toBe("team: 2 todo");
     const blocked = task("0005", "blocked", "Blocked", "P1", "blocked", "dev");
     const broken = task("0006", "bad", "Bad", "P1", "todo", "dev");

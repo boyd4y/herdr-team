@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadProject } from "../team/project.ts";
 import { assignmentPrompt } from "./assignment.ts";
-import { deliveryFor, deliveryState, newDelivery, type Delivery } from "./delivery.ts";
+import { AGENT_AWAITING_INPUT, deliveryFor, deliveryReasonLabel, deliveryState, newDelivery, type Delivery } from "./delivery.ts";
 import { HerdrError, type Herdr } from "../runtime/herdr.ts";
 import { taskScoped } from "../tasks/verification.ts";
 import { appendRecord, stamp } from "../tasks/records.ts";
@@ -148,7 +148,7 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
       }
       if (!receiver) { hold("Waiting for agent; run herdr-team up"); continue; }
       if (!["idle", "done", "new"].includes(receiver.status)) {
-        hold(`Agent is ${receiver.status}`); continue;
+        hold(receiver.status === "blocked" ? AGENT_AWAITING_INPUT : `Agent is ${receiver.status}`); continue;
       }
       const sending: Delivery = { ...d, ...runtime.scope, ...receiver.target, state: "sending", sent_at: now.toISOString(), reason: "" };
       save(fresh, task, sending);
@@ -211,6 +211,6 @@ export function retryDelivery(project: Project, id: string, runtime?: TaskRuntim
 export function queueRows(project: Project): Array<{ id: string; role: string; state: string; delivery: string; reason: string }> {
   return project.tasks.filter((t) => !isTerminal(t.status) && deliveryFor(t)).map((t) => {
     const d = deliveryFor(t)!;
-    return { id: t.id, role: t.role, state: d.state, delivery: d.id, reason: d.reason ?? "" };
+    return { id: t.id, role: t.role, state: d.state, delivery: d.id, reason: deliveryReasonLabel(d.reason ?? "") };
   });
 }

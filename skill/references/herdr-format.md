@@ -271,12 +271,13 @@ qoder 由适配层转换为 Herdr 原生 qodercli；配置与 CLI 始终使用 q
 | `doing` | 已派出，agent 进行中 |
 | `review` | 已交付，等待下游角色接手 |
 | `done` | 终态 |
-| `blocked` | 卡住，等外部输入 |
+| `blocked` | 缺少必要前置条件或发生故障，负责人确认任务无法继续 |
 | `archived` | 未完成任务已存档 |
 | `deleted` | 未完成任务已移至回收站 |
 
 注意：`status` 是**任务的**生命周期，与 Herdr 的 agent 状态（`working` / `blocked` /
 `done` / `idle` / `unknown`）是两回事，不要混用。
+普通确认、权限审批或补充输入属于会话的 **Needs input**。任务保留当前状态与负责人。
 
 终态任务不再被派活。依赖仅在被引用任务为 `done` 时满足，包括已存档或放入回收站的已完成任务。
 旧记录中的 `cancelled` 仍可读取，并归入存档。

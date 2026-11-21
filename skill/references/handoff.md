@@ -79,6 +79,8 @@ herdr-team task handoff <id> --delivery ID --reject --summary "Reproduction and 
 
 add 只建卡，dispatch 才入队；handoff 保存结果并自动入队下一棒，无需再 dispatch。
 三类状态分别看：卡片 status 是任务进度，delivery 是当前分配投递状态，Herdr agent state 是会话可用性。
+常规确认、权限审批或补充输入在原会话处理，任务保留当前状态与负责人。
+确实缺少必要前置条件或发生故障而无法继续时，由负责人确认任务是否标记为 Blocked，并说明原因和恢复条件。
 CLI 按会话是否可接收来决定投递，任务仍需要明确 handoff。
 
 up 建立或复用团队绑定与常驻会话，确保自动投递服务运行，不把未派发的 todo 自动入箱。

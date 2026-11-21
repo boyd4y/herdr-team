@@ -18,6 +18,12 @@ export interface Delivery {
   reason?: string;
 }
 
+export const AGENT_AWAITING_INPUT = "Agent is waiting for input";
+
+export function deliveryReasonLabel(reason: string): string {
+  return reason === "Agent is blocked" ? AGENT_AWAITING_INPUT : reason;
+}
+
 export function deliveryFor(task: Pick<TaskCard, "meta">): Delivery | undefined {
   const value = task.meta["delivery"];
   if (value === undefined || value === null) return;

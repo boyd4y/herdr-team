@@ -53,20 +53,20 @@ function title(tab, l) {
   const telling = live && live !== (l?.terminal ?? l?.address) && live !== prog && !path && !live.includes("@") && live.toLowerCase() !== l?.program?.key;
   return (tab.name === prog || !tab.named) && telling ? live : tab.name;
 }
-const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
-// A sub-agent without a pane isn't in agents(): its raw word, error counting as
-// blocked. It's never done: it reports to its parent, and the parent's done is the news.
+const RANK = { error: 5, blocked: 4, done: 3, working: 2, idle: 1 };
+// Sub-agents report completion to their parent.
 const kidStatus = (k, listed) => {
   const s = listed.get(k.address) ?? k.status;
-  return s === "error" ? "blocked" : s === "done" ? "idle" : s;
+  return s === "done" ? "idle" : s;
 };
 const SORTS = [
   { id: "priority", label: "Priority", icon: "clock" },
   { id: "grouped", label: "Grouped by space", icon: "layers" },
 ];
 const sortOf = () => SORTS.find((s) => s.id === shared("agents.sort")) ?? SORTS[0];
-const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
-const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
+const SECTION = { 5: "Error", 4: "Needs input", 3: "Done", 2: "Working", 1: "Idle" };
+const SECTION_STATUS = { 5: "error", 4: "blocked", 3: "done", 2: "working" };
+const statusColor = (t, status) => status === "blocked" ? t.ansi3 ?? t.accent : status === "error" ? t.blocked : t[status] ?? t.dim;
 
 function duration(ms) {
   const m = Math.floor(ms / 60000);
@@ -277,12 +277,15 @@ export default class Agents extends View {
       .child(this.status(t, { status: st }, compact));
   }
 
-  // compact: a ! for blocked where a header already says "Needs you".
   status(t, a, compact = false) {
-    const color = t[a.status] ?? t.dim;
+    const color = statusColor(t, a.status);
     if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
-    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
-    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
+    if (a.status === "blocked" || a.status === "error") {
+      const text = a.status === "blocked" ? "Needs input" : "Error";
+      return div().h(compact ? 14 : 18).px(compact ? 4 : 6).flex_none().rounded(5).bg(color + "26")
+        .text_size(10.5).font_semibold().text_color(color).flex().items_center()
+        .tooltip(text).child(compact ? a.status === "blocked" ? "?" : "!" : text);
+    }
     // Idle: a ring; done: a dot.
     if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
@@ -342,7 +345,7 @@ export default class Agents extends View {
         .items_center()
         .rounded(4)
         .text_size(11)
-        .text_color(open ? t.dim : (t[top] ?? t.dim))
+        .text_color(open ? t.dim : statusColor(t, top))
         .cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click((_e, cx) => {
@@ -496,7 +499,7 @@ export default class Agents extends View {
           open ? this.folded.add(g.id) : this.folded.delete(g.id);
           cx.notify();
         })
-        .child(div().truncate().text_color(t[g.status] ?? t.dim).child(g.label))
+        .child(div().truncate().text_color(statusColor(t, g.status)).child(g.label))
         .when(byPriority || !open, (el) => el.child(div().text_color(t.dim).child(String(g.members.length))))
         .child(div().flex_1())
         .when(!open, (el) => el

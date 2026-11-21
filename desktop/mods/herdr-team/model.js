@@ -142,10 +142,12 @@ function reportedStatus(instances) {
 export function flowNodes(task, roles) {
   if (!task) return [];
   const folder = taskFolder(task);
+  const delivery = task.meta?.integration ? null : sentDelivery(task);
   return [task.role, ...(folder === "current" ? task.handoff ?? [] : [])].map((name, index) => {
     const role = roles.find(role => role.name === name);
-    const report = index === 0 ? terminalStatus(taskTerminal(task, role, sentDelivery(task))) : undefined;
-    const status = index ? "next" : folder !== "current" ? folder : task.status === "done" ? "done" : task.status === "todo" ? "ready" : !rank[report] ? "assigned" : report === "done" ? "awaiting handoff" : report;
+    const report = index === 0 ? terminalStatus(taskTerminal(task, role, delivery)) : undefined;
+    const status = index ? "next" : folder !== "current" ? folder : task.status === "done" ? "done" : task.status === "blocked" ? "blocked"
+      : task.status === "todo" ? "ready" : !rank[report] ? "assigned" : report === "done" ? "awaiting handoff" : report === "blocked" ? "needs input" : report;
     return { name, status, harness: role?.harness ?? "—", model: role?.model ?? "default" };
   });
 }

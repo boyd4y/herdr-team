@@ -442,6 +442,7 @@ Console 使用 [OpenTUI Core](https://github.com/anomalyco/opentui) 的列表、
 - `DETAIL` 展示原因、投递时长、agent、模型、分支、提交及 task.md 正文（含交接记录），不另设 Activity 面板。
 - `ROLES` 每行一个角色，列出角色名、实时状态、当前任务与排队数；按角色数量分配高度，避免任务列表的空白挤占角色区。
 - `NEEDS YOU` 汇总加载失败、Herdr 不可用、状态不一致和校验问题。
+- Agent 等待常规确认或输入时显示 `NEEDS INPUT`，任务卡保留原状态。
 
 宽窗口左侧为任务与角色，右侧流程图与详情上下各占一半。窄于 90 列时，任务与角色并列放在顶部，
 流程仍用紧凑纵向节点，与详情等分剩余高度；角色与长流程均可滚动。
@@ -497,9 +498,9 @@ tab_bar_right = [
 ]
 ```
 
-`--line` 打一行，形状 `team: 1 doing 2 todo · 2 queued · 1 blocked · 1 ✗`：前半段是未结束的卡按
-`doing`/`review`/`todo` 计数；非零等待投递数 `N queued` 紧随任务计数、位于 `blocked` 之前；`blocked` 是**卡住、等你处理的卡**（卡片自己写着 blocked，
-或 agent 在等你 / agent 掉了 / 干完没交棒，按卡去重）；`✗` 是 `.herdr/` 的校验问题数 ——
+`--line` 一行输出形如 `team: 1 doing 2 todo · 2 queued · 1 blocked · 1 awaiting input`。前半段按
+`doing`、`review`、`todo` 计数，随后显示非零的等待投递数。 `blocked` 统计明确标记为 Blocked 的任务卡，
+`awaiting input` 统计 agent 等待输入的任务，`to check` 统计需要排查的投递、会话或合并问题。 `✗` 是 `.herdr/` 的校验问题数 ——
 坏卡会被静默跳过，不报的话你只会看到数字悄悄变小。**没事就不输出**（和
 `herdr-projects` 的 `needs-you --line` 一个规矩），不在团队项目里也什么都不输出。
 

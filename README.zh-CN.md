@@ -18,6 +18,7 @@ Herdr Team 支持 **Herdr 桌面版**和 **Herdr 终端版**。桌面版的终�
 - Agents 分组模式把已通过 CLI 归属校验的任务 Space 合并到父 Space 标题下，使用父 Space 色条；固定与 Priority 模式沿用原生行为。点击任务 agent 仍打开实际 worktree 面板，不移动终端。
 - `desktop/mods/herdr-team/`：任务按 ID 倒序、当前及后续负责人、紧凑的角色/harness/model 展示；状态脉冲使用原生动画。
 - Board 按任务记录的状态分列，卡片显示当前负责人。窄面板中的非空列会换行，空状态只显示计数。悬停 Team 图标可查看绑定路径、机器和 Space。
+- 常规确认和补充输入会在当前任务及 Agents 中显示 **Needs input**。点击 Agents 列表中的会话可回到原终端处理。
 - 本机任务详情的 **Archive** 将任务移入存档，**Delete** 经确认后移入回收站。两个位置都可 **Restore**，以前取消的任务统一显示在 Archive。
 - List 面向窄侧栏，显示标题、任务号、负责人和记录状态。状态筛选默认选 All，按任务号倒序显示。Open 按阻塞、待审、执行中、待办排序。任务详情分为 Description 和 History，关联需求或缺陷可直接打开。
 - 内置明确标注的 Sample，无需项目数据，不启动 agent、不创建任务。

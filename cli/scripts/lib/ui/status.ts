@@ -124,7 +124,9 @@ export function findInconsistencies(
     const live = matches[0];
     const status = live?.agent_status ?? "absent";
 
-    if (task.status === "doing") {
+    if (status === "blocked" && (task.status === "doing" || task.status === "review")) {
+      out.push({ kind: "agent-needs-input", id: task.id, message: `${task.id}: ${role.name} is waiting for input` });
+    } else if (task.status === "doing") {
       if (live === undefined) {
         const where = role.worktree ? `(worktree agent ${agentName}) ` : "";
         out.push({
@@ -132,8 +134,6 @@ export function findInconsistencies(
           id: task.id,
           message: `${task.id} is doing, but ${role.name} ${where}has no running agent`,
         });
-      } else if (status === "blocked") {
-        out.push({ kind: "blocked", id: task.id, message: `${task.id}: ${role.name} is waiting for input (blocked)` });
       } else if (status === "idle" || status === "done") {
         out.push({
           kind: "maybe-finished",
@@ -228,7 +228,7 @@ export function formatReport(report: StatusReport): string {
     lines.push(`  ${pad("role", 16)}${pad("agent", 16)}${pad("herdrStatus", 14)}${pad("paneId", 16)}harness · model`);
     for (const r of report.roles) {
       lines.push(
-        `  ${pad(r.role, 16)}${pad(r.agent ?? "—", 16)}${pad(r.herdrStatus, 14)}${pad(r.paneId ?? "—", 16)}${r.kind} · ${r.model}${r.current ? `  active ${r.current.join(",") || "—"}  queued ${r.queued ?? 0}` : ""}`,
+        `  ${pad(r.role, 16)}${pad(r.agent ?? "—", 16)}${pad(agentStatusLabel(r.herdrStatus), 14)}${pad(r.paneId ?? "—", 16)}${r.kind} · ${r.model}${r.current ? `  active ${r.current.join(",") || "—"}  queued ${r.queued ?? 0}` : ""}`,
       );
     }
   }
@@ -242,4 +242,8 @@ export function formatReport(report: StatusReport): string {
   }
 
   return lines.join("\n");
+}
+
+export function agentStatusLabel(status: string): string {
+  return status === "blocked" ? "Needs input" : status;
 }

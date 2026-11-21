@@ -6,9 +6,9 @@ import {
 import type { Project } from "../shared/types.ts";
 import { taskDisposition, worktreeBranch } from "../shared/types.ts";
 import type { Herdr } from "../runtime/herdr.ts";
-import { deliveryFor } from "../dispatch/delivery.ts";
+import { deliveryFor, deliveryReasonLabel } from "../dispatch/delivery.ts";
 import { reviewFor, taskScoped } from "../tasks/verification.ts";
-import { integrationStatus } from "./status.ts";
+import { agentStatusLabel, integrationStatus } from "./status.ts";
 import { sanitize } from "../shared/text.ts";
 import { buildModel, formatStatusLine, initialState, selectTasks, taskFlow, type ConsoleModel } from "./console-model.ts";
 import { createFlowView } from "./console-flow.ts";
@@ -110,9 +110,9 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
       `${task.priority} · ${taskDisposition(task) ?? task.status} · ${task.role}`,
       `Delivery: ${integration?.state ?? deliveryStatus}${delivery ? ` · ${delivery.id.slice(0, 8)}` : ""}`,
       ...(age !== undefined ? [`Delivery age: ${Math.floor(age / 60)}m ${age % 60}s`] : []),
-      ...(delivery?.reason ? [delivery.reason] : []),
+      ...(delivery?.reason ? [deliveryReasonLabel(delivery.reason)] : []),
       ...(integration && "reason" in integration && integration.reason ? [`Integration: ${integration.reason}`] : []),
-      `Agent: ${live?.name ?? "—"} · ${live?.agent_status ?? "—"}`,
+      `Agent: ${live?.name ?? "—"} · ${agentStatusLabel(live?.agent_status ?? "—")}`,
       ...(role ? [`Model: ${role.kind} · ${role.model ?? "default"}`] : []),
       ...(live?.pane_id ? [`Pane: ${live.pane_id}`] : []),
       ...(taskScoped(task, role) ? [`Branch: ${worktreeBranch(task)}`] : []),
@@ -162,10 +162,13 @@ export function mountConsole(renderer: CliRenderer, options: ConsoleOptions) {
     const pendingParts = [["delivering", counts.delivering], ["claimed", counts.claimed], ["integration", counts.integration]] as const;
     const summary = [formatStatusLine(model, project.tasks), ...pendingParts.filter(([, n]) => n > 0).map(([label, n]) => `${n} ${label}`)].filter(Boolean);
     pending.content = sanitize(summary.join(" · ") || "No active tasks · press s for a sample");
-    const issues = [state.loadError, ...model.problems, ...model.inconsistencies.map((issue) => issue.message),
+    const waitingForInput = model.inconsistencies.filter(issue => issue.kind === "agent-needs-input");
+    const issues = [state.loadError, ...model.problems, ...model.inconsistencies.filter(issue => issue.kind !== "agent-needs-input").map(issue => issue.message),
       ...(!model.herdrOk ? ["Herdr unavailable"] : [])].filter(Boolean);
-    health.content = sanitize(issues.length ? `NEEDS YOU · ${issues.join(" · ")}` : "Ready");
-    health.visible = issues.length > 0;
+    health.fg = issues.length ? c.red : c.yellow;
+    health.content = sanitize(issues.length ? `NEEDS YOU · ${issues.join(" · ")}`
+      : waitingForInput.length ? `NEEDS INPUT · ${waitingForInput.map(issue => issue.message).join(" · ")}` : "Ready");
+    health.visible = issues.length > 0 || waitingForInput.length > 0;
     taskPanel.title = `TASKS ${model.tasks.length}/${model.candidateCount}${state.showAll ? " · all" : ""}`;
     tasks.visible = model.tasks.length > 0;
     empty.visible = model.tasks.length === 0;
