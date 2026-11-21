@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { replaceFile } from "../shared/atomic-file.ts";
 import {
   ID_RE,
   PRIORITIES,
@@ -19,7 +19,8 @@ import { formatProblems, validateTaskDependencies } from "../team/validate.ts";
 import { integrationFor } from "./verification.ts";
 import { loadProject } from "../team/project.ts";
 import { withTeamLock } from "../runtime/state.ts";
-import { findRequirement, readRequirements, RequirementError, validateIteration } from "../team/requirements.ts";
+import { requireIssueMetadata, RequirementError } from "../team/issue-store.ts";
+import { validateIteration } from "../team/requirements.ts";
 import { validateFeature } from "../team/features.ts";
 
 /** 元数据里键的顺序，写出去时保持稳定，diff 才好看。 */
@@ -97,15 +98,7 @@ function writeBody(dir: string, body: string): void {
 export function writeTaskMeta(project: Project, card: TaskCard, patch: Record<string, unknown>): void {
   const dir = join(project.herdrDir, card.dir);
   mkdirSync(dir, { recursive: true });
-  const destination = join(dir, TASK_META);
-  const temporary = `${destination}.${randomUUID()}.tmp`;
-  try {
-    writeFileSync(temporary, emitYaml({ ...card.meta, ...patch }, TASK_FIELD_ORDER), { flag: "wx" });
-    renameSync(temporary, destination);
-  } finally {
-    try { unlinkSync(temporary); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  }
+  replaceFile(join(dir, TASK_META), emitYaml({ ...card.meta, ...patch }, TASK_FIELD_ORDER));
 }
 
 export interface CreateOptions {
@@ -129,7 +122,7 @@ export interface CreatedTask {
 }
 
 export function createTask(project: Project, opts: CreateOptions): CreatedTask {
-  if (opts.requirement !== undefined && findRequirement(readRequirements(project), opts.requirement).acceptedAt) {
+  if (opts.requirement !== undefined && requireIssueMetadata(project, opts.requirement).acceptedAt) {
     throw new RequirementError(`Requirement ${opts.requirement} has already been accepted`);
   }
   const iteration = validateIteration(opts.iteration ?? "");
@@ -190,8 +183,8 @@ export function createTask(project: Project, opts: CreateOptions): CreatedTask {
 /** Only the relationship changes. This also allows linking archived task cards as evidence. */
 export function linkRequirementTask(project: Project, requirement: string, taskId: string, unlink: boolean): void {
   withTeamLock(project, "queue", () => {
-    const fresh = loadProject(project.root);
-    const card = findRequirement(readRequirements(fresh), requirement);
+    const fresh = loadProject(project.root, { taskBodies: false, roleBodies: false });
+    const card = requireIssueMetadata(fresh, requirement);
     const task = findTask(fresh, taskId);
     const previous = task.meta["requirement"];
     if (unlink) {
@@ -246,7 +239,7 @@ export function setTaskDisposition(project: Project, id: string, disposition?: T
     } else if (!disposition) {
       assertRole(fresh, card.role, "role");
       for (const role of card.handoff) assertRole(fresh, role, "handoff entry");
-      if (typeof card.meta.requirement === "string" && findRequirement(readRequirements(fresh), card.meta.requirement).acceptedAt) {
+      if (typeof card.meta.requirement === "string" && requireIssueMetadata(fresh, card.meta.requirement).acceptedAt) {
         throw new TaskError(`Task #${id} belongs to an accepted issue. Create a follow-up task instead.`);
       }
       writeTaskMeta(fresh, card, { status: "todo", ...clearedAssignment });

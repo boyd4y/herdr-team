@@ -3,7 +3,7 @@ import { projectKey, resolveProjectWorkspace, TeamScopeError } from "./lib/dispa
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cleanupAll, cleanupIfDone, type CleanupResult } from "./lib/dispatch/cleanup.ts";
-import { findRoot, findTeamRoots, loadProject } from "./lib/team/project.ts";
+import { findRoot, findTeamRoots, loadProject, type ProjectReadOptions } from "./lib/team/project.ts";
 import { aliasesForProject, assignProjectAlias, ProjectAliasError, removeProjectAliases, rootForInboxProject } from "./lib/team/project-aliases.ts";
 import { mergeRows, mergeTask, retryMerge } from "./lib/integration/merge.ts";
 import { handoff } from "./lib/tasks/handoff.ts";
@@ -21,9 +21,10 @@ import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/dispat
 import { buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
 import { createTask, editTask, findTask, linkRequirementTask, setTaskDisposition, TaskError } from "./lib/tasks/cards.ts";
 import { stamp } from "./lib/tasks/records.ts";
-import { acceptRequirement, addRequirement, editRequirements, findRequirement, iterationRows, iterationVersion,
-  readHiddenIterations, readRequirements, requirementDetail, RequirementError, requirementSummary, requirementType,
-  setIterationState, taskIteration, validateIteration, type Requirement } from "./lib/team/requirements.ts";
+import { acceptRequirement, addRequirement, editRequirements, indexRequirementTasks, iterationRows, iterationVersion,
+  readHiddenIterations, requirementDetail, requirementSummary, requirementType,
+  setIterationState, taskIteration, validateIteration } from "./lib/team/requirements.ts";
+import { listIssueMetadata, migrateIssueStore, readIssue, RequirementError, type Requirement } from "./lib/team/issue-store.ts";
 import { formatProblems, validateProject } from "./lib/team/validate.ts";
 import { canonicalKind, isRoleLifecycle, isTerminal, NAME_RE, STATUSES, TASK_DISPOSITIONS, taskDisposition, type Project } from "./lib/shared/types.ts";
 import { confirmedFeatures, FeatureError, featureKey, finishFeature, validateFeature, type FeatureScope } from "./lib/team/features.ts";
@@ -72,8 +73,8 @@ function executionRuntime(project: Project): Herdr | DesktopTaskRuntime {
 }
 
 /** 碰 herdr 前先确保 .herdr/ 本身是干净的。 */
-function loadValidated(root: string): Project {
-  const project = loadProject(root);
+function loadValidated(root: string, options?: ProjectReadOptions): Project {
+  const project = loadProject(root, options);
   const problems = validateProject(project);
   if (problems.length > 0) {
     throw new TaskError(`Invalid .herdr/ configuration; fix it first:\n${formatProblems(problems)}`);
@@ -156,7 +157,7 @@ const TASK_USAGE = `Usage: herdr-team task <subcommand> [arguments] [options]
 Use --root DIR or --project ID to select a project explicitly.
 `;
 
-const ISSUE_USAGE = `Usage: herdr-team issue <list|show|create|update|accept|link|unlink> [options]
+const ISSUE_USAGE = `Usage: herdr-team issue <list|show|create|update|accept|link|unlink|migrate> [options]
   list [--type requirement|defect] [--iteration VERSION]
   show ID
   create "TITLE" [--type requirement|defect]
@@ -164,6 +165,7 @@ const ISSUE_USAGE = `Usage: herdr-team issue <list|show|create|update|accept|lin
   accept ID
   link ISSUE_ID TASK_ID
   unlink ISSUE_ID TASK_ID
+  migrate                     Convert legacy issue storage to per-issue files
 `;
 
 class UsageError extends Error {}
@@ -452,7 +454,7 @@ function cmdBacklog(args: string[], name = "backlog"): number {
       [...parsed.values.keys()].some(key => key !== "root" && !options.includes(key))) {
     throw new UsageError("Invalid Backlog command or option; run herdr-team backlog --help");
   }
-  const project = loadValidated(resolveRoot(parsed.values.get("root")));
+  const project = loadValidated(resolveRoot(parsed.values.get("root")), { taskBodies: false, roleBodies: false });
   const iteration = parsed.values.get("iteration");
   const type = parsed.values.get("type");
   const render = (card: ReturnType<typeof requirementSummary>) =>
@@ -462,14 +464,15 @@ function cmdBacklog(args: string[], name = "backlog"): number {
     const selectedType = type === undefined ? undefined : requirementType(type);
     const selectedVersion = iteration === undefined ? undefined : validateIteration(iteration);
     const hidden = readHiddenIterations(project);
-    const rows = readRequirements(project)
+    const linkedTasks = indexRequirementTasks(project);
+    const rows = listIssueMetadata(project)
       .filter(card => {
         const version = iterationVersion(card.iteration);
         return !hidden.has(version) && (selectedType === undefined || card.type === selectedType) &&
           (selectedVersion === undefined || version === selectedVersion);
       })
       .sort((a, b) => a.priority.localeCompare(b.priority) || b.id.localeCompare(a.id))
-      .map(card => requirementSummary(project, card));
+      .map(card => requirementSummary(card, linkedTasks.get(card.id) ?? []));
     return out(parsed, rows, rows.length ? rows.map(render).join("\n") : "No requirements or defects match.");
   }
   if (operation === "add") {
@@ -506,12 +509,26 @@ function cmdBacklog(args: string[], name = "backlog"): number {
     return out(parsed, card, `Accepted ${card.id}  ${sanitize(card.title)}`);
   }
   if (operation !== "show") throw new UsageError("Linking requires a requirement ID and a task ID");
-  const detail = requirementDetail(project, findRequirement(readRequirements(project), id));
+  const detail = requirementDetail(project, readIssue(project, id));
   return out(parsed, detail, [render(detail),
     ...(detail.body ? ["", sanitize(detail.body, true)] : []),
     ...(detail.acceptance ? ["", "Acceptance criteria", sanitize(detail.acceptance, true)] : []),
     ...(detail.tasks.length ? ["", "Tasks", ...detail.tasks.map(task => `  #${task.id}  ${task.status}  ${sanitize(task.title)}`)] : []),
   ].join("\n"));
+}
+
+function cmdIssueMigrate(args: string[]): number {
+  const parsed = parseArgs(args, ["root"]);
+  if (parsed.flags.has("help")) {
+    process.stdout.write("Usage: herdr-team issue migrate [--root DIR | --project ID] [--json]\n");
+    return 0;
+  }
+  checkOptions(parsed, ["root"]);
+  if (parsed.pos.length) throw new UsageError("Run herdr-team issue migrate without an issue ID");
+  const root = resolveRoot(parsed.values.get("root"));
+  const project = loadValidated(root, { taskBodies: false, roleBodies: false });
+  const migrated = withTeamLock(project, "queue", () => migrateIssueStore(project));
+  return out(parsed, { migrated }, migrated ? `Migrated ${migrated} issues to .herdr/issues.` : "No legacy issues to migrate.");
 }
 
 function cmdIteration(args: string[]): number {
@@ -533,7 +550,7 @@ function cmdIteration(args: string[]): number {
       (operation === "list" ? version !== undefined : parsed.pos.length !== 2 || !Object.hasOwn(states, operation))) {
     throw new UsageError("Invalid iteration command or option; run herdr-team iteration --help");
   }
-  const project = loadValidated(resolveRoot(parsed.values.get("root")));
+  const project = loadValidated(resolveRoot(parsed.values.get("root")), { taskBodies: false, roleBodies: false });
   if (operation === "list") {
     const rows = iterationRows(project, all);
     return out(parsed, rows, rows.length ? rows.map(row => `${row.version}  ${row.state}`).join("\n") : "No iterations.");
@@ -715,7 +732,7 @@ function cmdStatus(args: string[], name = "status"): number {
   checkOptions(parsed, ["root"], ["all"]);
   if (parsed.pos.length) throw new UsageError("Team status takes project options only.");
   const root = resolveRoot(parsed.values.get("root"));
-  const project = loadValidated(root);
+  const project = loadValidated(root, { taskBodies: false, roleBodies: false });
   // Status is also a data query used by integrations with no terminal caller.
   const context = process.env["HC_TERMINAL_ID"] ? managedContext() : null;
   if (context?.kind === "desktop") {
@@ -1307,13 +1324,16 @@ function cmdTasks(args: string[], mode?: "list" | "show"): number {
   const taskFilters: readonly string[] = [...STATUSES, ...TASK_DISPOSITIONS];
   if (statusFilter !== undefined && !taskFilters.includes(statusFilter)) throw new UsageError(`Use one of these task filters: ${taskFilters.join(", ")}.`);
   const root = resolveRoot(parsed.values.get("root"));
-  const project = loadValidated(root);
   const id = parsed.pos[0];
+  const project = loadValidated(root, { taskBodies: id ?? false, roleBodies: false });
   const selected = parsed.values.get("iteration");
   const version = selected === undefined ? undefined : validateIteration(selected);
   const cards = id === undefined ? project.tasks : [findTask(project, id)];
-  const issueIterations = new Map(cards.some(task => task.meta.requirement && !task.meta.iteration)
-    ? readRequirements(project).map(card => [card.id, iterationVersion(card.iteration)] as const) : []);
+  const inherited = new Set<string>();
+  for (const task of cards) {
+    if (!task.meta.iteration && typeof task.meta.requirement === "string") inherited.add(task.meta.requirement);
+  }
+  const issueIterations = new Map(listIssueMetadata(project, inherited).map(card => [card.id, iterationVersion(card.iteration)] as const));
   const scheduled = cards.map(task => ({ ...task, iteration: taskIteration(task, issueIterations) || undefined }));
   if (id !== undefined) {
     if (version !== undefined) throw new UsageError("Use --iteration with the task list");
@@ -1497,11 +1517,11 @@ function cmdRole(args: string[]): number {
   if (parsed.flags.has("help")) return cmdRole(["--help"]);
 
   const root = resolveRoot(parsed.values.get("root"));
-  const project = loadOrFail(root);
-
   if (sub === "list") {
+    const project = loadProject(root, { taskBodies: false, roleBodies: parsed.flags.has("details") ? undefined : false });
     return out(parsed, parsed.flags.has("details") ? project.roles : project.roles.map(cardForJson), formatRoles(project.roles));
   }
+  const project = loadOrFail(root);
 
   const name = parsed.pos[0];
   if (name === undefined) throw new UsageError(`role ${sub} requires a role name`);
@@ -1614,6 +1634,7 @@ async function main(argv: string[]): Promise<number> {
         accept: args => cmdBacklog(["accept", ...args], "issue"),
         link: args => cmdBacklog(["link", ...args], "issue"),
         unlink: args => cmdBacklog(["unlink", ...args], "issue"),
+        migrate: cmdIssueMigrate,
       });
     case "init":
       return cmdInit(rest);

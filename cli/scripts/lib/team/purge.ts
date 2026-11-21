@@ -11,7 +11,8 @@ import { worktreeBranch, type Project } from "../shared/types.ts";
 import { integrationFor, taskRepo } from "../tasks/verification.ts";
 import { confirmedFeatures } from "./features.ts";
 import { loadProject } from "./project.ts";
-import { iterationRows, readRequirements } from "./requirements.ts";
+import { ISSUE_BACKUP, ISSUE_DIRECTORY, LEGACY_ISSUES, issueIds, listIssueMetadata } from "./issue-store.ts";
+import { iterationRows } from "./requirements.ts";
 
 function ensurePath(path: string, kind: "directory" | "file"): boolean {
   const stat = lstatSync(path, { throwIfNoEntry: false });
@@ -58,9 +59,12 @@ function purgePlan(root: string, demo: string | undefined, dryRun: boolean) {
   const interrupted = readdirSync(dir).find(entry => entry.startsWith(".purging-"));
   if (interrupted) throw new Error(`An earlier purge left staged data at ${join(dir, interrupted)}. Inspect that directory before retrying.`);
   const hasTaskDirectory = ensurePath(join(dir, "tasks"), "directory");
-  const files = ["requirements.json", "iterations.json", "feature-deliveries.json"];
+  const files = [LEGACY_ISSUES, join(ISSUE_DIRECTORY, ISSUE_BACKUP), "iterations.json", "feature-deliveries.json"];
   if (demo) files.push("demo/run.json", "demo/result.json");
   const paths = files.filter(path => ensurePath(join(dir, path), "file"));
+  if (ensurePath(join(dir, ISSUE_DIRECTORY), "directory")) {
+    paths.push(...issueIds({ herdrDir: dir }).map(id => join(ISSUE_DIRECTORY, id)));
+  }
   ensurePath(join(dir, ".retired-ids"), "file");
   const project = loadProject(root);
   const blockers = project.problems.filter(problem => problem.file.startsWith("tasks/")).map(problem =>
@@ -90,12 +94,12 @@ function purgePlan(root: string, demo: string | undefined, dryRun: boolean) {
   if (hasTaskDirectory) blockers.push(...checkoutBlockers(project));
   const records = {
     tasks: project.tasks.map(task => task.id).sort(),
-    issues: readRequirements(project).map(issue => issue.id).sort(),
+    issues: listIssueMetadata(project).map(issue => issue.id).sort(),
     iterations: iterationRows(project, true).map(iteration => iteration.version),
     featureDeliveries: [...confirmedFeatures(project).keys()].sort(),
   };
   return { project, paths, result: { root, dryRun, blockers, records, tasks: records.tasks.length, issues: records.issues.length,
-    iterations: records.iterations.length, featureDeliveries: records.featureDeliveries.length, files: paths.filter(path => !path.startsWith("tasks/")) } };
+    iterations: records.iterations.length, featureDeliveries: records.featureDeliveries.length, files: paths.filter(path => files.includes(path)) } };
 }
 
 function removeRecords(project: Project, paths: string[]) {

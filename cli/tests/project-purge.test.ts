@@ -36,6 +36,7 @@ test("project purge previews and clears only selected workflow records, retainin
   mkdirSync(join(herdr, "demo"));
   writeFileSync(join(herdr, "demo", "result.json"), "{}\n");
   writeFileSync(join(herdr, "tasks", "unrelated.txt"), "keep\n");
+  writeFileSync(join(herdr, "issues", "unrelated.txt"), "keep\n");
   expect(run("project", "purge").exitCode).toBe(2);
   const preview = call("project", "purge", "--all", "--dry-run", "--project", project.id);
   expect(preview).toMatchObject({ dryRun: true, tasks: 1, issues: 1, iterations: 1, featureDeliveries: 1, blockers: [] });
@@ -47,6 +48,7 @@ test("project purge previews and clears only selected workflow records, retainin
   expect(call("iteration", "list", "--all")).toEqual([]);
   expect(call("project", "show").aliases).toEqual(["purge-test"]);
   expect(readFileSync(join(herdr, "tasks", "unrelated.txt"), "utf8")).toBe("keep\n");
+  expect(readFileSync(join(herdr, "issues", "unrelated.txt"), "utf8")).toBe("keep\n");
   expect(existsSync(join(herdr, "demo", "result.json"))).toBe(false);
   expect(existsSync(join(herdr, "demo.json"))).toBe(true);
   expect(existsSync(join(base, "TEAM.md"))).toBe(true);

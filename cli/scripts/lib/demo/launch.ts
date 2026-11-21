@@ -7,7 +7,7 @@ import { realDesktop, registeredDesktopBinding } from "../runtime/desktop.ts";
 import { stopDaemon } from "../runtime/daemon.ts";
 import { processAlive } from "../runtime/state.ts";
 import { loadProject } from "../team/project.ts";
-import { readRequirements } from "../team/requirements.ts";
+import { listIssueMetadata } from "../team/issue-store.ts";
 import { installMockRoles, runRelease, showcaseLanes } from "./release.ts";
 import { command, team } from "./shared.ts";
 
@@ -127,7 +127,7 @@ export async function runDesktopDemo(root: string, fast: boolean, quiet: boolean
     if (project.roles.some(role => role.env?.HERDR_SMOKE_MANIFEST !== join(area, "run.json") || role.lifecycle !== "temporary")) {
       throw new Error("This demo project contains a role outside the local mock team");
     }
-    const iterations = new Set(readRequirements(project).map(issue => issue.iteration));
+    const iterations = new Set(listIssueMetadata(project).map(issue => issue.iteration));
     let patch = 0;
     while (iterations.has(`v1.2.${patch}`)) patch++;
     const version = `v1.2.${patch}`;

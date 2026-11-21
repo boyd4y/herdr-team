@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { withTeamLock } from "../runtime/state.ts";
 import { isTerminal, SLUG_MAX, SLUG_RE, type Project, type RoleCard, type TaskCard } from "../shared/types.ts";
 import { loadProject } from "./project.ts";
-import { iterationVersion, readRequirements, taskIteration, validateIteration } from "./requirements.ts";
+import { findIssueMetadata } from "./issue-store.ts";
+import { iterationVersion, taskIteration, validateIteration } from "./requirements.ts";
 import { completedDeliveries } from "../dispatch/delivery.ts";
 
 export class FeatureError extends Error {}
@@ -59,7 +60,7 @@ function scopeFor(project: Project, task: TaskCard): FeatureScope | undefined {
   if (!validFeature(feature)) return;
   const explicit = typeof task.meta.iteration === "string" && iterationVersion(task.meta.iteration);
   const issue = !explicit && typeof requirement === "string"
-    ? readRequirements(project).find(card => card.id === requirement) : undefined;
+    ? findIssueMetadata(project, requirement) : undefined;
   const iteration = taskIteration(task, new Map(issue ? [[issue.id, iterationVersion(issue.iteration)]] : []));
   if (iteration) return { feature, iteration };
 }

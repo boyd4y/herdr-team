@@ -174,7 +174,7 @@ function readMeta(
   return meta;
 }
 
-function loadRoles(herdrDir: string, problems: Problem[], presets?: AgentPresets): RoleCard[] {
+function loadRoles(herdrDir: string, problems: Problem[], presets: AgentPresets | undefined, bodies: boolean): RoleCard[] {
   const base = join(herdrDir, "roles");
   const out: RoleCard[] = [];
 
@@ -209,13 +209,13 @@ function loadRoles(herdrDir: string, problems: Problem[], presets?: AgentPresets
       env: launch?.env ?? asStringMap(meta["env"]),
       worktree: meta["worktree"] === true,
       ...(isRoleLifecycle(meta.lifecycle) ? { lifecycle: meta.lifecycle } : {}),
-      body: readBody(join(itemDir, ROLE_BODY)),
+      body: bodies ? readBody(join(itemDir, ROLE_BODY)) : "",
     });
   }
   return out;
 }
 
-function loadTasks(herdrDir: string, problems: Problem[]): TaskCard[] {
+function loadTasks(herdrDir: string, problems: Problem[], bodies: boolean | string): TaskCard[] {
   const base = join(herdrDir, "tasks");
   const out: TaskCard[] = [];
 
@@ -238,7 +238,7 @@ function loadTasks(herdrDir: string, problems: Problem[]): TaskCard[] {
       handoff: asStringList(meta["handoff"]) ?? [],
       dependsOn: asStringList(meta["depends_on"]) ?? [],
       repo: asString(meta["repo"]) ?? ".",
-      body: readBody(join(itemDir, TASK_BODY)),
+      body: bodies === true || bodies === split?.id ? readBody(join(itemDir, TASK_BODY)) : "",
     });
   }
   return out;
@@ -254,7 +254,12 @@ export function loadRetiredIds(herdrDir: string): string[] {
     .filter((l) => l.length > 0);
 }
 
-export function loadProject(root: string): Project {
+export interface ProjectReadOptions {
+  taskBodies?: false | string;
+  roleBodies?: false;
+}
+
+export function loadProject(root: string, options: ProjectReadOptions = {}): Project {
   const herdrDir = join(root, ".herdr");
   const problems: Problem[] = [];
   let presets: AgentPresets | undefined;
@@ -266,8 +271,8 @@ export function loadProject(root: string): Project {
     root,
     herdrDir,
     hasTeamFile: existsSync(join(root, "TEAM.md")) && statSync(join(root, "TEAM.md")).isFile(),
-    roles: loadRoles(herdrDir, problems, presets),
-    tasks: loadTasks(herdrDir, problems),
+    roles: loadRoles(herdrDir, problems, presets, options.roleBodies !== false),
+    tasks: loadTasks(herdrDir, problems, options.taskBodies ?? true),
     retiredIds: loadRetiredIds(herdrDir),
     problems,
   };

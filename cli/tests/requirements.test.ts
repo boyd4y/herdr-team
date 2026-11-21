@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { emitYaml, parseYaml } from "../scripts/lib/shared/yaml.ts";
 import { makeProject, taskMeta, twoRoles, writeTask } from "./helpers.ts";
 
 test("requirements and defects share an optional iteration; old and independent tasks stay usable", () => {
@@ -72,15 +73,66 @@ test("requirements and defects share an optional iteration; old and independent 
     expect(json("tasks", "--all")).toHaveLength(3);
     expect(run("dispatch", "--all").exitCode).toBe(2);
 
-    const path = join(root, ".herdr/requirements.json");
-    const cards = JSON.parse(readFileSync(path, "utf8"));
-    cards[1].iteration = "Requirement";
-    writeFileSync(path, JSON.stringify(cards));
+    const path = join(root, ".herdr/issues/R0002/.issue.yaml");
+    const card = parseYaml(readFileSync(path, "utf8"))!;
+    writeFileSync(path, emitYaml({ ...card, iteration: "Requirement" }));
     expect(json("iteration", "list")).toEqual([{ version: "v0.2", state: "active" }]);
     expect(json("backlog", "list", "--iteration", "")).toMatchObject([{ id: "R0002", status: "backlog", iteration: "" }]);
     json("backlog", "edit", "R0002", "--priority", "P1");
-    expect(JSON.parse(readFileSync(path, "utf8"))[1].iteration).toBe("Requirement");
+    expect(parseYaml(readFileSync(path, "utf8"))?.iteration).toBe("Requirement");
   } finally { fixture.cleanup(); }
+});
+
+test("legacy issues migrate once, keep their IDs and exact prose, and list independently of Markdown", () => {
+  const { root, cleanup } = makeProject();
+  try {
+    twoRoles(root);
+    const dir = join(root, ".herdr");
+    const legacy = join(dir, "requirements.json");
+    const run = (...args: string[]) => Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), ...args, "--json"], {
+      cwd: root, env: { ...process.env, HERDR_ENV: "0", HERDR_TEAM_HOME: join(root, "test-service"), HERDR_PLUGIN_STATE_DIR: join(root, "test-state") },
+    });
+    const json = (...args: string[]) => {
+      const result = run(...args);
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      return JSON.parse(result.stdout.toString());
+    };
+    const accepted = { id: "R0004", title: "原来的需求", type: "requirement", priority: "P2", iteration: "v1.1",
+      body: "\n## Acceptance\r\n保留原始换行\n\n", acceptance: "  CSV 核对\n", acceptedAt: "2025-01-02T00:00:00.000Z" };
+    const open = { ...accepted, id: "R0010", title: "待处理缺陷", type: "defect", acceptedAt: null };
+    const snapshot = JSON.stringify([accepted, open], null, 2);
+    writeFileSync(legacy, "[invalid legacy data");
+    expect(run("issue", "migrate").exitCode).toBe(2);
+    expect(existsSync(join(dir, "issues"))).toBe(false);
+    expect(readFileSync(legacy, "utf8")).toBe("[invalid legacy data");
+    writeFileSync(legacy, snapshot);
+    writeTask(root, "0001-linked", taskMeta({ status: "done", requirement: accepted.id }));
+    expect(json("issue", "list")).toHaveLength(2);
+    expect(existsSync(join(dir, "issues"))).toBe(false);
+    expect(json("issue", "migrate")).toEqual({ migrated: 2 });
+    // Simulate interruption after publishing the directory, before removing the source.
+    writeFileSync(legacy, snapshot);
+    expect(json("issue", "list")).toHaveLength(2);
+    expect(json("issue", "migrate")).toEqual({ migrated: 0 });
+    expect(existsSync(legacy)).toBe(false);
+    expect(readFileSync(join(dir, "issues", ".legacy-requirements.json"), "utf8")).toBe(snapshot);
+    expect(parseYaml(readFileSync(join(dir, "issues", accepted.id, ".issue.yaml"), "utf8"))).not.toHaveProperty("id");
+    expect(json("issue", "show", accepted.id)).toMatchObject({ ...accepted, status: "accepted", progress: { total: 1, done: 1 } });
+    expect(run("issue", "update", accepted.id, "--body", "edit accepted issue").exitCode).toBe(2);
+    expect(json("issue", "create", "A new issue").id).toBe("R0011");
+    const unrelated = join(dir, "issues", open.id, "issue.md");
+    renameSync(unrelated, unrelated + ".saved");
+    mkdirSync(unrelated);
+    expect(json("issue", "list")).toHaveLength(3);
+    expect(json("issue", "show", accepted.id)).toMatchObject({ body: accepted.body, acceptance: accepted.acceptance });
+    expect(json("issue", "update", "R0011", "--title", "Updated title")[0].title).toBe("Updated title");
+    expect(json("task", "list", "--all")).toMatchObject([{ id: "0001", iteration: "v1.1" }]);
+    writeFileSync(legacy, "[]");
+    const conflict = run("issue", "migrate");
+    expect(conflict.exitCode).toBe(2);
+    expect(conflict.stderr.toString()).toContain("Conflicting issue records");
+    expect(readFileSync(legacy, "utf8")).toBe("[]");
+  } finally { cleanup(); }
 });
 
 test("task iterations can override an issue and be archived independently", () => {

@@ -17,6 +17,11 @@
     │   └── <name>/
     │       ├── .role.yaml          元数据
     │       └── prompt.md           散文：角色设定
+    ├── issues/
+    │   └── <issue-id>/
+    │       ├── .issue.yaml         元数据
+    │       ├── issue.md            Issue 正文
+    │       └── acceptance.md       验收标准
     └── tasks/
         └── <id>-<slug>/
             ├── .task.yaml          元数据
@@ -32,7 +37,7 @@
 | 手改的人要同时守 Markdown 和 YAML 两套语法 | 各自守一套 |
 | `id: 0001` 加不加引号行为微妙 | 元数据独立，规则简单 |
 
-**身份来自路径，元数据里不重复存** —— 角色名就是目录名，任务的 `id`/`slug` 来自目录名。
+**身份来自路径，元数据里不重复存**。角色名、Issue ID 和任务的 `id`/`slug` 都来自目录名。
 没有冗余就没有漂移。
 
 `.retired-ids` 首次 `rm` 时才创建。扫描跳过以 `.` 开头的条目。
@@ -96,6 +101,22 @@ AGENTS.md 维护工程约束；交棒、协作、PR、队列与收尾属于 Skil
 - `model`（`gpt-6.1-sol`）是**模型** —— 属性
 - 「主力开发」这类描述**也不是名字** —— 名字是角色，如 `dev`、`search`
 
+## Issue `issues/<issue-id>/`
+
+`<issue-id>` 形如 `R0001`。每条需求或缺陷单独存储。
+
+| `.issue.yaml` 字段 | 用途 |
+| --- | --- |
+| `title` | 单行标题 |
+| `type` | `requirement` 或 `defect` |
+| `priority` | `P0` 到 `P3` |
+| `iteration` | 版本号或空字符串 |
+| `acceptedAt` | 验收时间或 `null` |
+
+Issue 列表读取元数据，根据关联任务的状态计算进度。详情按 ID 读取 `issue.md` 和 `acceptance.md`。验收后这两份 Markdown 由 CLI 保护。
+`herdr-team issue migrate` 可提前转换旧 `requirements.json`，首次新增、编辑或验收 Issue 也会自动转换。
+迁移保留编号和原文，将原文件备份到 `issues/.legacy-requirements.json`。迁移前的旧文件仍可通过只读命令查看。
+
 ## 任务 `tasks/<id>-<slug>/`
 
 ### `.task.yaml`
@@ -108,6 +129,7 @@ AGENTS.md 维护工程约束；交棒、协作、PR、队列与收尾属于 Skil
 | `role` | ✅ | str | **当前负责人**。必须解析到存在的角色 |
 | `handoff` | | list[str] | **剩余流转队列**（有序）。每项必须解析到存在的角色 |
 | `depends_on` | | list[str] | 每项必须解析到存在的任务 `id`；**禁止环** |
+| `requirement` | | str | 关联的 Issue ID，例如 `R0001` |
 | `feature` | | str | 交付批次的 Feature 名，例如 `session-recovery`。临时角色派发需要 Feature 和迭代 |
 | `iteration` | | str | 版本号，例如 `v1.2`。可继承关联 Issue 的迭代。Feature 首次准备投递时固定实际版本 |
 | `execution` | | str | 新任务为 `task`；未发送的旧队列投递前自动迁移 |

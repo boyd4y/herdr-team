@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { loadProject } from "../scripts/lib/team/project.ts";
 import { makeProject, roleMeta, taskMeta, writeRole, writeTask } from "./helpers.ts";
@@ -93,6 +93,19 @@ describe("CLI JSON card bodies", () => {
         expect(human.stdout).toContain(`role: ${card.role}\n`);
         expect(human.stdout.endsWith(`\n\n${card.body}\n`)).toBe(true);
       }
+    });
+  });
+
+  test("summary queries leave Markdown on disk and task details read only the requested body", () => {
+    withCLI((cli, root) => {
+      const unrelated = join(root, ".herdr", "tasks", "0002-b", "task.md");
+      renameSync(unrelated, unrelated + ".saved");
+      mkdirSync(unrelated);
+      expect(json(cli, "task", "list", "--all", "--json").value).toHaveLength(2);
+      expect(json(cli, "status", "--all", "--json").value.tasks).toHaveLength(2);
+      expect(json(cli, "role", "list", "--json").value).toHaveLength(1);
+      expect(json(cli, "issue", "list", "--json").value).toEqual([]);
+      expect(json(cli, "task", "show", "0001", "--json").value.body).toContain("正文详情标记");
     });
   });
 
