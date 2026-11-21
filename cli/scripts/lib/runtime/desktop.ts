@@ -16,6 +16,7 @@ export interface DesktopViewBinding extends DesktopBinding { view_space?: string
 interface Registry { schema: 1; spaces: Record<string, DesktopBinding>; tasks?: Record<string, DesktopTaskSpace> }
 export interface DesktopTerminal {
   address: string; state: string; argv: string[]; cwd: string;
+  name?: string | null;
   labels: Record<string, string>; status?: { app?: string; state: string } | null;
   turn?: number;
   status_ms?: number | null;
@@ -324,27 +325,48 @@ export function desktopUp(project: Project, client: DesktopClient, options: { sp
     const commands = new Map(project.roles.filter(startsResident).map(role => [role.name, roleArgv(role, client)]));
     const existingBinding = savedDesktopBinding(project);
     const binding = bindDesktop(project, client, existingBinding ? undefined : options.space);
-    const live = client.rpc<{ terminals: Terminal[] }>("terminal.list", { labels: { "team.project": binding.root, "team.owner_space": binding.space } }).terminals;
+    const live = client.rpc<{ terminals: Terminal[] }>("terminal.list", {}).terminals
+      .filter(terminal => terminal.state === "live" && !terminal.address.includes("/"));
+    const occupiedNames = new Set(live.map(terminal => terminal.name));
     const roles: { role: string; action: string; terminal?: string; status?: string | null; failure?: string }[] = [];
     for (const role of project.roles) {
       const argv = commands.get(role.name);
       if (!argv) { roles.push({ role: role.name, action: "deferred" }); continue; }
-      const matches = live.filter(t => t.state === "live" && !t.address.includes("/") && t.labels["team.role"] === role.name && t.labels["team.session"] === "resident");
+      const matches = live.filter(t => t.labels["team.project"] === binding.root && t.labels["team.owner_space"] === binding.space &&
+        t.labels["team.role"] === role.name && t.labels["team.session"] === "resident");
       if (matches.length > 1) throw new DesktopError(`Multiple resident terminals for ${role.name}; inspect before retrying`);
       const existing = matches[0];
       if (existing) {
-        if (basename(existing.argv[0] ?? "") !== basename(argv[0]!)) {
-          roles.push({ role: role.name, action: "failed", terminal: existing.address, failure: "Resident program was replaced (possibly by a recovery shell); inspect it before starting a replacement" });
-        } else roles.push({ role: role.name, action: "reused", terminal: existing.address, status: existing.status?.state ?? null });
-        continue;
+        if (basename(existing.argv[0] ?? "") === basename(argv[0]!)) {
+          roles.push({ role: role.name, action: "reused", terminal: existing.address, status: existing.status?.state ?? null });
+          continue;
+        }
+        if (desktopAgentProgram(existing) || existing.labels["team.task"] || existing.labels["team.delivery"] ||
+            existing.labels["team.runtime"] !== "desktop" || existing.labels["herdr.space"] !== binding.space) {
+          roles.push({ role: role.name, action: "failed", terminal: existing.address, failure: "Resident terminal has a conflicting program or task binding; inspect it before starting a replacement" });
+          continue;
+        }
       }
       const cwd = role.cwd ? resolve(binding.root, role.cwd) : binding.root;
       const prompt = `Read the installed herdr-team skill before operating the team.\nProject root: ${binding.root}\nRole: ${role.name}\nRead ${join(binding.root, "AGENTS.md")} and ${join(binding.root, "TEAM.md")}.\n${role.body}\nStartup only: confirm your role and wait for an explicit assignment. Do not call up, dispatch tasks, create other agents, or change task records during startup.`;
       const key = createHash("sha256").update(`${binding.root}\0${binding.space}\0${role.name}`).digest("hex").slice(0, 16);
+      const baseName = `team-${key}`;
+      let name = baseName;
+      for (let suffix = 2; occupiedNames.has(name); suffix++) name = `${baseName}-${suffix}`;
+      occupiedNames.add(name);
       try {
+        if (existing) {
+          // Core can keep the terminal after the managed program exits. Release only its role labels.
+          const released = client.rpc<Terminal>("terminal.label", { terminal: existing.address, labels: {
+            "team.project": "", "team.owner_space": "", "team.role": "", "team.session": "", "team.runtime": "", "team.mock": "",
+          } });
+          if (released.address !== existing.address || released.labels["team.role"] || released.labels["team.session"]) {
+            throw new DesktopError("Core did not confirm release of the previous resident binding");
+          }
+        }
         const terminal = client.rpc<Terminal>("terminal.run", {
           argv: [...desktopLaunchArgv(role, argv, binding.root, cwd), prompt], cwd,
-          env: desktopLaunchEnv(options.proxyEnv ?? {}, role.env), name: `team-${key}`,
+          env: desktopLaunchEnv(options.proxyEnv ?? {}, role.env), name,
           no_parent: true, outlive_parent: true, keep: false,
           labels: { "team.project": binding.root, "team.owner_space": binding.space, "herdr.space": binding.space,
             "team.role": role.name, "team.session": "resident", "team.runtime": "desktop" },

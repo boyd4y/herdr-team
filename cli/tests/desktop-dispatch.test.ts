@@ -77,9 +77,12 @@ function fixture() {
       }
       if (method === "terminal.label") {
         const terminal = terminals.find(terminal => terminal.address === params.terminal)!;
-        Object.assign(terminal.labels, params.labels);
+        for (const [name, value] of Object.entries(params.labels as Record<string, string>)) {
+          if (value) terminal.labels[name] = value;
+          else delete terminal.labels[name];
+        }
         if (params.labels["herdr.space"]) attach(terminal);
-        return {} as T;
+        return structuredClone(terminal) as T;
       }
       if (method === "terminal.send") {
         const terminal = terminals.find(terminal => terminal.address === params.terminal)!;
@@ -174,6 +177,36 @@ test("Desktop up and delivery share a private project proxy snapshot; roles over
       result: undefined, team: makeDaemonTeam(project, "desktop", "core-test", binding.space, {}),
     }));
     expect(readDaemonTeam(projectKey(project))?.proxyEnv).toEqual({});
+  } finally { f.cleanup(); }
+});
+
+test("Desktop up starts its own resident when the old terminal runs a shell", () => {
+  const f = fixture();
+  try {
+    writeRole(f.root, "lead", { kind: "codex", worktree: false });
+    const original = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
+    const old = f.terminals.find(terminal => terminal.address === original.terminal)!;
+    old.argv = ["/bin/zsh", "-l"];
+    old.foreground = { argv: ["codex"], cwd: f.root, pid: 900 };
+    old.labels["personal"] = "keep";
+    const oldProcess = old.pid;
+    const oldName = old.name;
+    const { roles } = desktopUp(f.load(), f.client);
+    const replacement = roles.find(role => role.role === "lead")!;
+    expect(replacement.action).toBe("started");
+    expect(replacement.terminal).not.toBe(old.address);
+    const managed = f.terminals.find(terminal => terminal.address === replacement.terminal)!;
+    expect(managed.argv[0]).toBe("/bin/codex");
+    expect(managed.argv).toContain("--no-daemon");
+    expect(managed).toMatchObject({
+      labels: { "team.project": realpathSync(f.root), "team.role": "lead", "team.session": "resident", "herdr.space": "s1" },
+    });
+    expect(old).toMatchObject({ state: "live", pid: oldProcess, name: oldName, foreground: { pid: 900 } });
+    expect(old.labels).toEqual({ "herdr.space": "s1", personal: "keep" });
+    expect(f.calls.filter(call => ["terminal.kill", "terminal.send", "app.terminal.park"].includes(call.method))).toEqual([]);
+    expect(desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")).toMatchObject({
+      action: "reused", terminal: replacement.terminal,
+    });
   } finally { f.cleanup(); }
 });
 
