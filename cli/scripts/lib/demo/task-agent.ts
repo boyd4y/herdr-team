@@ -1,3 +1,4 @@
+import { demoDelay } from "./config.ts";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { completedDeliveries } from "../dispatch/delivery.ts";
@@ -52,7 +53,13 @@ async function doAssignment(
 ) {
   const taskId = task.id;
   const options = ["--delivery", delivery];
-  const fixture = run.scenario ? smokeFixtures[run.scenario.fixture] : undefined;
+  const scenario = task.scenario ?? run.scenario;
+  const fixture = scenario ? smokeFixtures[scenario.fixture] : undefined;
+  const display = view;
+  view = { ...display, async step(index, detail, notes, delay) {
+    await display.step(index, detail, notes, run.fast ? delay : 30);
+    await demoDelay(run.root, (delay ?? 500) * 12, run.fast);
+  } };
   report("working", harness);
   const receipt = team<{ duplicate: boolean }>(run.root, "task", "claim", taskId, ...options);
   if (receipt.duplicate) throw new Error("The delivery was already claimed");
@@ -66,12 +73,12 @@ async function doAssignment(
     const accepted = !task.rejectOnce || completedDeliveries(card).length > 0;
     await view.step(1, "Prepare the implementation", [
       `Open ${task.artifact}`,
-      "Write the fixture contract and keep the change isolated.",
+      task.scope ?? "Write the fixture contract and keep the change isolated.",
       "Stage the single generated file for review.",
     ], 590);
     mkdirSync(dirname(task.artifact), { recursive: true });
-    const source = run.scenario
-      ? smokeSource(run.scenario, accepted)
+    const source = scenario
+      ? smokeSource(scenario, accepted)
       : `// ${task.artifact}\nexport const result = { lane: ${task.ordinal}, accepted: ${accepted} } as const;\n`;
     writeFileSync(task.artifact, source);
     command(["git", "add", "--", task.artifact], cwd);
@@ -82,13 +89,13 @@ async function doAssignment(
     ], 640);
     command(["git", "commit", "-qm", `Complete demo lane ${task.ordinal}`], cwd);
     const sha = command(["git", "rev-parse", "HEAD"], cwd).stdout;
-    handoff = ["--commit", sha, "--summary", "Implemented and submitted the fixture."];
+    handoff = ["--commit", sha, "--summary", `Implemented ${card.title}. ${fixture?.expectation ?? "Submitted the fixture."}`];
   } else {
     const review = card.meta.review as { commit?: string } | undefined;
     const sha = review?.commit;
     if (!sha || command(["git", "rev-parse", "HEAD"], cwd).stdout !== sha) throw new Error("The assigned commit changed");
     const changed = command(["git", "show", "--format=", "--name-only", sha], cwd).stdout;
-    const example = run.scenario ? smokeChecks(run.scenario)[0] : undefined;
+    const example = scenario ? smokeChecks(scenario)[0] : undefined;
     await view.step(1, step === "test" ? "Run the fixture checks" : "Inspect the pinned change", [
       `Confirm ${sha.slice(0, 7)} matches the assigned commit.`,
       `Read ${changed}`,

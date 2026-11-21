@@ -1,3 +1,5 @@
+import { demoContent } from "./content.ts";
+import { demoDelay, demoSettings } from "./config.ts";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -109,7 +111,13 @@ export async function runRelease(root: string, options: ReleaseOptions) {
   }
   const [developer, ...handoff] = installMockRoles(root, area);
   const runtime = options.startTeam ? (() => {
-    team(root, "up");
+    const enabled = process.env.HERDR_TEAM_DEMO;
+    process.env.HERDR_TEAM_DEMO = "0";
+    try { team(root, "up"); }
+    finally {
+      if (enabled === undefined) delete process.env.HERDR_TEAM_DEMO;
+      else process.env.HERDR_TEAM_DEMO = enabled;
+    }
     const context = managedContext();
     if (context.kind !== "desktop") throw new Error("A Desktop terminal is required for the showcase");
     return desktopTaskRuntime(loadProject(root), realDesktop(), context.caller);
@@ -118,21 +126,26 @@ export async function runRelease(root: string, options: ReleaseOptions) {
   const taskBySlug = new Map<string, string>();
   const tasks: MockTask[] = [];
   for (const lane of lanes) {
+    const content = scenario ? undefined : demoContent(lane, version);
     let issue = issueByTitle.get(lane.issue);
     if (!issue) {
       issue = team<{ id: string }>(root, "backlog", "add", lane.issue, "--type",
         lane.issue.startsWith("Fix ") ? "defect" : "requirement",
-        "--priority", lane.priority ?? "P2", "--iteration", version, "--acceptance", expectation).id;
+        "--priority", lane.priority ?? "P2", "--iteration", version, "--body", content?.background ?? expectation, "--acceptance",
+        scenario ? expectation : lanes.filter(item => item.issue === lane.issue)
+          .map(item => `${item.label}: ${demoContent(item, version).acceptance}`).join("\n\n")).id;
       issueByTitle.set(lane.issue, issue);
     }
     const dependency = lane.dependsOn ? taskBySlug.get(lane.dependsOn) : undefined;
     const task = team<{ id: string }>(root, "add", lane.label, "--role", developer!,
       "--handoff", handoff.join(","), "--requirement", issue,
+      "--body", content?.body ?? `${lane.label}\n\n${expectation}`,
       "--feature", feature, "--priority", lane.priority ?? "P2", ...(dependency ? ["--depends-on", dependency] : []));
     taskBySlug.set(lane.slug, task.id);
     // Workflow purges can reuse iteration names while retaining the integrated Git files.
     const filename = `${version.toLowerCase().replace(/\./g, "-")}-${task.id}-${lane.slug}.ts`;
     tasks.push({ id: task.id, artifact: `demo/${filename}`, ordinal: tasks.length + 1,
+      ...(content ? { scenario: content.scenario, scope: content.scope } : {}),
       ...((scenario?.rejectOnce ?? lane.rejectOnce) ? { rejectOnce: true } : {}) });
   }
   const mockRun: MockRun = { root: realpathSync(root), fast, tasks, ...(scenario ? { scenario } : {}) };
@@ -146,22 +159,27 @@ export async function runRelease(root: string, options: ReleaseOptions) {
     if (unfinished.code === 0 || acceptance.code === 0) throw new Error("An unfinished demo was accepted");
   }
 
-  if (!fast) await Bun.sleep(900);
-  const schedule = tasks.map((task, index) => ({ id: task.id, after: fast ? 0 : index * 430 + Math.floor(index / 6) * 1250 }));
-  const concurrency = 9;
+  await demoDelay(root, 3000, fast);
+  const schedule = tasks.map((task, index) => ({ id: task.id, after: fast ? 0 : index * 8000 }));
+
   const dispatched = new Set<string>();
-  const deadline = Math.max(fast ? 55_000 : 100_000, tasks.length * (fast ? 5_000 : 8_000));
-  const start = Date.now();
+  const deadline = Math.max(fast ? 55_000 : 100_000, tasks.length * (fast ? 5_000 : 120_000));
+  let elapsed = 0;
+  let lastTick = Date.now();
   let observed: { terminal: string; delivery: string; state: "done" | "blocked" } | undefined;
   for (;;) {
     const snapshot = cards();
     if (snapshot.every(card => card.status === "done")) break;
     const now = Date.now();
-    if (now - start > deadline) {
+    const controls = demoSettings(root);
+    if (fast || !controls.paused) elapsed += (now - lastTick) * (fast ? 1 : controls.speed);
+    lastTick = now;
+    if (!fast && controls.paused) { await Bun.sleep(250); continue; }
+    if (elapsed > deadline) {
       throw new Error("The release stalled. Inspect the demo Tasks or Inbox for the current delivery.");
     }
-    let slots = concurrency - snapshot.filter(card => dispatched.has(card.id) && card.status !== "done").length;
-    while (slots > 0 && schedule[0] && now - start >= schedule[0].after) {
+    let slots = (fast ? 9 : controls.concurrency) - snapshot.filter(card => dispatched.has(card.id) && card.status !== "done").length;
+    while (slots > 0 && schedule[0] && elapsed >= schedule[0].after) {
       const { id } = schedule.shift()!;
       if (runtime) {
         const project = loadProject(root);
@@ -209,7 +227,9 @@ export async function runRelease(root: string, options: ReleaseOptions) {
           return result;
         }
         team(root, "merge", card.id);
-        if (!fast) await Bun.sleep(460);
+        await demoDelay(root, 3000, fast);
+        elapsed += fast ? 0 : 3000;
+        lastTick = Date.now();
       }
     }
     await Bun.sleep(fast ? 150 : 350);
@@ -227,9 +247,10 @@ export async function runRelease(root: string, options: ReleaseOptions) {
   const agents = terminals();
   const harnesses = new Set(agents.map(agent => agent.status?.app));
   if (roles.some(role => !harnesses.has(role.harness))) throw new Error("Core did not identify all three mock harnesses");
-  if (!fast) await Bun.sleep(2500);
+  await demoDelay(root, 8000, fast);
   team(root, "feature", "finish", feature, "--iteration", version);
-  await Bun.sleep(fast ? 450 : 2400);
+  if (fast) await Bun.sleep(450);
+  else await demoDelay(root, 8000);
   if (options.testDirtyCheckout) {
     const checkout = agents[0]!.cwd;
     const file = join(checkout, "mock-local-file.txt");

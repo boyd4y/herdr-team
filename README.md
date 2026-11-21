@@ -7,8 +7,6 @@ Herdr Team brings together native **Herdr Desktop** layouts and mods, the `herdr
 The preview includes a visibly marked sample, newest-first tasks, remaining assignees, a compact role list, and native animation. With explicit bindings it can read existing project tasks/roles and display scoped Core terminals. The mod itself does not start agents, dispatch tasks, hand off, merge, or clean worktrees; runtime operations belong to the shared CLI.
 
 `desktop/` contains the native mods, layout and hot-reload setup. `tui/` contains the Herdr terminal plugin and sidebar configuration. Both use the team CLI in `cli/` and the agent Skill in `skill/`. See the [team runtime guide](docs/team-runtime.md) for CLI operations and Skill installation.
-Run `herdr-team up --demo` in the prepared demo project's Desktop Space. The
-Team Board and Agents sidebar show mock Codex, Claude and Grok as the release runs.
 A local Space without an initialized project opens a centered setup view.
 **Initialize now** uses the current terminal directory, falling back to the
 Space folder, and registers the project. Choose an installed agent to

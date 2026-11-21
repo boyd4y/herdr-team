@@ -11,6 +11,8 @@ export interface MockTask {
   artifact: string;
   ordinal: number;
   rejectOnce?: boolean;
+  scenario?: SmokeScenario;
+  scope?: string;
 }
 
 export interface MockRun {
@@ -47,12 +49,13 @@ export function team<T>(root: string, ...args: string[]): T {
 }
 
 export function checkArtifact(run: MockRun, task: MockTask, cwd: string): boolean {
-  if (run.scenario) {
-    const fixture = smokeFixtures[run.scenario.fixture];
+  const scenario = task.scenario ?? run.scenario;
+  if (scenario) {
+    const fixture = smokeFixtures[scenario.fixture];
     const check = `
       import assert from "node:assert/strict";
       const evaluate = (await import(process.argv[1]))[${JSON.stringify(fixture.name)}];
-      for (const { args, expected } of ${JSON.stringify(smokeChecks(run.scenario))}) {
+      for (const { args, expected } of ${JSON.stringify(smokeChecks(scenario))}) {
         assert.deepEqual(evaluate(...args), expected);
       }
     `;

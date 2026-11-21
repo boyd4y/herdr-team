@@ -1,3 +1,4 @@
+import { demoSettings } from "./config.ts";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { callerSpace, managedContext } from "../runtime/context.ts";
@@ -28,6 +29,10 @@ export function initDesktopDemo(path: string) {
   mkdirSync(target, { recursive: true });
   const root = realpathSync(target);
   if (isDesktopDemo(root)) return { root, created: false };
+  const configPath = join(root, ".herdr", "demo.json");
+  const hasLocalConfig = existsSync(configPath);
+  if (hasLocalConfig) demoSettings(root); // Validate before touching Git.
+  const localConfigOnly = hasLocalConfig && readdirSync(join(root, ".herdr")).every(file => file === "demo.json");
   const gitRoot = command(["git", "rev-parse", "--show-toplevel"], root, true);
   const hasCommit = command(["git", "rev-parse", "--verify", "HEAD"], root, true).code === 0;
   if (gitRoot.code === 0 && realpathSync(gitRoot.stdout) !== root) {
@@ -36,7 +41,7 @@ export function initDesktopDemo(path: string) {
   if (hasCommit) {
     const files = readdirSync(root);
     const changes = command(["git", "status", "--porcelain"], root).stdout;
-    const originalDemo = !files.some(file => ![".git", ".gitignore", "TEAM.md"].includes(file)) &&
+    const originalDemo = !files.some(file => ![".git", ".gitignore", "TEAM.md", ...(localConfigOnly ? [".herdr"] : [])].includes(file)) &&
       command(["git", "branch", "--show-current"], root).stdout === "main" &&
       command(["git", "ls-tree", "--name-only", "HEAD"], root).stdout === ".gitignore\nTEAM.md" &&
       command(["git", "show", "HEAD:TEAM.md"], root, true).stdout === demoAgreement.trim() &&
@@ -46,7 +51,7 @@ export function initDesktopDemo(path: string) {
     if (!originalDemo) throw new Error("Choose an empty folder or the original demo checkout for init --demo");
     if (!files.includes("TEAM.md")) writeFileSync(join(root, "TEAM.md"), demoAgreement, { flag: "wx" });
   } else {
-    if (readdirSync(root).some(entry => entry !== ".git")) {
+    if (readdirSync(root).some(entry => entry !== ".git" && !(entry === ".herdr" && localConfigOnly))) {
       throw new Error("Choose an empty folder outside existing repositories for init --demo");
     }
     for (const args of [["init", "-q", "-b", "main"], ["symbolic-ref", "HEAD", "refs/heads/main"],
@@ -60,8 +65,9 @@ export function initDesktopDemo(path: string) {
   }
   const area = demoArea(root);
   mkdirSync(area, { recursive: true, mode: 0o700 });
-  writeFileSync(join(root, ".herdr", "demo.json"), JSON.stringify({ kind: "herdr-team-demo" }) + "\n",
-    { flag: "wx", mode: 0o600 });
+  writeFileSync(join(root, ".herdr", "demo.json"), JSON.stringify({ enabled: true, speed: 1, concurrency: 3, paused: false,
+    ...(hasLocalConfig ? JSON.parse(readFileSync(configPath, "utf8")) : {}), kind: "herdr-team-demo" }, null, 2) + "\n",
+    { flag: hasLocalConfig ? "w" : "wx", mode: 0o600 });
   installMockRoles(root, area, join(area, "service"));
   return { root, created: true };
 }
@@ -99,7 +105,7 @@ async function refreshNativeRepository(): Promise<void> {
 }
 
 export async function runDesktopDemo(root: string, fast: boolean, quiet: boolean) {
-  if (!isDesktopDemo(root)) throw new Error("Run herdr-team init --demo in the demo folder, then up --demo from that folder in Herdr Desktop");
+  if (!isDesktopDemo(root)) throw new Error("Initialize a standalone demo folder with HERDR_TEAM_DEMO=1 herdr-team init, then run herdr-team up in Herdr Desktop");
   const context = managedContext();
   if (context.kind !== "desktop") throw new Error("Run up --demo inside a Herdr Desktop terminal");
   const client = realDesktop();

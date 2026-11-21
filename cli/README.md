@@ -548,3 +548,5 @@ checkout；Herdr workspace 已关闭时报告 `closed`，Git 拒绝删除时报�
 Desktop 从主 Space 执行同一条 `clean <id>`。CLI 按登记的项目、任务和检出路径验证归属，用 Core 结束符合收尾条件的任务终端并移除终端记录，回收空的原生任务 Space，再用 Git 删除 worktree。修改、未跟踪或忽略的文件会返回 `dirty`。有其他 pane、正在使用该 checkout 的终端，或任务终端仍忙时会保留 worktree。清理可以重试。
 `removed` / `absent` 返回成功；其他结果返回非零退出码，`--json` 也一样，查询失败不会当作已不存在。
 Skill 的最后一棒收尾规则见 [delivery.md](../skill/references/delivery.md#最后一棒完成后收尾)。
+
+开发用本地演示设置见 [demo 控制说明](../docs/demo.md)。

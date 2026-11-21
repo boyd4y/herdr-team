@@ -40,6 +40,7 @@ import { daemonLogPath, deliveryLogReason, followDaemonLog, formatDaemonLog, log
 import { addAgentMailRoute, AgentMailError, checkAgentMail, readAgentMailRoutes } from "./lib/runtime/agentmail.ts";
 import { MAIL_ID, listMail, mailTrashReasonLabel, readMail, updateMailState } from "./lib/runtime/mail-inbox.ts";
 import { initDesktopDemo, isDesktopDemo, runDesktopDemo } from "./lib/demo/launch.ts";
+import { demoSettings } from "./lib/demo/config.ts";
 import { purgeProject } from "./lib/team/purge.ts";
 
 /** 所有碰 herdr 的命令都从这里拿，测试时能替换。 */
@@ -663,7 +664,7 @@ function cmdInit(args: string[], name = "init"): number {
     );
     return 0;
   }
-  if (parsed.flags.has("demo")) {
+  if (parsed.flags.has("demo") || demoSettings(resolve(parsed.values.get("root") ?? process.cwd())).enabled) {
     if (parsed.pos.length || [...parsed.values.keys()].some(key => key !== "root") ||
         [...parsed.flags].some(flag => flag !== "demo" && flag !== "json")) {
       throw new UsageError("Use init --demo [--root DIR] [--json]");
@@ -947,19 +948,21 @@ async function cmdUp(args: string[], command = "up"): Promise<number> {
   const parsed = parseArgs(args.map(arg => arg === "-demo" ? "--demo" : arg), ["root", "name"]);
   if (parsed.flags.has("help")) {
     process.stdout.write(`Usage: herdr-team ${command} [--name NAME] [--fresh] [--root DIR | --project ID] [--json]\n` +
-      `       herdr-team ${command} --demo [--fast] [--json]\n` +
-      "Start a project team, or run an initialized demo in the current Desktop Space.\n" +
-      "-demo is an alias for --demo. --fast runs the same demo without the showcase pacing.\n");
+      "Start a project team in the current Desktop Space.\n");
     return 0;
   }
-  if (parsed.flags.has("demo")) {
-    if (parsed.pos.length || parsed.values.size || [...parsed.flags].some(flag => !["demo", "fast", "json"].includes(flag))) {
-      throw new UsageError("Use herdr-team up --demo [--fast] [--json]");
+  // Mock workers call up internally; they must not recursively start a showcase.
+  const demoRoot = resolveRoot(parsed.values.get("root"));
+  if (!process.env.HERDR_SMOKE_MANIFEST &&
+      (parsed.flags.has("demo") || demoSettings(demoRoot).enabled)) {
+    if (parsed.pos.length || [...parsed.values.keys()].some(key => key !== "root") ||
+        [...parsed.flags].some(flag => !["demo", "fast", "json"].includes(flag))) {
+      throw new UsageError("Demo startup accepts only --root and --json");
     }
-    const demo = await runDesktopDemo(realpathSync(process.cwd()), parsed.flags.has("fast"), parsed.flags.has("json"));
+    const demo = await runDesktopDemo(realpathSync(demoRoot), parsed.flags.has("fast"), parsed.flags.has("json"));
     return out(parsed, demo, `Demo complete: ${demo.tasks.length} tasks integrated, ${demo.terminalsReclaimed} mock agents reclaimed.`);
   }
-  if (parsed.flags.has("fast")) throw new UsageError("--fast is available with up --demo");
+  if (parsed.flags.has("fast")) throw new UsageError("--fast requires demo mode");
   checkOptions(parsed, ["root", "name"], ["fresh"]);
   if (parsed.pos.length) throw new UsageError("Start the current team or select a project with --root DIR or --project ID.");
   const root = resolveRoot(parsed.values.get("root"));
