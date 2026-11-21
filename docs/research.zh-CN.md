@@ -17,7 +17,7 @@
 
 | 需求 | 原生能力 | 本项目要做的事 |
 | --- | --- | --- |
-| 整体布局 | JSON 树，row/column/stack/block，可调整大小 | 单独的 `team` layout，引用内置终端和导航 |
+| 整体布局 | JSON 树，row/column/stack/block，可调整大小 | 单独的 `herdr-team` layout，引用内置终端和导航 |
 | 团队面板 | JS mod → GPUI 原生元素 | 任务、角色、交接路径的展示及明确操作入口 |
 | 动画 | 原生 frames、loop、transition | 活跃状态使用原生动画，无 JS 高频重绘 |
 | agent 列表 | `agents()`、`terminals()`、`panes()` 响应式数据 | 用项目、机器、space 和任务标签筛选，不自己轮询 |
@@ -60,7 +60,7 @@ flowchart TD
 
 ## 当前实现的边界
 
-- `team` layout 和原生 `team-console` mod 已建立，默认 Sample；真实 Core 数据与样例不会混用。
+- `herdr-team` layout 和原生 `herdr-team` mod 已建立，默认 Sample；真实 Core 数据与样例不会混用。
 - 只读 tasks/roles 通过现有 `herdr-team` 的 JSON 接口读取；不重新实现 YAML 和任务校验。
 - live 必须固定 root、machine、space。只展示对应标签的终端；没有匹配状态时保留 unknown。
 - 本地文件监听、Core 响应式数据和手动刷新已接入代码；**真实桌面团队的启动、投递、审批、恢复和清理还没有实现或端到端验收**。

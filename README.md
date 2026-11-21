@@ -43,27 +43,27 @@ Install Herdr Desktop, Node.js 22+ and Bun 1.3.14+. From a single checkout of th
 npm run setup:desktop
 ```
 
-In Herdr, select the `herdr-desktop-team-dev` layout. Inside a project terminal,
+In Herdr, select the `herdr-team` layout. Inside a project terminal,
 run `herdr-team team up` to establish the binding and start resident roles.
 Isolated roles start when dispatched.
 
 ### Desktop hot reload
 
-For local development (Node.js 22+), run `npm run dev`. It registers a separate
-`herdr-desktop-team-dev` mod and layout under `HERDR_APP_HOME` (default
-`~/.config/herdr-app`), then watches `desktop/mods/` and `desktop/layouts/team.json`
+For local development (Node.js 22+), run `npm run dev`. It registers the
+`herdr-team` layout and the Team and Agents mods under `HERDR_APP_HOME` (default
+`~/.config/herdr-app`), then watches `desktop/mods/` and `desktop/layouts/herdr-team.json`
 and syncs changes for the app's native hot reload. No dependencies or repeated
 installation are needed. Generated types, `jsconfig.json`, hidden files and
 `node_modules` are excluded. The script never launches the app, starts agents,
 or switches your active layout. With the desktop app open, select it manually:
 
 ```sh
-herdr-app do layout.switch --name herdr-desktop-team-dev
+herdr-app do layout.switch --name herdr-team
 ```
 
 `npm run dev:register` performs only the initial sync. Ctrl+C stops watching and
 leaves the registration installed. Edit source files, including live binding
-props, in this repository. A hidden `.herdr-desktop-team-dev.json` in app home
+props, in this repository. A hidden `.herdr-team.json` in app home
 tracks ownership; pre-existing personal files, another checkout's registration,
 and externally modified installed files are preserved with an error. Move
 conflicting files aside before retrying. Use the same `HERDR_APP_HOME` for both
@@ -74,7 +74,7 @@ Files. To toggle it from the keyboard, bind a key in your `keys.json` (any edit 
 stops adding new default shortcuts to it):
 
 ```json
-"layout:herdr-desktop-team-dev": { "cmd-shift-e": "layout.toggle:team-console" }
+"layout:herdr-team": { "cmd-shift-e": "layout.toggle:team-console" }
 ```
 
 **Board** groups tasks by their recorded status: Todo, In progress, Review,
@@ -93,8 +93,8 @@ From a local task detail, use **Archive** to move a card to Archive or **Delete*
 to send it to Trash after confirmation. Both folders support **Restore**.
 Historical cancelled tasks appear in Archive.
 For keyboard bindings or app commands, the console accepts `<mod>.list`,
-`<mod>.board` and `<mod>.filter-<status>` (including `open`). The development
-mod name is `herdr-desktop-team-dev`.
+`<mod>.board` and `<mod>.filter-<status>` (including `open`). The mod name is
+`herdr-team`.
 
 Task details separate **Description** and **History**. **Issues** shows requirements
 and defects and supports independent type and iteration filters.
@@ -106,9 +106,7 @@ creating a task and `backlog link R0001 0001` for an existing task.
 **Inbox** displays current deliveries and AgentMail, including message bodies and
 the routing reasons in Trash.
 
-For a regular preview installation:
-
-Copy `desktop/mods/team-console/`, `desktop/mods/team-agents/` and `desktop/layouts/team.json` into the corresponding folders under your Herdr app home, normally `~/.config/herdr-app`. Preserve any existing personal copies. Then choose the `team` layout in Herdr. The shipped Spaces, Tabs, Files and Changes mods are reused. Team Agents extends the installed native Agents interface under its own name.
+The layout uses Herdr's shipped Spaces, Tabs, Files and Changes mods.
 
 Team Agents retains native **Priority / Grouped by space** sorting, pins and
 sub-agent trees. It defaults to grouped when no explicit sort preference exists.
@@ -129,7 +127,7 @@ To pin a read-only panel explicitly, change its content props:
 
 ```json
 {
-  "mod": "team-console",
+  "mod": "herdr-team",
   "props": {
     "sample": false,
     "root": "/absolute/main-checkout",

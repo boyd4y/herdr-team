@@ -486,7 +486,7 @@ export default class TeamConsole extends View {
 
   popOut(task) {
     const binding = this.binding;
-    openOverlay({ mod: find(layout(), this.block())?.content?.mod ?? "team-console", kind: "window", key: "team-task", width: 640, height: 0.8,
+    openOverlay({ mod: find(layout(), this.block())?.content?.mod ?? "herdr-team", kind: "window", key: "team-task", width: 640, height: 0.8,
       props: this.preview ? { task: task.id, sample: true } : { task: task.id, root: binding.root, space: binding.space, machine: binding.machine,
         showcase: this.viewBinding?.demo === true } });
   }
@@ -615,8 +615,7 @@ export default class TeamConsole extends View {
   // The layout block holding this console; the tab-bar button toggles it.
   block() { return props()?.block ?? "team-console"; }
 
-  // Own icons live in this mod's folder, whose name differs between dev and installed copies.
-  teamIcon() { return `mods/${find(layout(), this.block())?.content?.mod ?? "team-console"}/users.svg`; }
+  teamIcon() { return `mods/${find(layout(), this.block())?.content?.mod ?? "herdr-team"}/users.svg`; }
 
   // A tab-bar button styled like the shipped Files/Changes buttons, toggling the console block.
   tabButton(t) {

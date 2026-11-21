@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
-const name = "herdr-desktop-team-dev";
+const name = "herdr-team";
 
 function fixture(t) {
   const temporary = mkdtempSync(join(tmpdir(), "herdr-team-dev-"));
@@ -29,14 +29,14 @@ test("registers an isolated dev layout from any cwd and preserves unrelated file
   writeFileSync(join(home, "layouts/main.json"), "personal layout");
   assert.equal(register().status, 0);
   const installed = join(home, "mods", name, "main.js");
-  assert.equal(readFileSync(installed, "utf8"), readFileSync(join(desktop, "mods/team-console/main.js"), "utf8"));
+  assert.equal(readFileSync(installed, "utf8"), readFileSync(join(desktop, "mods/herdr-team/main.js"), "utf8"));
   const layout = JSON.parse(readFileSync(join(home, "layouts", `${name}.json`), "utf8"));
   const findConsole = node => node.id === "team-console" ? node : node.children?.map(findConsole).find(Boolean);
   assert.equal(findConsole(layout).content.mod, name);
   assert.deepEqual(findConsole(layout).content.props, {});
   const findAgents = node => node.id === "agents" ? node : node.children?.map(findAgents).find(Boolean);
   assert.equal(findAgents(layout).content.mod, `${name}-agents`);
-  assert.equal(readFileSync(join(home, "mods", `${name}-agents`, "main.js"), "utf8"), readFileSync(join(desktop, "mods/team-agents/main.js"), "utf8"));
+  assert.equal(readFileSync(join(home, "mods", `${name}-agents`, "main.js"), "utf8"), readFileSync(join(desktop, "mods/herdr-team-agents/main.js"), "utf8"));
   assert.equal(JSON.parse(readFileSync(join(home, `.${name}.json`), "utf8")).source, realpathSync(root));
   const modified = statSync(installed).mtimeMs;
   assert.equal(register().status, 0);
@@ -57,7 +57,7 @@ test("refuses collisions and external edits before modifying installed files", t
   const model = join(home, "mods", name, "model.js");
   const original = readFileSync(model, "utf8");
   writeFileSync(installed, "edited installed code");
-  writeFileSync(join(desktop, "mods/team-console/model.js"), "changed source");
+  writeFileSync(join(desktop, "mods/herdr-team/model.js"), "changed source");
   const result = register();
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Preserving externally edited file/);
@@ -86,7 +86,7 @@ test("watches atomic saves, nested additions and deletions, then stops cleanly",
     }
   }
   await until(() => output.includes("Watching"));
-  const source = join(desktop, "mods/team-console");
+  const source = join(desktop, "mods/herdr-team");
   const target = join(home, "mods", name);
   writeFileSync(join(source, ".save.tmp"), "// atomic editor save\n");
   renameSync(join(source, ".save.tmp"), join(source, "model.js"));
@@ -97,7 +97,7 @@ test("watches atomic saves, nested additions and deletions, then stops cleanly",
   rmSync(join(source, "assets/icon.svg"));
   await until(() => !existsSync(join(target, "assets/icon.svg")));
   writeFileSync(join(source, "herdr.d.ts"), "generated types");
-  writeFileSync(join(desktop, "layouts/team.json"), JSON.stringify({ id: "changed", content: { mod: "team-console" } }));
+  writeFileSync(join(desktop, "layouts/herdr-team.json"), JSON.stringify({ id: "changed", content: { mod: "herdr-team" } }));
   await until(() => JSON.parse(readFileSync(join(home, "layouts", `${name}.json`), "utf8")).id === "changed");
   assert.equal(existsSync(join(target, "herdr.d.ts")), false);
   const exited = once(child, "exit");

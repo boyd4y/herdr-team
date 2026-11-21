@@ -16,7 +16,7 @@ mock.module("herdr", () => ({
   },
 }));
 
-const { default: TeamConsole } = await import("../../desktop/mods/team-console/main.js");
+const { default: TeamConsole } = await import("../../desktop/mods/herdr-team/main.js");
 
 test("leaving a remote Space discards its pending Inbox response", async () => {
   const jobs: Promise<void>[] = [];

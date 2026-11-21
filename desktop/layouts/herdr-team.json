@@ -47,7 +47,7 @@
           "id": "agents",
           "type": "block",
           "content": {
-            "mod": "team-agents",
+            "mod": "herdr-team-agents",
             "props": {
               "defaultSort": "grouped"
             }
@@ -97,7 +97,7 @@
               "id": "team-tab",
               "type": "block",
               "content": {
-                "mod": "team-console",
+                "mod": "herdr-team",
                 "props": {
                   "tab": true
                 }
@@ -151,7 +151,7 @@
               "id": "team-console",
               "type": "block",
               "content": {
-                "mod": "team-console",
+                "mod": "herdr-team",
                 "props": {}
               },
               "size": {

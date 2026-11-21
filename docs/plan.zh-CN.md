@@ -2,7 +2,7 @@
 
 ## 1. 原生预览与边界确认（本次）
 
-- 新建独立 Git 仓库、`team` layout、`team-console` mod 和显式 Sample。
+- 新建独立 Git 仓库、`herdr-team` layout、`herdr-team` mod 和显式 Sample。
 - 用现有 CLI JSON 读取任务和角色；Core 状态只读，不开始执行业务任务。
 - 核对原生加载、任务倒序、机器/space 隔离，以及同角色并行任务互不借用状态。
 

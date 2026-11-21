@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { boardColumns, consoleBinding, flowNodes, groupTasks, iterationOptions, listFilters, listTasks, readableDescription,
-  requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/team-console/model.js";
+  requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/herdr-team/model.js";
 
 test("task assignee uses native agent and launch model only for the recorded live delivery", () => {
   const binding = { root: "/repo", space: "main", machine: null };

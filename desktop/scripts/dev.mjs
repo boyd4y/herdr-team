@@ -8,11 +8,11 @@ const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Keep the checkout as the owner so existing registrations survive the move.
 const checkout = dirname(desktop);
 const home = resolve(process.env.HERDR_APP_HOME || join(homedir(), ".config/herdr-app"));
-const name = "herdr-desktop-team-dev";
+const name = "herdr-team";
 const manifestPath = join(home, `.${name}.json`);
-const sourceMods = new Map([["team-console", name], ["team-agents", `${name}-agents`]]);
-const modPaths = [...sourceMods.values()].map(mod => `mods/${mod}`);
-const layoutPath = `layouts/${name}.json`;
+const modPaths = [`mods/${name}`, `mods/${name}-agents`];
+const layoutFile = `${name}.json`;
+const layoutPath = `layouts/${layoutFile}`;
 const args = process.argv.slice(2);
 const watchers = [];
 let timer;
@@ -43,15 +43,10 @@ function sources() {
       else if (entry.isFile()) files.set(target, readFileSync(path));
     }
   }
-  for (const [source, installed] of sourceMods) collect(join(desktop, "mods", source), `mods/${installed}`);
-  const layout = JSON.parse(readFileSync(join(desktop, "layouts/team.json"), "utf8"));
-  function rewrite(node) {
-    if (!node || typeof node !== "object") return;
-    if (sourceMods.has(node.mod)) node.mod = sourceMods.get(node.mod);
-    Object.values(node).forEach(rewrite);
-  }
-  rewrite(layout);
-  files.set(layoutPath, Buffer.from(`${JSON.stringify(layout, null, 2)}\n`));
+  for (const path of modPaths) collect(join(desktop, path), path);
+  const layout = readFileSync(join(desktop, layoutPath));
+  JSON.parse(layout.toString("utf8"));
+  files.set(layoutPath, layout);
   return files;
 }
 
@@ -126,7 +121,7 @@ try {
     // Watch directories, so editor atomic saves and new nested files are observed.
     for (const folder of ["mods", "layouts"]) {
       const watcher = watch(join(desktop, folder), { recursive: true }, (_event, filename) => {
-        if (filename && (ignored(String(filename)) || (folder === "layouts" && String(filename) !== "team.json"))) return;
+        if (filename && (ignored(String(filename)) || (folder === "layouts" && String(filename) !== layoutFile))) return;
         clearTimeout(timer);
         timer = setTimeout(() => {
           try { sync(); }

@@ -1,5 +1,5 @@
 {
-  "name": "herdr-desktop-team",
+  "name": "herdr-team",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "install:mock": "node bin/install-cli.js --mock",
     "dev": "node desktop/scripts/dev.mjs",
     "dev:register": "node desktop/scripts/dev.mjs --once",
-    "check": "herdr-app check desktop/mods/team-console && herdr-app check desktop/mods/team-agents",
+    "check": "herdr-app check desktop/mods/herdr-team && herdr-app check desktop/mods/herdr-team-agents",
     "test": "node --test tests/*.test.js",
     "test:cli": "cd cli && bun test",
     "test:install": "node --test tests/*.test.cjs",

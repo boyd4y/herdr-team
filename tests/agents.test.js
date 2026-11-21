@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentGroup, agentTeam, groupAgents, roleDescription } from "../desktop/mods/team-agents/model.js";
+import { agentGroup, agentTeam, groupAgents, roleDescription } from "../desktop/mods/herdr-team-agents/model.js";
 
 test("agent ownership uses terminal labels and actual space IDs, including machines", () => {
   const agent = { address: "t1", space: "s1", space_name: "same name" };
