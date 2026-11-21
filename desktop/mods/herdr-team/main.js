@@ -10,7 +10,7 @@ const LABEL = { blocked: "Blocked", "needs input": "Needs input", error: "Error"
   next: "Next", ready: "Ready", assigned: "Assigned", "awaiting handoff": "Awaiting handoff", archive: "Archived", trash: "In Trash",
   doing: "In progress", todo: "Todo", review: "Review" };
 const label = status => LABEL[status] ?? status;
-const REQUIREMENT_STATUS = { backlog: "Backlog", planned: "Planned", "in-progress": "In progress", ready: "Ready for acceptance", accepted: "Accepted" };
+const REQUIREMENT_STATUS = { backlog: "Backlog", planned: "Planned", "in-progress": "Active", ready: "Ready", accepted: "Accepted" };
 const REQUIREMENT_TYPES = [[null, "All"], ["requirement", "Requirements"], ["defect", "Defects"]];
 const WIDE = 520;
 
@@ -999,9 +999,12 @@ export default class TeamConsole extends View {
         segment(`${kind}-folder-${folder}`, name, selected === folder, cx => onSelect(folder, cx))));
     const requirementLabel = card => issueFolder(card) === "current" ? REQUIREMENT_STATUS[card.status] ?? card.status : label(issueFolder(card));
     const requirementStatus = card => {
-      const color = issueFolder(card) !== "current" ? t.muted : card.status === "accepted" ? t.done
+      const current = issueFolder(card) === "current";
+      const color = !current ? t.muted : card.status === "accepted" ? t.done
         : card.status === "ready" ? t.accent : card.status === "in-progress" ? t.working : t.muted;
-      return pill(requirementLabel(card), color).id(`issue-status-${card.id}`);
+      return pill(requirementLabel(card), color).id(`issue-status-${card.id}`)
+        .when(current && card.status === "in-progress", el => el.tooltip("In progress"))
+        .when(current && card.status === "ready", el => el.tooltip("Ready for acceptance"));
     };
     const requirementRow = card => v_flex().id(`requirement-${card.id}`).gap(4).min_w(0).px(6).py(8).rounded(6)
       .tooltip(`${card.id} · ${card.title}\n${requirementLabel(card)} · ${card.progress.done}/${card.progress.total} tasks complete`)
