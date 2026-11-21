@@ -1,7 +1,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { Button, Popover, TextView, h_flex, v_flex } from "gpui-base";
 import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder } from "herdr";
-import { boardColumns, consoleBinding, flowNodes, issueFolder, iterationOptions, iterationVersion, listFilters, listTasks, readableMarkdown, requirementsForIteration,
+import { boardColumns, consoleBinding, flowNodes, issueFolder, iterationOptions, iterationVersion, listFilters, listTasks, requirementsForIteration,
   roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
 import { sample } from "./sample.js";
 
@@ -756,7 +756,7 @@ export default class TeamConsole extends View {
         .child(div().text_size(13.5).font_semibold().text_color(t.foreground).child(title))
         .when(count !== undefined, el => el.child(div().text_size(11).text_color(t.muted).child(String(count))))
         .child(div().flex_1().h(1).bg(t.border)));
-    const detailMarkdown = (id, text) => TextView.markdown(id, readableMarkdown(text)).w_full().selectable(true).scrollable(false);
+    const detailMarkdown = (id, text) => TextView.markdown(id, text).w_full().selectable(true).scrollable(false);
     const statusColor = status => status === "doing" ? t.working : status === "review" ? t.accent : status === "blocked" ? t.blocked : status === "done" ? t.done : t.dim;
     const taskDisplayLabel = task => taskFolder(task) === "current" ? taskReviewPhase(task) ?? label(task.status) : label(taskFolder(task));
     const taskDisplayColor = task => taskFolder(task) !== "current" ? t.muted : task.status === "review" && task.meta?.integration?.state === "blocked"

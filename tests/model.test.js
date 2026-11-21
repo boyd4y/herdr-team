@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boardColumns, consoleBinding, flowNodes, groupTasks, iterationOptions, listFilters, listTasks, readableMarkdown,
+import { boardColumns, consoleBinding, flowNodes, groupTasks, iterationOptions, listFilters, listTasks,
   requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/herdr-team/model.js";
 
 test("task assignee uses native agent and launch model only for the recorded live delivery", () => {
@@ -97,21 +97,6 @@ test("task detail separates description and recorded history and hides internal 
   });
   assert.deepEqual(taskDocument("## 流转记录\n- 完成"), { description: "", history: "- 完成" });
   assert.deepEqual(taskDocument("Only the assignment."), { description: "Only the assignment.", history: "" });
-});
-
-test("detail Markdown separates authored lines and long prose without changing Markdown blocks", () => {
-  const first = "在指定目录启动任务并保留当前会话上下文。";
-  const second = "等待服务完成准备，然后在当前会话提交一条消息。";
-  const prose = first.repeat(8) + second.repeat(8);
-  const display = readableMarkdown(prose);
-  assert.ok(display.includes("\n\n"));
-  assert.equal(display.replaceAll("\n\n", ""), prose);
-  assert.equal(readableMarkdown("## 目标\r\n第一段。\r\n第二段。"), "## 目标\r\n第一段。\n\n第二段。");
-  const markdownBlocks = ["- 第一项\n  续行\n- 第二项", "甲\n--", "A | B\n--- | ---\n1 | 2", "第一行  \n第二行",
-    "\`\`\`sh\nherdr-team status\n\nfirst\nsecond\n\`\`\`"].join("\n\n");
-  assert.equal(readableMarkdown(`## 交付\n\n${prose}\n\n${markdownBlocks}`), `## 交付\n\n${display}\n\n${markdownBlocks}`);
-  const inline = prose + " [查看说明](https://example.test).";
-  assert.equal(readableMarkdown(inline), inline);
 });
 
 test("space lookup never selects a project by a stale folder, cwd or display name", () => {

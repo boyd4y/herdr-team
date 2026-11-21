@@ -21,7 +21,7 @@ lead 创建或调整任务、管理角色和会话、派活、核对 inbox 投�
 
 派给 `lifecycle: temporary` 的角色前，用 `add` 或 `edit` 给任务设置 `--feature NAME --iteration VERSION`。任务可以继承关联 Issue 的迭代。同一批交付的多个 Issue 和 Task 共用同一个 Feature 与迭代。
 
-Skill 根据用户目标、TEAM.md 的角色步骤和现有角色，为每张任务确定负责人及必要验收角色。建卡时用 `--body` 或 `--body-file` 记录执行范围和完成条件。简单任务写一句也够，包含多个要点的 Issue、Task 或交付摘要用 Markdown 列表或空行分段。已知信息直接写入卡片，只有确实影响执行的缺口才向用户确认。
+Skill 根据用户目标、TEAM.md 的角色步骤和现有角色，为每张任务确定负责人及必要验收角色。建卡时用 `--body` 或 `--body-file` 记录执行范围和完成条件。已知信息直接写入卡片，只有确实影响执行的缺口才向用户确认。
 
 ```sh
 herdr-team task create "Implement login" --role dev --handoff test,review --body-file login-task.md
@@ -33,6 +33,12 @@ herdr-team task dispatch <id>
 已投递的任务先核对执行与证据，不靠修改 TEAM.md 改写当前指派或跳过验收。
 dev 自测，test 验证变更行为和风险，review 复用已有证据并补查缺口；不每棒重复全量测试或强制生成报告。
 PR 发布、批准后合并必须有用户授权；没有既有决定且当前交付需要时才补问，不作为初始化必填项。
+
+## Markdown 写入
+
+写入 Issue 正文和验收标准、Task 描述或交付摘要前，先在原文中安排 Markdown 结构。简单内容一句话即可。段落之间留一个空行，并列要点每条用 `-` 单独起行，有顺序的步骤用编号列表。较长内容用 `###` 小标题分节，标题与正文之间留空行。
+
+多行正文建卡用 `--body-file`，多行交付摘要用 `--summary-file`。用 `--acceptance` 或其他文本参数传多行内容时，传入实际换行。只有单个回车的普通正文按 Markdown 仍是同一段。
 
 ## 收到任务
 
@@ -47,10 +53,10 @@ PR 发布、批准后合并必须有用户授权；没有既有决定且当前�
 
 ## 交付
 
-普通交付保持简短，CLI 会追加到 task.md；长摘要可从文件读取：
+普通交付保持简短，CLI 会把摘要追加到 `task.md`。
 
 ```sh
-herdr-team task handoff <id> --delivery ID --summary "Results; artifacts; validation; risks" --root <team-root>
+herdr-team task handoff <id> --delivery ID --summary "Updated the login flow and verified recovery." --root <team-root>
 herdr-team task handoff <id> --delivery ID --summary-file <file> --root <team-root>
 ```
 
