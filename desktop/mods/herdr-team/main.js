@@ -1,7 +1,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { Button, Popover, TextView, h_flex, v_flex } from "gpui-base";
 import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder } from "herdr";
-import { boardColumns, consoleBinding, flowNodes, issueFolder, iterationOptions, iterationVersion, listFilters, listTasks, readableDescription, requirementsForIteration,
+import { boardColumns, consoleBinding, flowNodes, issueFolder, iterationOptions, iterationVersion, listFilters, listTasks, readableMarkdown, requirementsForIteration,
   roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
 import { sample } from "./sample.js";
 
@@ -756,6 +756,7 @@ export default class TeamConsole extends View {
         .child(div().text_size(13.5).font_semibold().text_color(t.foreground).child(title))
         .when(count !== undefined, el => el.child(div().text_size(11).text_color(t.muted).child(String(count))))
         .child(div().flex_1().h(1).bg(t.border)));
+    const detailMarkdown = (id, text) => TextView.markdown(id, readableMarkdown(text)).w_full().selectable(true).scrollable(false);
     const statusColor = status => status === "doing" ? t.working : status === "review" ? t.accent : status === "blocked" ? t.blocked : status === "done" ? t.done : t.dim;
     const taskDisplayLabel = task => taskFolder(task) === "current" ? taskReviewPhase(task) ?? label(task.status) : label(taskFolder(task));
     const taskDisplayColor = task => taskFolder(task) !== "current" ? t.muted : task.status === "review" && task.meta?.integration?.state === "blocked"
@@ -896,9 +897,9 @@ export default class TeamConsole extends View {
           .when(detail?.body !== undefined && !description && !history,
             el => el.child(div().text_color(t.dim).child("No description or history recorded.")))
           .when(Boolean(description), el => el.child(detailSection("task-description", "Description")
-            .child(TextView.markdown(`body-${task.id}-description`, readableDescription(description)).w_full().selectable(true).scrollable(false))))
+            .child(detailMarkdown(`body-${task.id}-description`, description))))
           .when(Boolean(history), el => el.child(detailSection("task-history", "History")
-            .child(TextView.markdown(`body-${task.id}-history`, history).w_full().selectable(true).scrollable(false)))));
+            .child(detailMarkdown(`body-${task.id}-history`, history)))));
     };
 
     // A. List: narrow-sidebar rows, explicit status filters and attention order.
@@ -1074,9 +1075,9 @@ export default class TeamConsole extends View {
         .when(Boolean(detail?.error), el => el.child(div().text_color(t.blocked).child(detail?.error ?? "")))
         .when(Boolean(detail && !detail.error), el => el.child(v_flex().w_full().max_w(570).min_w(0).gap(16)
           .when(Boolean(detail?.body), el => el.child(detailSection("issue-description", "Description")
-            .child(TextView.markdown(`description-${card.id}`, detail?.body ?? "").w_full().selectable(true).scrollable(false))))
+            .child(detailMarkdown(`description-${card.id}`, detail?.body ?? ""))))
           .child(detailSection("issue-acceptance", "Acceptance criteria")
-            .child(detail?.acceptance ? TextView.markdown(`acceptance-${card.id}`, detail.acceptance).w_full().selectable(true).scrollable(false)
+            .child(detail?.acceptance ? detailMarkdown(`acceptance-${card.id}`, detail.acceptance)
               : div().text_color(t.dim).child("No acceptance criteria recorded.")))
           .child(detailSection("issue-tasks", "Tasks", linked.length)
             .when(linked.length > 0, el => el.child(v_flex().gap(2).children(linked))))));

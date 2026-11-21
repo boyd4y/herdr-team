@@ -21,7 +21,7 @@ lead 创建或调整任务、管理角色和会话、派活、核对 inbox 投�
 
 派给 `lifecycle: temporary` 的角色前，用 `add` 或 `edit` 给任务设置 `--feature NAME --iteration VERSION`。任务可以继承关联 Issue 的迭代。同一批交付的多个 Issue 和 Task 共用同一个 Feature 与迭代。
 
-Skill 根据用户目标、TEAM.md 的角色步骤和现有角色，为每张任务确定负责人及必要验收角色。建卡时用 `--body` 或 `--body-file` 记录执行范围和完成条件。简单任务写一句也够。已知信息直接写入卡片，只有确实影响执行的缺口才向用户确认。
+Skill 根据用户目标、TEAM.md 的角色步骤和现有角色，为每张任务确定负责人及必要验收角色。建卡时用 `--body` 或 `--body-file` 记录执行范围和完成条件。简单任务写一句也够，包含多个要点的 Issue、Task 或交付摘要用 Markdown 列表或空行分段。已知信息直接写入卡片，只有确实影响执行的缺口才向用户确认。
 
 ```sh
 herdr-team task create "Implement login" --role dev --handoff test,review --body-file login-task.md

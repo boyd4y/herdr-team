@@ -207,10 +207,33 @@ export function taskDocument(body) {
   };
 }
 
-/** Give legacy one-paragraph descriptions breathing room without changing Markdown blocks. */
-export function readableDescription(markdown) {
-  if (markdown.length < 240 || /[\r\n`]|^[#>]|^(?:[-+*]|\d+[.)])\s|\[[^\]]*\]\s*[([]|[*_~]{2}|<\/?[A-Za-z][^>]*>/u.test(markdown)) return markdown;
-  const sentences = markdown.match(/.+?(?:[。！？]+|[.!?]+(?=\s+[A-Z])|$)/gu) ?? [];
+const paragraphMarkup = /^(?:[ \t#>|=]|[-+*](?:[ \t]|$)|\d{1,9}[.)][ \t]|-+[ \t]*$|(?:[ \t]*[-*_]){3,}[ \t]*$|:?-{2,}.*\|)/m;
+const inlineMarkup = /[`*_\[\]]|~~|<\/?[A-Za-z][^>]*>|(?: {2,}|\\)\r?(?:\n|$)/;
+
+/** Format prose for display, keeping Markdown blocks and saved records intact. */
+export function readableMarkdown(markdown) {
+  if (/<!--|^[ \t]*<\/?[A-Za-z]/m.test(markdown)) return markdown;
+  let fence = "";
+  return markdown.split(/(\r?\n[ \t]*\r?\n(?:[ \t]*\r?\n)*)/).map((block, index) => {
+    if (index % 2) return block;
+    const markers = [...block.matchAll(/^ {0,3}(`{3,}|~{3,})([^\r\n]*)/gm)];
+    if (fence || markers.length) {
+      for (const [, marker, suffix] of markers) {
+        if (!fence) fence = marker;
+        else if (marker[0] === fence[0] && marker.length >= fence.length && !suffix.trim()) fence = "";
+      }
+      return block;
+    }
+    const heading = /^(?:#{1,6}[ \t]+[^\r\n]*\r?\n)+/.exec(block)?.[0] ?? "";
+    const prose = block.slice(heading.length);
+    if (paragraphMarkup.test(prose) || inlineMarkup.test(prose)) return block;
+    return heading + prose.split(/\r?\n/).map(proseParagraphs).join("\n\n");
+  }).join("");
+}
+
+function proseParagraphs(line) {
+  if (line.length < 200) return line;
+  const sentences = line.match(/.+?(?:[。！？]+[」』”’）】]*|[.!?]+(?=[ \t]+[A-Z])|$)/gu) ?? [];
   const paragraphs = [];
   let paragraph = "";
   for (const sentence of sentences) {
@@ -224,7 +247,7 @@ export function readableDescription(markdown) {
     if (paragraph.trim().length < 50 && paragraphs.length) paragraphs[paragraphs.length - 1] += paragraph.trimEnd();
     else paragraphs.push(paragraph.trim());
   }
-  return paragraphs.length > 1 ? paragraphs.join("\n\n") : markdown;
+  return paragraphs.length > 1 ? paragraphs.join("\n\n") : line;
 }
 
 /** List view sections: in flight, not started, finished. Each keeps newest first. */
