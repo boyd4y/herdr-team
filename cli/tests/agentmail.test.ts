@@ -142,11 +142,13 @@ subject_contains = "【bug】"
     const id = mailId(inbox, "new");
     const summary = cli("inbox", "list", "--role", "lead", "--json");
     expect(summary.exitCode).toBe(0);
-    expect(JSON.parse(summary.stdout.toString())).toMatchObject([{ id, state: "notified", source: "agentmail" }]);
+    expect(JSON.parse(summary.stdout.toString())).toMatchObject([{ id, state: "notified", source: "agentmail", recipient: inbox, read: false }]);
     expect(summary.stdout.toString()).not.toContain("private mail body");
     const read = cli("inbox", "read", id);
     expect(read.exitCode).toBe(0);
     expect(read.stdout.toString()).toContain("private mail body");
+    expect(read.stdout.toString()).toContain(`To: ${inbox}`);
+    expect(listMail(projectId, "lead")).toMatchObject([{ id, state: "notified", read: true }]);
     expect(cli("inbox", "ack", id).exitCode).toBe(0);
     expect(listMail(projectId, "lead")).toEqual([]);
     writeFileSync(join(home, "projects.toml"), `[projects]\nmy-team = ${JSON.stringify(realpathSync(root))}\n`);

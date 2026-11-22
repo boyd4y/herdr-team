@@ -17,7 +17,8 @@ import { describePlan, isPlanName, PLAN_NAMES, planRoles } from "./lib/team/plan
 import { addRole, formatRoles, removeRole, RoleError } from "./lib/team/roles.ts";
 import { realHerdr, type Herdr } from "./lib/runtime/herdr.ts";
 import { refreshSidebar } from "./lib/ui/sidebar.ts";
-import { claimTask, queueRows, retryDelivery } from "./lib/dispatch/queue.ts";
+import { claimTask, retryDelivery } from "./lib/dispatch/queue.ts";
+import { inboxDeliveries, readInboxDelivery } from "./lib/dispatch/inbox.ts";
 import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/dispatch/launch.ts";
 import { agentStatusLabel, buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
 import { createTask, editTask, findTask, linkRequirementTask, setTaskDisposition, TaskError } from "./lib/tasks/cards.ts";
@@ -40,7 +41,7 @@ import { daemonPass, daemonStatus, requestDaemonCleanup, serveDaemon, startDaemo
 import { featurePreviewStatus, queueFeaturePreview } from "./lib/runtime/feature-preview.ts";
 import { daemonLogPath, deliveryLogReason, followDaemonLog, formatDaemonLog, logDaemon, readDaemonLog } from "./lib/runtime/daemon-log.ts";
 import { addAgentMailRoute, AgentMailError, checkAgentMail, readAgentMailRoutes } from "./lib/runtime/agentmail.ts";
-import { MAIL_ID, listMail, mailTrashReasonLabel, readMail, updateMailState } from "./lib/runtime/mail-inbox.ts";
+import { MAIL_ID, listMail, mailTrashReasonLabel, markMailRead, readMail, updateMailState } from "./lib/runtime/mail-inbox.ts";
 import { initDesktopDemo, isDesktopDemo, runDesktopDemo } from "./lib/demo/launch.ts";
 import { demoSettings } from "./lib/demo/config.ts";
 import { purgeProject } from "./lib/team/purge.ts";
@@ -1284,8 +1285,9 @@ async function cmdInbox(args: string[]): Promise<number> {
       "       herdr-team inbox [list] ROLE@PROJECT [--all] [--json]\n" +
       "       herdr-team inbox trash [ROLE@PROJECT | --role ROLE] [--root DIR] [--json]\n" +
       "       herdr-team inbox retry <id> [--root DIR] [--json]\n" +
-      "       herdr-team inbox <read | ack | restore> <mail-id> [--root DIR] [--json]\n" +
-      "Mail lists show newest first. --all includes acknowledged AgentMail items. Inbox trash shows rejected mail and its routing reason.\n" +
+      "       herdr-team inbox read <mail-id | delivery-id | task-id> [--root DIR] [--json]\n" +
+      "       herdr-team inbox <ack | restore> <mail-id> [--root DIR] [--json]\n" +
+      "--all includes handled internal deliveries and acknowledged email. Inbox trash shows email and its routing reason.\n" +
       "Retry only after verifying that an uncertain delivery was not processed. Retries receive a new delivery ID.\n");
     return 0;
   }
@@ -1296,6 +1298,8 @@ async function cmdInbox(args: string[]): Promise<number> {
   const retry = parsed.pos[0] === "retry" && parsed.pos.length === 2 && !parsed.values.has("role");
   const operation = parsed.pos[0];
   const mailId = parsed.pos[1];
+  const deliveryRead = operation === "read" && parsed.pos.length === 2 && !parsed.values.has("role") &&
+    /^(?:\d{4}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/.test(mailId ?? "");
   const mailOperation = (operation === "read" || operation === "ack" || operation === "restore") &&
     mailId && MAIL_ID.test(mailId) &&
     parsed.pos.length === 2 && !parsed.values.has("role");
@@ -1303,19 +1307,31 @@ async function cmdInbox(args: string[]): Promise<number> {
   const listArgs = operation === "list" || trash ? parsed.pos.slice(1) : parsed.pos;
   const all = parsed.flags.has("all");
   let root = parsed.values.get("root"), role = parsed.values.get("role");
-  if (retry || mailOperation) {
+  if (retry || mailOperation || deliveryRead) {
     if (all) throw new UsageError("--all is only available when listing the Inbox");
   } else if (listArgs.length) {
     const [recipient, projectName, extra] = listArgs[0]!.split("@");
     if (listArgs.length !== 1 || !recipient || !NAME_RE.test(recipient) || !projectName || extra !== undefined) {
-      throw new UsageError("Use inbox [list | trash] [ROLE@PROJECT], inbox retry <id>, or inbox <read | ack | restore> <mail-id>");
+      throw new UsageError("Use inbox list, trash, read <id>, ack <mail-id>, restore <mail-id>, or retry <task-id>");
     }
     if (root !== undefined || role !== undefined) throw new UsageError("Use ROLE@PROJECT or the project and role options");
     root = rootForInboxProject(projectName);
     role = recipient;
   }
-  const project = loadValidated(resolveRoot(root));
+  const project = loadValidated(resolveRoot(root), { taskBodies: false, roleBodies: false });
   const projectId = projectKey(project).slice(0, 12);
+  const messageLines = (message: { sender: string | null; recipient: string; subject: string; body: string }, reason?: string) => [
+    `From: ${sanitize(message.sender ?? "") || "Unknown sender"}`,
+    `To: ${sanitize(message.recipient)}`,
+    `Subject: ${sanitize(message.subject) || "(No subject)"}`,
+    ...(reason ? [`Reason: ${reason}`] : []),
+    "", sanitize(message.body, true),
+  ].join("\n");
+  if (deliveryRead) {
+    const item = readInboxDelivery(project, mailId!);
+    if (!item) throw new TaskError("Internal message was not found in this project's Inbox");
+    return out(parsed, item, messageLines(item));
+  }
   if (mailOperation) {
     const item = readMail(projectId, mailId!);
     if (!item) throw new TaskError("AgentMail message was not found in this project's Inbox");
@@ -1338,14 +1354,10 @@ async function cmdInbox(args: string[]): Promise<number> {
       await wakeDaemon(project.root);
       return out(parsed, { id: item.id, state: "acknowledged" }, `Acknowledged ${item.id}`);
     }
+    if (!item.read) markMailRead(projectId, item.id);
     logDaemon("agentmail.read", fields);
-    return out(parsed, item, [
-      `${item.id}  ${item.role}  ${item.received_at}`,
-      `From: ${sanitize(item.sender)}`,
-      `Subject: ${sanitize(item.subject) || "(No subject)"}`,
-      ...(item.state === "trashed" ? [`Reason: ${mailTrashReasonLabel(item.trash_reason)}`] : []),
-      "", sanitize(item.body, true),
-    ].join("\n"));
+    const message = { ...item, source: "agentmail", recipient: item.inbox, read: true };
+    return out(parsed, message, messageLines(message, item.state === "trashed" ? mailTrashReasonLabel(item.trash_reason) : undefined));
   }
   if (retry) {
     const runtime = taskRuntime(executionRuntime(project));
@@ -1358,11 +1370,9 @@ async function cmdInbox(args: string[]): Promise<number> {
     await wakeDaemon(project.root);
     return out(parsed, result, `#${result.id} is waiting for automatic delivery.`);
   }
-  const states: Record<string, string> = { queued: "Waiting to send", sending: "Sending", submitted: "Awaiting claim",
-    claimed: "In progress", uncertain: "Needs reconciliation" };
-  const rows = (trash ? [] : queueRows(project)).filter(row => !role || row.role === role).map(row => ({
-    ...row, title: findTask(project, row.id).title, label: states[row.state],
-  }));
+  const rows = trash ? [] : inboxDeliveries(project, all, role)
+    .map(({ summary_ref: _ref, summary_length: _length, ...row }) => row)
+    .sort((a, b) => b.received_at.localeCompare(a.received_at));
   const mailStates = { conflict: "Routing conflict", pending: "Waiting to notify", sending: "Notifying",
     notified: "Awaiting acknowledgment", uncertain: "Notification needs review", acknowledged: "Acknowledged" };
   const mail = listMail(projectId, role ?? null, trash ? "trash" : all ? "all" : "active")
@@ -1370,14 +1380,17 @@ async function cmdInbox(args: string[]): Promise<number> {
       const left = Date.parse(a.received_at), right = Date.parse(b.received_at);
       return (Number.isFinite(right) ? right : -Infinity) - (Number.isFinite(left) ? left : -Infinity) || a.id.localeCompare(b.id);
     })
-    .map(item => ({ ...item, source: "agentmail", label: item.state === "trashed" ? mailTrashReasonLabel(item.trash_reason) : mailStates[item.state] }));
+    .map(item => ({ ...item, source: "agentmail", recipient: item.inbox,
+      label: item.state === "trashed" ? mailTrashReasonLabel(item.trash_reason) : mailStates[item.state] }));
   const mailTime = (value: string) => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "Unknown time" : `${stamp(date)}:${String(date.getSeconds()).padStart(2, "0")}`;
   };
   const lines = [
-    ...rows.map(row => `#${row.id}  ${row.role}  ${row.label}  ${row.title}${row.reason ? `  (${row.reason})` : ""}`),
-    ...mail.map(item => [mailTime(item.received_at), sanitize(item.subject) || "(No subject)", item.role, item.label, item.id].join("  ")),
+    ...rows.map(row => [`#${row.id}`, sanitize(row.sender ?? "") || "Unknown sender", `→ ${sanitize(row.recipient)}`,
+      row.read ? "Read" : "Unread", sanitize(row.subject), row.delivery].join("  ")),
+    ...mail.map(item => [mailTime(item.received_at), sanitize(item.subject) || "(No subject)", sanitize(item.sender) || "Unknown sender",
+      `→ ${sanitize(item.recipient)}`, item.read ? "Read" : "Unread", item.id, ...(trash ? [item.label] : [])].join("  ")),
   ];
   logDaemon("inbox.checked", { project: project.root, role, all, ...(trash ? { folder: "trash" } : {}), count: lines.length });
   return out(parsed, [...rows, ...mail], lines.length ? lines.join("\n") : trash ? "Inbox trash is empty." : "Inbox is empty.");

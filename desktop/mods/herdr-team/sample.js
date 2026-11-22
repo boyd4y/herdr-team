@@ -105,15 +105,16 @@ export function sample() {
   }
   const inbox = {
     active: [
-      { id: "0045", title: tasks.find(task => task.id === "0045").title, role: "dev", state: "claimed", label: "In progress" },
-      { id: "0046", title: tasks.find(task => task.id === "0046").title, role: "test", state: "queued",
-        label: "Waiting to send", reason: "Waiting for 0045" },
-      { id: "sample-mail-1", source: "agentmail", role: "test", state: "pending", label: "Waiting to notify",
+      { id: "0045", delivery: "sample-0045", subject: tasks.find(task => task.id === "0045").title,
+        sender: "Project dispatch", recipient: "dev", read: false, body: bodies["0045"].split("\n## History")[0] },
+      { id: "0049", delivery: "sample-0049", subject: tasks.find(task => task.id === "0049").title,
+        sender: "test", recipient: "dev", read: true, body: bodies["0049"] },
+      { id: "sample-mail-1", source: "agentmail", recipient: "team@example.test", read: false,
         subject: "Reconnect test results", sender: "qa@example.test", received_at: "2026-01-10T07:18:00Z",
         body: "After reconnecting, the task list refreshes and the current selection returns. The delivery notice still needs a regression test." },
     ],
     trash: [
-      { id: "sample-mail-2", source: "agentmail", role: "dev", state: "trashed", label: "Project not registered",
+      { id: "sample-mail-2", source: "agentmail", recipient: "team@example.test", read: true, state: "trashed", label: "Project not registered",
         subject: "Task board feedback", sender: "feedback@example.test", received_at: "2026-01-09T08:00:00Z",
         body: "Could the task board show the current assignee on every card?" },
     ],

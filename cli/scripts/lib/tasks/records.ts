@@ -4,6 +4,17 @@ import { TASK_BODY, type Project, type TaskCard } from "../shared/types.ts";
 
 const RECORD_HEADING = /^##\s*(?:History|\u6d41\u8f6c\u8bb0\u5f55)\s*$/m;
 
+export function taskMessageBody(body: string, summaryRef?: string, summaryLength?: number): string {
+  const heading = RECORD_HEADING.exec(body);
+  const description = body.slice(0, heading?.index ?? body.length).trim();
+  if (!heading || !summaryRef || !summaryLength || !Number.isSafeInteger(summaryLength) || summaryLength < 1) return description;
+  const history = body.slice(heading.index + heading[0].length);
+  const end = history.lastIndexOf(`\n<!-- team-operation:handoff-${summaryRef} -->`);
+  if (end < 0) return description;
+  const record = history.slice(0, end).trimEnd();
+  return record.length >= summaryLength ? record.slice(-summaryLength) : description;
+}
+
 export function stamp(at: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;

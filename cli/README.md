@@ -170,7 +170,7 @@ Desktop 启动 Codex 时，通过本次进程的配置参数信任已绑定项�
 
 `herdr-team project purge --all --dry-run` 预览一个项目的工作流数据和清理阻碍。去掉 `--dry-run` 后永久删除任务及投递历史、Issue、迭代可见性、功能交付记录和该项目的 demo 运行结果。先停止该项目的团队。`herdr-team project purge --all --force` 可以丢弃残留的投递和合并记录，并回收归属已核实、没有本地改动的 Herdr Desktop worktree。团队角色和注册、AgentMail、Git 分支和已使用的任务编号保留。
 
-`herdr-team inbox list` 列出当前项目所有角色的待处理记录。`herdr-team inbox list lead@ccremote` 按角色和项目查找，`--all` 同时显示已确认的邮件。也可以写成 `herdr-team inbox list lead@ccremote --all`。正常列表和 `inbox trash` 都按收件时间倒序显示邮件，默认以本地时间呈现。回收站列表和邮件详情显示路由时记录的原因，旧记录显示当时没有找到可投递的项目。
+`herdr-team inbox list` 列出当前项目所有角色的待处理消息。`herdr-team inbox list lead@ccremote` 按角色和项目查找，`--all` 同时显示已处理的内部消息和已确认的邮件。用 `herdr-team inbox read <delivery-id | mail-id>` 查看发件人、收件人、标题和正文。打开外部邮件会记录已读，处理结束后用 `inbox ack <mail-id>` 确认。内部消息在接棒人成功交棒后记为已读。回收站列表和邮件详情保留路由原因。
 项目名可用当前或已登记项目的目录名，也可在 `~/.herdr-team/projects.toml` 给本地项目配置唯一别名：
 
 ```toml

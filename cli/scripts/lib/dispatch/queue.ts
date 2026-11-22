@@ -225,7 +225,9 @@ export function retryDelivery(project: Project, id: string, runtime?: TaskRuntim
     const fresh = loadProject(project.root), task = findTask(fresh, id), d = deliveryFor(task);
     if (!d || d.state !== "uncertain" || isTaskInactive(task)) throw new TaskError("Only uncertain deliveries can be retried; first verify that the old assignment is not running");
     runtime?.assertDelivery(d);
-    const replacement = { ...newDelivery(task.role, d.phase), ...runtime?.scope };
+    const replacement = { ...newDelivery(task.role, d.phase), ...runtime?.scope,
+      ...(d.sender === undefined ? {} : { sender: d.sender }),
+      ...(d.summary_ref && d.summary_length ? { summary_ref: d.summary_ref, summary_length: d.summary_length } : {}) };
     writeTaskMeta(fresh, task, { delivery: replacement });
     return { id, state: "queued" };
   });

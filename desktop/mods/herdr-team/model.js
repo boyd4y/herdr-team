@@ -2,20 +2,11 @@
 export const sortTasks = tasks => [...tasks].sort((a, b) => b.id.localeCompare(a.id, "en", { numeric: true }));
 
 export const INBOX_FILTERS = [
-  ["all", "All"], ["waiting", "Waiting"], ["in-progress", "In progress"], ["attention", "Needs attention"],
+  ["all", "All"], ["unread", "Unread"], ["read", "Read"],
 ];
-const INBOX_GROUPS = {
-  queued: "waiting", sending: "waiting", submitted: "waiting", pending: "waiting", notified: "waiting",
-  claimed: "in-progress", uncertain: "attention", conflict: "attention",
-};
 
-export function filterInbox(rows, folder, filter) {
-  return folder !== "active" || filter === "all" ? rows : rows.filter(row => INBOX_GROUPS[row.state] === filter);
-}
-
-export function inboxStatusLabel(row) {
-  const group = INBOX_GROUPS[row.state];
-  return INBOX_FILTERS.find(([key]) => key === group)?.[1] ?? row.label;
+export function filterInbox(rows, filter) {
+  return filter === "all" ? rows : rows.filter(row => Boolean(row.read) === (filter === "read"));
 }
 
 const iterationPattern = /^v?\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/;

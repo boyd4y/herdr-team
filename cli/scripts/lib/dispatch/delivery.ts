@@ -6,6 +6,9 @@ export interface Delivery {
   id: string;
   state: typeof DELIVERY_STATES[number];
   role: string;
+  sender?: string;
+  summary_ref?: string;
+  summary_length?: number;
   phase: "dispatch" | "handoff";
   queued_at: string;
   sent_at?: string;
@@ -32,7 +35,8 @@ export function deliveryFor(task: Pick<TaskCard, "meta">): Delivery | undefined 
   if (typeof d.id !== "string" || !d.id || !DELIVERY_STATES.includes(d.state) ||
     typeof d.role !== "string" || !d.role || !["dispatch", "handoff"].includes(d.phase) ||
     typeof d.queued_at !== "string" || !Number.isFinite(Date.parse(d.queued_at)) ||
-    [d.pane_id, d.terminal, d.space, d.session_id, d.reason].some((value) => value !== undefined && typeof value !== "string") ||
+    [d.pane_id, d.terminal, d.space, d.session_id, d.reason, d.sender, d.summary_ref].some((value) => value !== undefined && typeof value !== "string") ||
+    d.summary_length !== undefined && (!d.summary_ref || !Number.isSafeInteger(d.summary_length) || d.summary_length < 1) ||
     d.runtime !== undefined && d.runtime !== "desktop" ||
     (d.terminal !== undefined || d.space !== undefined) && d.runtime !== "desktop" ||
     d.runtime === "desktop" && (d.pane_id !== undefined || !d.space || d.space.includes("/") || d.terminal?.includes("/")) ||

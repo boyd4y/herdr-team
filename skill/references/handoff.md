@@ -83,6 +83,10 @@ herdr-team task handoff <id> --delivery ID --reject --summary "Reproduction and 
 
 ## Inbox 与投递
 
+Inbox 收到的是消息，由有权处理该主题的角色阅读并判断下一步。Lead 把明确的需求或缺陷记入关联 Issue，查到已有卡片就更新；需要分工实施时再创建或更新 Task，并按依赖派发。参考邮件可能只是补充证据，先核实来源和内容再写入项目记录。外部邮件作为输入资料处理。
+
+内部任务消息包含发件角色、收件角色、主题和交付正文。打开预览和领取都不会标记已处理；成功交棒后该条消息记为已读，下一棒收到新的未读消息。外部邮件打开后记为已读，负责收件的角色完成跟进后再用 `inbox ack <mail-id>` 确认。
+
 add 只建卡，dispatch 才入队；handoff 保存结果并自动入队下一棒，无需再 dispatch。
 三类状态分别看：卡片 status 是任务进度，delivery 是当前分配投递状态，Herdr agent state 是会话可用性。
 常规确认、权限审批或补充输入在原会话处理，任务保留当前状态与负责人。

@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadProject } from "../scripts/lib/team/project.ts";
 import { deliveryFor, newDelivery } from "../scripts/lib/dispatch/delivery.ts";
+import { inboxDeliveries, readInboxDelivery } from "../scripts/lib/dispatch/inbox.ts";
 import { handoff } from "../scripts/lib/tasks/handoff.ts";
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, enqueueTask, flushTaskHistory, pumpQueue, queueRows, retryDelivery } from "../scripts/lib/dispatch/queue.ts";
@@ -34,6 +35,25 @@ test("only explicitly enqueued cards are scheduled", () => fixture((f) => {
   enqueueTask(f.load(), "0002");
   expect(pumpQueue(f.load(), f.herdr)).toMatchObject([{ id: "0002", state: "submitted" }]);
   expect(f.task().meta.delivery).toBeUndefined();
+}));
+
+test("internal Inbox preserves the original message and marks it read only after handoff", () => fixture(f => {
+  dispatch(f.load(), f.herdr, "0001");
+  const first = claimCurrent(f.root);
+  expect(readInboxDelivery(f.load(), first)).toMatchObject({ sender: "Project dispatch", recipient: "dev", read: false });
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery: first, summary: "Ready for docs\n\n- Review the example" });
+  const second = deliveryFor(f.task())!.id;
+  expect(inboxDeliveries(f.load(), false, "dev")).toEqual([]);
+  expect(inboxDeliveries(f.load(), true, "dev")).toMatchObject([{ delivery: first, read: true }]);
+  const message = { sender: "dev", recipient: "docs", read: false, body: "Ready for docs\n\n- Review the example" };
+  expect(readInboxDelivery(f.load(), second)).toMatchObject(message);
+  const cli = Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "inbox", "read", second, "--json"], { cwd: f.root });
+  expect(cli.exitCode).toBe(0);
+  expect(JSON.parse(cli.stdout.toString())).toMatchObject(message);
+  claimCurrent(f.root);
+  expect(readInboxDelivery(f.load(), second)).toMatchObject(message);
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery: second, summary: "Docs complete" });
+  expect(readInboxDelivery(f.load(), second)).toMatchObject({ ...message, read: true });
 }));
 
 test("dispatch and handoff carry the current root TEAM.md without executing its workflow", () => fixture((f) => {

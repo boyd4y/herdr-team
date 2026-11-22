@@ -7,6 +7,7 @@ import type { Herdr } from "../runtime/herdr.ts";
 import { randomUUID } from "node:crypto";
 import { loadProject } from "../team/project.ts";
 import { completedDeliveries, deliveryFor, newDelivery } from "../dispatch/delivery.ts";
+import { inboxReceipt, inboxReceipts } from "../dispatch/inbox.ts";
 import { commitTaskTransition, flushTaskHistory, pumpQueue } from "../dispatch/queue.ts";
 import { withTeamLock } from "../runtime/state.ts";
 import { findTask, TaskError } from "./cards.ts";
@@ -112,12 +113,15 @@ function handoffLocked(
   const deliveryNote = summary === undefined ? " No delivery summary supplied." : " Delivery summary appended to task.md.";
   const operation = currentDelivery?.id ?? randomUUID();
   const completed = currentDelivery ? [...receipts, currentDelivery.id] : receipts;
+  const nextDelivery = (role: string) => ({ ...newDelivery(role, "handoff", now), ...herdr.scope,
+    sender: card.role, ...(summary === undefined ? {} : { summary_ref: operation, summary_length: summary.length }) });
   const persist = (patch: Record<string, unknown>, line: string, to: string) => {
     const text = summary === undefined ? line : `${line}\n\n### Delivery ${stamp(now)} · ${card.role} → ${to}\n\n${summary}\n`;
     withTeamLock(project, "queue", () => {
       const fresh = loadProject(project.root), current = findTask(fresh, id);
       if (JSON.stringify(current.meta) !== originalMeta) throw new TaskError("Task changed during handoff; inspect its delivery and PR before retrying");
-      commitTaskTransition(fresh, current, { ...patch, completed_deliveries: completed },
+      commitTaskTransition(fresh, current, { ...patch, completed_deliveries: completed,
+        ...(currentDelivery ? { inbox_receipts: [...inboxReceipts(current), inboxReceipt(card, currentDelivery)] } : {}) },
         `${text}\n<!-- team-operation:handoff-${operation} -->`);
     });
   };
@@ -149,7 +153,7 @@ function handoffLocked(
   if (review?.reviewer === card.role && (accepted?.role !== card.role || accepted?.commit !== review.commit)) accepted = undefined;
   if (options.reject) {
     if (!review || card.role !== review.reviewer || !summary) throw new TaskError("Only the assigned reviewer can reject; include a defect summary");
-    const queued = { ...newDelivery(review.developer, "handoff", now), ...herdr.scope };
+    const queued = nextDelivery(review.developer);
     const decision = reviewingPR ? { commit: review.commit, role: card.role, state: "changes_requested",
       mode: github.decide(verifyPR(), "changes_requested", summary, operation) } : null;
     const repeat = review.reviewers ?? [review.reviewer];
@@ -173,7 +177,7 @@ function handoffLocked(
       const next = card.handoff[0];
       if (!next || next === card.role) throw new TaskError("Attaching a tested PR requires a different next owner");
       const pr = attachTestedPullRequest(project, card, commit, options.pr, github);
-      const queued = { ...newDelivery(next, "handoff", now), ...herdr.scope };
+      const queued = nextDelivery(next);
       persist({ role: next, handoff: card.handoff.slice(1), status: "review", delivery: queued,
         test_result: { commit, role: card.role, summary }, pull_request: pr, acceptance: null, pr_decision: null, integration: null,
         review: { ...review, reviewer: next, reviewers: [...(review.reviewers ?? [card.role]), next] } },
@@ -259,7 +263,7 @@ function handoffLocked(
   const next = card.handoff[0] as string;
   const rest = card.handoff.slice(1);
   const status = "review";
-  const queued = { ...newDelivery(next, "handoff", now), ...herdr.scope };
+  const queued = nextDelivery(next);
   if (review && accepted) {
     reviewPatch = { ...reviewPatch, review: { ...review, reviewer: next, reviewers: [...(review.reviewers ?? [card.role]), next] }, acceptance: null, ...(prFlow ? { pr_decision: null } : {}) };
   }

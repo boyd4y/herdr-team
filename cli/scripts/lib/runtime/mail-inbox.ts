@@ -27,10 +27,11 @@ export interface MailItem {
   sender: string;
   received_at: string;
   state: MailState;
+  read?: boolean;
   trash_reason?: MailTrashReason | null;
 }
 
-export type MailDraft = Omit<MailItem, "id" | "state" | "trash_reason"> & { body: string };
+export type MailDraft = Omit<MailItem, "id" | "state" | "trash_reason" | "read"> & { body: string };
 
 export function mailId(inbox: string, message: string): string {
   return "mail-" + createHash("sha256").update(inbox + "\0" + message).digest("hex").slice(0, 24);
@@ -54,6 +55,7 @@ export function withMailInbox<T>(write: boolean, action: (db: Database) => T): T
       );
       CREATE INDEX IF NOT EXISTS mail_project_state ON mail(project, state, received_at, id);
       CREATE TABLE IF NOT EXISTS mail_trash_reasons (mail_id TEXT PRIMARY KEY, reason TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS mail_reads (mail_id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS cursors (inbox TEXT PRIMARY KEY, event_id TEXT NOT NULL);
       COMMIT;
     `);
@@ -76,6 +78,20 @@ export function storedMailState(db: Database, id: string): MailState | undefined
 
 function hasTrashReasons(db: Database): boolean {
   return Boolean(db.query("SELECT 1 FROM sqlite_master WHERE name = 'mail_trash_reasons' AND type = 'table'").get());
+}
+
+function withReadFlag<T extends MailItem>(row: T & { opened?: number }): T {
+  const { opened, ...item } = row;
+  return { ...item, read: row.state === "acknowledged" || Boolean(opened) } as T;
+}
+
+function readColumn(db: Database) {
+  return db.query("SELECT 1 FROM sqlite_master WHERE name = 'mail_reads' AND type = 'table'").get()
+    ? ", EXISTS (SELECT 1 FROM mail_reads WHERE mail_id = mail.id) AS opened" : "";
+}
+
+export function markMailRead(project: string, id: string): void {
+  withMailInbox(true, db => db.query("INSERT OR IGNORE INTO mail_reads SELECT id FROM mail WHERE project = ? AND id = ?").run(project, id));
 }
 
 function recordTrashReason(db: Database, id: string, reason: MailTrashReason): void {
@@ -102,15 +118,15 @@ export function storeMail(
 export function listMail(project: string, role: string | null, folder: "active" | "all" | "trash" = "active"): MailItem[] {
   return withMailInbox(false, db => {
     const withReasons = folder === "trash" && hasTrashReasons(db);
-    return db.query<MailItem, [string, string | null, string | null, string]>(`
-      SELECT id, inbox, message_id, project, role, subject, sender, received_at, state
+    return db.query<MailItem & { opened?: number }, [string, string | null, string | null, string]>(`
+      SELECT id, inbox, message_id, project, role, subject, sender, received_at, state ${readColumn(db)}
         ${withReasons ? ", mail_trash_reasons.reason AS trash_reason" : ""}
       FROM mail ${withReasons ? "LEFT JOIN mail_trash_reasons ON mail_trash_reasons.mail_id = mail.id" : ""}
       WHERE project = ? AND (? IS NULL OR role = ?)
       AND CASE ? WHEN 'trash' THEN state = 'trashed'
         WHEN 'all' THEN state != 'trashed'
         ELSE state NOT IN ('trashed', 'acknowledged') END ORDER BY received_at, id
-    `).all(project, role, role, folder);
+    `).all(project, role, role, folder).map(withReadFlag);
   }) ?? [];
 }
 
@@ -134,14 +150,14 @@ export function trashUnregisteredPendingMail(projects: ReadonlyMap<string, Inbox
 
 export function readMail(project: string, id: string): (MailItem & { body: string }) | undefined {
   return withMailInbox(false, db => {
-    const item = db.query<MailItem & { body: string }, [string, string]>(
-      "SELECT * FROM mail WHERE project = ? AND id = ?").get(project, id);
+    const item = db.query<MailItem & { body: string; opened?: number }, [string, string]>(
+      `SELECT * ${readColumn(db)} FROM mail WHERE project = ? AND id = ?`).get(project, id);
     if (!item) return;
     if (item.state === "trashed" && hasTrashReasons(db)) {
       item.trash_reason = db.query<{ reason: MailTrashReason }, [string]>(
         "SELECT reason FROM mail_trash_reasons WHERE mail_id = ?").get(id)?.reason ?? null;
     }
-    return item;
+    return withReadFlag(item);
   });
 }
 
