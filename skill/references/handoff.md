@@ -45,8 +45,8 @@ PR 发布、批准后合并必须有用户授权；没有既有决定且当前�
 任务消息中的 CLI 命令是带正确 root、task ID 和 delivery ID 的调用模板，不是另一套流程说明。
 先按 Skill 判断本棒工作和交付方式，再使用模板的参数；不要把命令模板当成绕过 Skill 的入口。
 
-1. 运行消息中的 `herdr-team task claim <id> --delivery ID --root <team-root>`。duplicate 表示已经领取，不再启动一份工作。
-2. 用 `herdr-team task show <id> --json --root <team-root>` 读取完整卡片，读交付摘要及其引用的实际产物。
+1. 只有收到投递的执行会话领取，每个 delivery ID 领取一次。使用消息中的 `herdr-team task claim <id> --delivery ID --root <team-root>`。收到成功回执就开始工作；收到 `duplicate` 就停止这次重复执行。领取结果不明时查一次原投递，确认未领取才重试。
+2. 首次接棒需要完整描述或交付记录时，用 `herdr-team task show <id> --json --root <team-root>` 读取卡片、交付摘要及其引用的产物。
    列表 tasks/status/role list 默认不含 body，tasks <id> 返回含正文的单个对象。
 3. 按本棒职责工作，完成后使用同一个 delivery ID 交棒。下游明确时直接交接，不额外增加 lead 中转。
    需要改链或归属不明确时通知 lead；不要猜角色、跳验收或让用户人工转述。
@@ -91,7 +91,9 @@ CLI 按会话是否可接收来决定投递，任务仍需要明确 handoff。
 
 up 建立或复用团队绑定与常驻会话，确保自动投递服务运行，不把未派发的 todo 自动入箱。
 CLI 管理已经入箱的 delivery；agent 用 status、tasks 或 inbox 查状态。
-daemon 准备或复用任务 worktree，再向对应的会话投递。接棒 agent 直接在指派目录内实现或审查。服务状态可用 `herdr-team daemon status` 查询。
+daemon 准备或复用任务 worktree，再向对应的会话投递。接棒 agent 直接在指派目录内实现或审查，需要确认当前位置时用 `pwd`。Lead 派发成功后处理其他需求、依赖和验收准备，收到交付或阻塞后再查看任务。只有发生投递异常、用户询问进度或准备验收时才按需查询一次；避免循环调用 `task show`、`inbox list` 或反复扫描开发者的 diff。
+
+创建、切换和回收 worktree 由 Herdr Team 管理。Lead 审查交付的 SHA 和证据，工作区路径只在实际验收需要且交付没有提供时核对。`git worktree list` 只用于排查工作区归属、路径冲突或清理失败，不作为派发、领取和等待步骤。
 
 接收方忙、blocked 或 unknown 时保持排队，不绕过队列注入。发送结果不明或迟迟未 claim 会标 uncertain，停止自动重发。
 先查卡片、原 agent、实际产物和远端副作用，再由 lead 决定是否：
