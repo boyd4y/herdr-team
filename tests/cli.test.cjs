@@ -6,9 +6,59 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
-const { target } = require('../bin/install-cli');
+const { target, launcherFiles } = require('../bin/install-cli');
 
 const root = path.resolve(__dirname, '..');
+
+test('Windows launchers accept PATH casing and keep argv in the adjacent Bun module', (t) => {
+  const home = 'C:\\Users\\测试 User';
+  const bin = path.win32.join(home, '.bun', 'bin');
+  const env = { Path: `"${bin.toUpperCase()}";C:\\Tools` };
+  assert.equal(target(env, home, 'herdr-team', 'win32'), path.win32.join(bin, 'herdr-team.cmd'));
+  assert.equal(target({ Path: 'D:\\Bun\\Bin', BUN_INSTALL: 'd:\\bun' }, home, 'herdr-mock', 'win32'),
+    'd:\\bun\\bin\\herdr-mock.cmd');
+  assert.throws(() => target({ Path: 'C:\\Tools' }, home, 'herdr-team', 'win32'), /not on PATH/);
+
+  const f = fixture(t);
+  const runtime = path.join(f.dir, 'team snapshot # 中文');
+  fs.mkdirSync(runtime);
+  const entry = path.join(runtime, 'cli.ts');
+  fs.writeFileSync(entry, 'console.log(JSON.stringify(process.argv.slice(2)));');
+  const file = path.join(f.bin, 'herdr-team.cmd');
+  const [[module, script], [shim, command]] = launcherFiles(file, entry, false, 'win32');
+  assert.equal(shim, file);
+  assert.match(command, /"%~dp0herdr-team\.mjs" %\*/);
+  fs.writeFileSync(module, script);
+  const args = ['--title', '路径 with spaces & "quotes"'];
+  const result = spawnSync('bun', [module, ...args], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), args);
+});
+
+test('Windows installer publishes team and mock commands to an isolated PATH bin', {
+  skip: process.platform !== 'win32',
+}, (t) => {
+  const f = fixture(t);
+  const cmd = process.env.ComSpec || 'cmd.exe';
+  f.ok();
+  f.ok(['--mock']);
+  const result = spawnSync(cmd, ['/d', '/c', 'herdr-team', '--version'], { env: f.env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout.trim(), /^\d+\.\d+\.\d+$/);
+  const mock = spawnSync(cmd, ['/d', '/c', 'herdr-mock', 'claude'], {
+    env: f.env, input: 'Check the response.\r\n/exit\r\n', encoding: 'utf8', timeout: 10000,
+  });
+  assert.equal(mock.status, 0, mock.stderr);
+  assert.match(mock.stdout, /Plan verification/);
+  assert.deepEqual(f.records().map(record => path.basename(record.file)).sort(),
+    ['herdr-mock.cmd', 'herdr-mock.mjs', 'herdr-team.cmd', 'herdr-team.mjs']);
+  fs.appendFileSync(path.join(f.bin, 'herdr-team.mjs'), '// local changes\n');
+  assert.match(f.ok().stdout, /Skipped existing CLI/);
+  f.ok(['--uninstall', '--mock']);
+  assert(!fs.existsSync(path.join(f.bin, 'herdr-mock.mjs')));
+  assert(!fs.existsSync(path.join(f.bin, 'herdr-mock.cmd')));
+  assert(fs.existsSync(path.join(f.bin, 'herdr-team.cmd')));
+});
 
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'herdr-team-cli-'));

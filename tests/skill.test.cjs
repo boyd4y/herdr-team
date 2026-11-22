@@ -8,11 +8,30 @@ const { spawn, spawnSync } = require('node:child_process');
 const { SKILLS_PACKAGE, installedAgents, stateDirectory } = require('../bin/install-skill');
 const { installNpxStub } = require('./skills-fixture.cjs');
 const root = path.resolve(__dirname, '..');
+test('Windows plugin state matches Herdr LocalAppData and supports overrides', () => {
+ const home = 'C:\\Users\\测试 User';
+ assert.equal(stateDirectory({}, home, 'win32'), path.win32.join(home, 'AppData', 'Local', 'herdr/plugins/herdr-team'));
+ assert.equal(stateDirectory({LOCALAPPDATA:'D:\\AppData'}, home, 'win32'), 'D:\\AppData\\herdr\\plugins\\herdr-team');
+ assert.equal(stateDirectory({XDG_STATE_HOME:'D:\\State'}, home, 'win32'), 'D:\\State\\herdr\\plugins\\herdr-team');
+ assert.equal(stateDirectory({HERDR_PLUGIN_STATE_DIR:'D:\\Explicit'}, home, 'win32'), 'D:\\Explicit');
+});
+test('Windows skill install discovers agents and calls npm without a shell', {
+ skip: process.platform !== 'win32',
+}, (t) => {
+ const f = fixture(t);
+ assert.deepEqual(installedAgents(f.env), ['codex']);
+ f.ok();
+ assert.equal(f.calls()[0][3], path.join(root, 'skill'));
+ assert(fs.existsSync(path.join(f.destination, 'SKILL.md')));
+ f.ok(['--uninstall']);
+ assert(!fs.existsSync(f.destination));
+});
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'herdr-team-npx-'));
   t.after(() => fs.rmSync(dir, { recursive:true, force:true }));
   const bin = path.join(dir,'bin');fs.mkdirSync(bin);installNpxStub(bin);
   const env={...process.env,HOME:dir,HERDR_PLUGIN_STATE_DIR:path.join(dir,'state'),PATH:bin,TEST_NPX_LOG:path.join(dir,'npx.jsonl')};
+ if (process.platform === 'win32') Object.assign(env, { USERPROFILE:dir, npm_execpath:path.join(bin, 'npm-cli.js') });
   const destination=path.join(dir,'.agents/skills/herdr-team');
   function run(args=[],overrides={},plugin=root){return spawnSync(process.execPath,[path.join(plugin,'bin/install-skill.js'),...args],{env:{...env,...overrides},encoding:'utf8',timeout:20000});}
   function ok(args=[],overrides={},plugin=root){const r=run(args,overrides,plugin);assert.equal(r.status,0,r.stdout+r.stderr);return r;}
@@ -23,7 +42,8 @@ test('npx installs the bundled local skill globally and reports its real destina
  assert.deepEqual(f.calls(),[['--yes',SKILLS_PACKAGE,'add',path.join(root,'skill'),'--skill','herdr-team','--global','--yes','--json','--agent','codex']]);
  for(const file of ['SKILL.md','references/setup.md','references/delivery.md','references/handoff.md','references/agents.md','references/feedback.md','assets/feedback/report.md','agents/openai.yaml','assets/plans.json','assets/agents.json','assets/TEAM.md', ...fs.readdirSync(path.join(root,'skill/assets/roles')).map(role=>`assets/roles/${role}/prompt.md`)])assert.deepEqual(fs.readFileSync(path.join(f.destination,file)),fs.readFileSync(path.join(root,'skill',file)));
  assert(r.stdout.includes(`Skill installed: ${f.destination}`));
- assert.equal(stateDirectory({},f.dir),path.join(f.dir,'.local/state/herdr/plugins/herdr-team'));
+ assert.equal(stateDirectory({},f.dir),path.join(f.dir,process.platform === 'win32'
+  ? 'AppData/Local/herdr/plugins/herdr-team' : '.local/state/herdr/plugins/herdr-team'));
 });
 test('only PATH-visible supported agents are selected, never the upstream project-only defaults',(t)=>{
  const f=fixture(t);assert.deepEqual(installedAgents(f.env),['codex']);

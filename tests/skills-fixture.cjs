@@ -1,9 +1,11 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-function installNpxStub(bin) {
-  fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nexit 99\n', { mode: 0o755 });
-  const file = path.join(bin, 'npx');
+function installNpxStub(bin, platform = process.platform) {
+  const windows = platform === 'win32';
+  fs.writeFileSync(path.join(bin, windows ? 'codex.cmd' : 'codex'),
+    windows ? '@echo off\r\nexit /b 99\r\n' : '#!/bin/sh\nexit 99\n', { mode: 0o755 });
+  const file = path.join(bin, windows ? 'npx-cli.js' : 'npx');
   fs.writeFileSync(file, `#!${process.execPath}
 const fs=require('node:fs'),path=require('node:path');
 const args=process.argv.slice(2);

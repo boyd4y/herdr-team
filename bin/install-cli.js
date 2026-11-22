@@ -9,6 +9,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 const { stateDirectory } = require('./install-skill');
+const windows = require('./windows-tools');
 
 function stat(file) {
   try { return fs.lstatSync(file); }
@@ -17,26 +18,35 @@ function stat(file) {
 
 function hash(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
 
-function target(env = process.env, home = os.homedir(), name = 'herdr-team') {
+function target(env = process.env, home = os.homedir(), name = 'herdr-team', platform = process.platform) {
+  if (platform === 'win32') {
+    const { join, resolve } = path.win32;
+    const bin = resolve(env.XDG_BIN_HOME || join(env.BUN_INSTALL || join(home, '.bun'), 'bin'));
+    const onPath = windows.pathEntries(env).some(entry => resolve(entry).toLowerCase() === bin.toLowerCase());
+    if (!onPath) throw new Error(`${bin} is not on PATH; add it to your user PATH, open a new shell and retry install-cli. No CLI installed.`);
+    return join(bin, `${name}.cmd`);
+  }
   const bin = path.resolve(env.XDG_BIN_HOME || path.join(home, '.local', 'bin'));
-  const onPath = (env.PATH || '').split(path.delimiter).some((entry) => path.resolve(entry || '.') === bin);
+  const onPath = (env.PATH || '').split(path.delimiter).some(entry => path.resolve(entry || '.') === bin);
   if (!onPath) throw new Error(`${bin} is not on PATH; add it to your shell PATH, open a new shell and retry install-cli. No CLI installed.`);
   return path.join(bin, name);
 }
 
 function requireBun(env) {
-  const result = spawnSync('bun', ['--version'], { env, encoding: 'utf8', timeout: 10000 });
+  const bun = process.platform === 'win32' ? windows.bunExecutable(env) : 'bun';
+  const result = spawnSync(bun, ['--version'], { env, encoding: 'utf8', timeout: 10000 });
   const version = /^(\d+)\.(\d+)\.(\d+)/.exec(result.stdout || '');
   if (result.error || result.status !== 0 || !version ||
       (Number(version[1]) < 1 || (Number(version[1]) === 1 &&
         (Number(version[2]) < 3 || (Number(version[2]) === 3 && Number(version[3]) < 14))))) {
     throw new Error('Bun 1.3.14+ must be installed on PATH before installing the team CLI.');
   }
+  return bun;
 }
 
 // Freeze runtime source and assets; install the production dependency graph separately.
 // Build checkouts move after setup; a shim pointing into that checkout breaks.
-function runtime(stateDir, source = path.resolve(__dirname, '..', 'cli'), env = process.env) {
+function runtime(stateDir, source = path.resolve(__dirname, '..', 'cli'), env = process.env, bun = requireBun(env)) {
   const files = ['package.json', 'bun.lock'].map((name) =>
     [path.join('cli', name), fs.readFileSync(path.join(source, name), 'utf8')]);
   function collect(directory, relative, destination, extensions) {
@@ -68,7 +78,7 @@ function runtime(stateDir, source = path.resolve(__dirname, '..', 'cli'), env = 
     ['install', '--production', '--frozen-lockfile', '--ignore-scripts'],
     ['-e', 'await import("@opentui/core");'],
   ]) {
-    const result = spawnSync('bun', args, { cwd: path.join(directory, 'cli'), env,
+    const result = spawnSync(bun, args, { cwd: path.join(directory, 'cli'), env,
       encoding: 'utf8', timeout: 120000 });
     if (result.error || result.status !== 0) {
       throw new Error(`CLI dependency setup failed: ${result.error?.message || result.stderr || result.stdout}`);
@@ -77,13 +87,17 @@ function runtime(stateDir, source = path.resolve(__dirname, '..', 'cli'), env = 
   return path.join(directory, 'cli', 'scripts', 'cli.ts');
 }
 
+const commandNames = ['herdr-team', 'herdr-mock'];
+const launcherNames = commandNames.flatMap(name => [name, `${name}.cmd`, `${name}.mjs`]);
+const fileIdentity = file => process.platform === 'win32' ? file.toLowerCase() : file;
+
 function readState(file) {
   if (!stat(file)) return [];
   const records = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!Array.isArray(records) || records.some((r) => !r || typeof r.file !== 'string' ||
-      !path.isAbsolute(r.file) || !['herdr-team', 'herdr-mock'].includes(path.basename(r.file)) || !/^[a-f0-9]{64}$/.test(r.hash) ||
+      !path.isAbsolute(r.file) || !launcherNames.includes(path.basename(r.file)) || !/^[a-f0-9]{64}$/.test(r.hash) ||
       !Number.isInteger(r.dev) || !Number.isInteger(r.ino) || !Number.isInteger(r.mode)) ||
-      new Set(records.map((r) => r.file)).size !== records.length) {
+      new Set(records.map(r => fileIdentity(r.file))).size !== records.length) {
     throw new Error(`${file}: invalid CLI ownership records; refusing changes`);
   }
   return records;
@@ -95,11 +109,31 @@ function owned(record) {
     (info.mode & 0o777) === record.mode && hash(fs.readFileSync(record.file)) === record.hash;
 }
 
+function launcherFiles(file, entry, mock, platform = process.platform) {
+  const cli = pathToFileURL(entry).href;
+  const tuiView = pathToFileURL(path.join(path.dirname(entry), 'tui-console.ts')).href;
+  const mockEntry = pathToFileURL(path.join(path.dirname(entry), 'mock-agent.ts')).href;
+  const script = mock ? `await import(${JSON.stringify(mockEntry)});\n`
+    : `await import(process.env.HERDR_TEAM_TUI_VIEW === "1" ? ${JSON.stringify(tuiView)} : ${JSON.stringify(cli)});\n`;
+  if (platform !== 'win32') return [[file, '#!/usr/bin/env bun\n' + script]];
+  const name = path.win32.basename(file, '.cmd');
+  return [
+    [file.slice(0, -4) + '.mjs', script],
+    [file, [
+      '@echo off',
+      'setlocal DisableDelayedExpansion',
+      'set "NoDefaultCurrentDirectoryInExePath=1"',
+      `bun "%~dp0${name}.mjs" %*`,
+      '',
+    ].join('\r\n')],
+  ];
+}
+
 async function installCLI(uninstall = false, env = process.env, mock = false) {
   // Removal depends only on the ledger, even when HOME, PATH or Bun changed.
   const name = mock ? 'herdr-mock' : 'herdr-team';
   const file = uninstall ? null : target(env, os.homedir(), name);
-  if (!uninstall) requireBun(env);
+  const bun = uninstall ? null : requireBun(env);
   const stateDir = stateDirectory(env);
   fs.mkdirSync(stateDir, { recursive: true });
   const lock = path.join(stateDir, 'cli.lock');
@@ -126,7 +160,11 @@ async function installCLI(uninstall = false, env = process.env, mock = false) {
       } finally { fs.rmSync(temporary, { force: true }); }
     };
     if (uninstall) {
-      for (const record of records.filter(record => path.basename(record.file) === name)) {
+      const uninstallNames = [name, `${name}.cmd`, `${name}.mjs`];
+      const uninstallRecords = records.filter(record => uninstallNames.includes(path.basename(record.file)));
+      // Withdraw each command before removing its adjacent module.
+      uninstallRecords.sort((a, b) => uninstallNames.indexOf(path.basename(a.file)) - uninstallNames.indexOf(path.basename(b.file)));
+      for (const record of uninstallRecords) {
         if (stat(record.file)) {
           if (!owned(record)) { console.log(`Kept modified CLI: ${record.file}`); continue; }
           fs.unlinkSync(record.file);
@@ -136,34 +174,40 @@ async function installCLI(uninstall = false, env = process.env, mock = false) {
       }
       return;
     }
-    let record = records.find((r) => r.file === file);
-    if (stat(file) && (!record || !owned(record))) {
-      console.log(`Skipped existing CLI: ${file}`); return;
-    }
-    const entry = runtime(stateDir, undefined, env);
-    const cli = pathToFileURL(entry).href;
-    const tuiView = pathToFileURL(path.join(path.dirname(entry), 'tui-console.ts')).href;
-    const mockEntry = pathToFileURL(path.join(path.dirname(entry), 'mock-agent.ts')).href;
-    const text = mock ? `#!/usr/bin/env bun\nawait import(${JSON.stringify(mockEntry)});\n`
-      : `#!/usr/bin/env bun\nawait import(process.env.HERDR_TEAM_TUI_VIEW === "1" ? ${JSON.stringify(tuiView)} : ${JSON.stringify(cli)});\n`;
-    if (!stat(file)) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      let created;
-      try { created = fs.openSync(file, 'wx', 0o755); }
-      catch (error) {
-        if (error.code !== 'EEXIST') throw error;
-        console.log(`Skipped existing CLI: ${file}`); return;
+    const files = process.platform === 'win32' ? [file.slice(0, -4) + '.mjs', file] : [file];
+    const recordFor = candidate => records.find(record => fileIdentity(record.file) === fileIdentity(candidate));
+    for (const candidate of files) {
+      const record = recordFor(candidate);
+      if (stat(candidate) && (!record || !owned(record))) {
+        console.log(`Skipped existing CLI: ${candidate}`); return;
       }
-      fs.closeSync(created);
-      const info = stat(file);
-      records = records.filter((r) => r.file !== file);
-      record = { file, hash: hash(''), dev: info.dev, ino: info.ino, mode: info.mode & 0o777 };
-      records.push(record);
-      save(); // Record the newly created file before writing executable content.
     }
-    if (fs.readFileSync(file, 'utf8') !== text) fs.writeFileSync(file, text);
-    record.hash = hash(text);
-    save();
+    const entry = runtime(stateDir, undefined, env, bun);
+    for (const [candidate, text] of launcherFiles(file, entry, mock)) {
+      let record = recordFor(candidate);
+      const exists = stat(candidate);
+      if (exists && (!record || !owned(record))) {
+        console.log(`Skipped existing CLI: ${candidate}`); return;
+      }
+      if (!exists) {
+        fs.mkdirSync(path.dirname(candidate), { recursive: true });
+        let created;
+        try { created = fs.openSync(candidate, 'wx', 0o755); }
+        catch (error) {
+          if (error.code !== 'EEXIST') throw error;
+          console.log(`Skipped existing CLI: ${candidate}`); return;
+        }
+        fs.closeSync(created);
+        const info = stat(candidate);
+        if (record) records = records.filter(item => item !== record);
+        record = { file: candidate, hash: hash(''), dev: info.dev, ino: info.ino, mode: info.mode & 0o777 };
+        records.push(record);
+        save(); // Record the newly created file before writing executable content.
+      }
+      if (fs.readFileSync(candidate, 'utf8') !== text) fs.writeFileSync(candidate, text);
+      record.hash = hash(text);
+      save();
+    }
     console.log(`Installed CLI: ${file}`);
   } finally { fs.closeSync(fd); fs.unlinkSync(lock); }
 }
@@ -177,4 +221,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { target, runtime, installCLI };
+module.exports = { target, runtime, launcherFiles, installCLI };

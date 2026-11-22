@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 const { spawnSync } = require('node:child_process');
+const windows = require('./windows-tools');
 
 const NAME = 'herdr-team';
 // The upstream CLI owns skill placement, copies, agent links and removal.
@@ -13,6 +14,12 @@ const SKILLS_PACKAGE = 'skills@1.7.2';
 const AGENTS = { claude: 'claude-code', codex: 'codex', pi: 'pi', grok: 'grok' };
 
 function installedAgents(env = process.env) {
+  if (process.platform === 'win32') {
+    const dirs = windows.pathEntries(env);
+    return Object.entries(AGENTS).filter(([command]) => dirs.some(dir =>
+      ['.exe', '.cmd', '.bat', '.com', '.ps1'].some(ext => windows.isFile(path.join(dir, command + ext))),
+    )).map(([, agent]) => agent);
+  }
   return Object.entries(AGENTS).filter(([command]) => (env.PATH || '').split(path.delimiter).some((bin) => {
     const file = path.join(bin, command);
     try { return fs.statSync(file).isFile() && (fs.accessSync(file, fs.constants.X_OK), true); }
@@ -25,9 +32,14 @@ function stat(file) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
-function stateDirectory(env = process.env, home = os.homedir()) {
+function stateDirectory(env = process.env, home = os.homedir(), platform = process.platform) {
   // Herdr build commands do not receive the action's plugin environment.
-  // Match Herdr's Unix state-dir default so build and actions share ownership.
+  // Match Herdr's state-dir defaults so build and actions share ownership.
+  if (platform === 'win32') {
+    const { join, resolve } = path.win32;
+    const local = env.LOCALAPPDATA || join(env.USERPROFILE || home, 'AppData', 'Local');
+    return resolve(env.HERDR_PLUGIN_STATE_DIR || join(env.XDG_STATE_HOME || local, 'herdr', 'plugins', 'herdr-team'));
+  }
   return path.resolve(env.HERDR_PLUGIN_STATE_DIR || path.join(
     env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'herdr', 'plugins', 'herdr-team'));
 }
@@ -62,7 +74,10 @@ async function installSkill(uninstall = false, env = process.env) {
       ? ['remove', NAME, '--global', '--yes']
       : ['add', source, '--skill', NAME, '--global', '--yes', '--json', '--agent', ...agents])];
     console.log(`Skill ${uninstall ? 'removal' : 'installation'}: npx ${args.join(' ')}`);
-    const result = spawnSync('npx', args, {
+    // Run npm's JavaScript entry directly on Windows. npx.cmd requires cmd.exe.
+    const win32 = process.platform === 'win32';
+    const program = win32 ? process.execPath : 'npx';
+    const result = spawnSync(program, win32 ? [windows.npxScript(env), ...args] : args, {
       env, encoding: 'utf8', timeout: 120000, maxBuffer: 4 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
