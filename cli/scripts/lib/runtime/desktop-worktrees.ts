@@ -1,7 +1,7 @@
 import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Project, TaskCard } from "../shared/types.ts";
-import { worktreeBranch } from "../shared/types.ts";
+import { featureWorkspace, workspaceKey, worktreeBranch } from "../shared/types.ts";
 import { git, taskRepo } from "../tasks/verification.ts";
 import { DesktopError, type DesktopBinding } from "./desktop.ts";
 import { runtimePath } from "./state.ts";
@@ -20,9 +20,11 @@ interface Checkout { root: string; space: string; repo: string; branch: string; 
 export function inspectDesktopCheckout(project: Project, binding: DesktopBinding, task: TaskCard) {
   const repo = realpathSync(taskRepo(project, task));
   if (realpathSync(git(repo, "rev-parse", "--show-toplevel")) !== repo) throw new DesktopError("Task repo must name a Git repository root");
-  const file = runtimePath(project, `desktop/tasks/${task.id}.json`);
+  const key = workspaceKey(task);
+  const shared = featureWorkspace(task) !== undefined;
+  const file = runtimePath(project, `desktop/${shared ? "features" : "tasks"}/${key}.json`);
   const branch = worktreeBranch(task);
-  const path = runtimePath(project, `desktop/checkouts/${task.id}-${task.slug}`);
+  const path = runtimePath(project, `desktop/checkouts/${shared ? key : `${task.id}-${task.slug}`}`);
   const trees = desktopWorktrees(repo).filter(tree => tree.branch === branch);
   if (trees.length > 1) throw new DesktopError(`Multiple task checkouts for ${branch}; reconcile before retrying`);
   const tree = trees[0], fileStat = lstatSync(file, { throwIfNoEntry: false });

@@ -144,6 +144,9 @@ function validateTask(t: TaskCard, roles: Set<string>, ids: Set<string>, out: Pr
       (t.meta.feature_dispatched !== true || !validFeature(t.meta.feature) || typeof iteration !== "string" || !iterationVersion(iteration))) {
     at("1", "feature_dispatched requires a recorded feature and iteration");
   }
+  if (t.meta.feature_workspace !== undefined && (t.meta.feature_workspace !== true || t.meta.feature_dispatched !== true)) {
+    at("1", "feature_workspace requires a dispatched feature");
+  }
   if (iteration != null && (typeof iteration !== "string" || iteration !== "" && !iterationVersion(iteration))) {
     at("1", "iteration must be a version number such as v1.1");
   }

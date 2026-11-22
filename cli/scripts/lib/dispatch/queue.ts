@@ -11,7 +11,7 @@ import { DeliveryRejected, sameReceiver, taskRuntime, type DeliveryTarget, type 
 import { findTask, TaskError, writeTaskMeta } from "../tasks/cards.ts";
 import { TASK_BODY, TASK_META, isTerminal, type Project, type TaskCard } from "../shared/types.ts";
 import { formatProblems, validateProject } from "../team/validate.ts";
-import { dispatchFeature } from "../team/features.ts";
+import { dispatchFeature, featureKey, scopeFor } from "../team/features.ts";
 
 export interface QueueOutcome { id: string; state: string; reason?: string }
 
@@ -131,13 +131,30 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
       let receiver;
       try {
         const feature = dispatchFeature(fresh, task, role);
+        const featureKeyForTask = feature && (task.meta.feature_dispatched !== true || task.meta.feature_workspace === true) && featureKey(feature);
+        const occupied = featureKeyForTask && fresh.tasks.find(other => {
+          if (other.id === task.id || isTerminal(other.status)) return false;
+          const assignment = deliveryFor(other);
+          if (other.status === "todo" && (!assignment || assignment.state === "queued")) return false;
+          const scope = scopeFor(fresh, other);
+          return scope && featureKey(scope) === featureKeyForTask;
+        });
+        if (occupied && d.phase === "dispatch" && task.status === "todo") {
+          hold(`Feature ${featureKeyForTask} is processing #${occupied.id}`);
+          continue;
+        }
         if (feature && task.meta.feature_dispatched !== true) {
           // The first launch fixes the effective iteration, even when inherited
           // from an issue whose iteration can still change later.
-          writeTaskMeta(fresh, task, { iteration: feature.iteration, feature_dispatched: true });
+          const legacy = fresh.tasks.some(other => other.id !== task.id && other.meta.feature_workspace !== true &&
+            other.meta.feature === feature.feature && (other.meta.feature_dispatched === true || other.status !== "todo") &&
+            scopeFor(fresh, other)?.iteration === feature.iteration);
+          writeTaskMeta(fresh, task, { iteration: feature.iteration, feature_dispatched: true,
+            ...(!legacy && d.phase === "dispatch" && task.status === "todo" ? { feature_workspace: true } : {}) });
           fresh = loadProject(project.root);
           task = findTask(fresh, task.id);
         }
+        if (runtime.workspaceBusy?.(fresh, task)) { hold("Waiting for the previous feature session to settle"); continue; }
         receiver = runtime.receiver(fresh, role, task, d);
       }
       catch (error) { hold(`Agent startup failed: ${error instanceof Error ? error.message : String(error)}`); continue; }

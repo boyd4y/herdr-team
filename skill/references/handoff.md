@@ -8,7 +8,7 @@ lead 创建或调整任务、管理角色和会话、派活、核对 inbox 投�
 执行角色使用 claim、handoff 和只读查询，不自行建卡或改任务元数据。
 已约定的 PR 发布、批准后 merge 和自身终态任务收尾是 [delivery.md](delivery.md) 中明确授权的例外；不要据此自行改主分支或分支生命周期。
 
-不同任务各有 worktree/workspace 和角色会话；同一任务所有角色共用 checkout，逐棒执行。
+同一 Feature 和迭代的任务共用 worktree 与 Space。同一 Feature 每次只推进一张任务卡，独立 Feature 可以并行。每张卡仍按已记录的角色逐棒交接。
 常驻对话不占任务执行槽，lead 是唯一常驻串行编排者。测试/审查接手后，开发者暂停写入。
 显示名称可能与内部 agent 名不同，使用任务给出的 delivery ID 和团队 root，不用裸角色名跨项目发送。
 任务消息在对应的 `<role>-<task-id>` 会话中显示，常驻角色 tab 不占任务执行槽，也不会收到该任务的派活消息。
@@ -29,7 +29,7 @@ herdr-team task dispatch <id>
 ```
 
 示例角色不是固定名单；不存在的角色不自动补齐，无需下一位就省略 handoff，不要求用户选择 workflow。
-仅真实接口或数据依赖使用 depends-on；独立任务并行。未开始任务可用 edit --handoff 明确调整，
+仅真实接口或数据依赖使用 depends-on。不同 Feature 的独立任务可以并行。未开始任务可用 edit --handoff 明确调整，
 已投递的任务先核对执行与证据，不靠修改 TEAM.md 改写当前指派或跳过验收。
 dev 自测，test 验证变更行为和风险，review 复用已有证据并补查缺口；不每棒重复全量测试或强制生成报告。
 PR 发布、批准后合并必须有用户授权；没有既有决定且当前交付需要时才补问，不作为初始化必填项。
@@ -75,7 +75,7 @@ herdr-team task handoff <id> --delivery ID --reject --summary "Reproduction and 
 
 每次操作使用当前领取的 ID。接受下一棒会重新指派同一 SHA，上一棒的批准不等于最终批准。
 拒绝返回提交者并重走已经过的验收角色；新提交使旧结论失效。不要同时写 checkout 或接受移动中的版本。
-最后一次版本批准进入合并队列；无版本验收的普通交付在无后续角色时完成。PR 的额外操作见 [delivery.md](delivery.md)。
+共享 Feature 工作区的任务在最后一次验收时核对提交并完成，随后再验收和合并整个 Feature。独立任务的最后一次版本批准进入合并队列。PR 的额外操作见 [delivery.md](delivery.md)。
 
 测试会话提供 HERDR_TEAM_TEST_DATABASE、HERDR_TEAM_REDIS_PREFIX、HERDR_TEAM_PORT/PORT。
 用它们配置独立数据库、Redis key 前缀和监听端口；CLI 不创建服务或改 DATABASE_URL。
@@ -113,6 +113,6 @@ up 默认恢复已记录的常驻原生会话，运行中会话复用；fresh �
 角色正文更新不让运行中 agent 自动重读 Skill；下一次派活携带当前角色正文和 delivery 命令。
 旧已发出 delivery 继续原会话，未发出的队列可在投递前切到任务会话。
 
-最后一棒按 [delivery 的收尾步骤](delivery.md#最后一棒完成后收尾)保存交付证据。Feature 任务由协调会话在交付确认后执行 `feature finish NAME --iteration VERSION`，daemon 负责关闭相关临时会话。随后用 `feature clean NAME --iteration VERSION` 回收本批工作树。独立任务使用 `clean <id>`。
+最后一棒按 [delivery 的收尾步骤](delivery.md#最后一棒完成后收尾)保存交付证据。共享 Feature 的合并和资源回收统一在 Feature 层处理。
 CLI 不强制删除脏 checkout，保留现场与分支；不要用 down 代替单任务收尾。
 down 停止 agent，默认保留 workspace；不为刷新 CLI 或 Skill 而重启团队。

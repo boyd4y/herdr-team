@@ -10,7 +10,7 @@ import { completedDeliveries, deliveryFor, newDelivery } from "../dispatch/deliv
 import { commitTaskTransition, flushTaskHistory, pumpQueue } from "../dispatch/queue.ts";
 import { withTeamLock } from "../runtime/state.ts";
 import { findTask, TaskError } from "./cards.ts";
-import { TASK_BODY, isTerminal, worktreeBranch, type Project } from "../shared/types.ts";
+import { TASK_BODY, featureWorkspace, isTerminal, worktreeBranch, type Project } from "../shared/types.ts";
 import { assertPullRequest, attachTestedPullRequest, prDecisionFor, pullRequestFor, realGitHub, testResultFor, usesPullRequest, type GitHub } from "../integration/pull-request.ts";
 
 export interface HandoffOptions {
@@ -128,9 +128,11 @@ function handoffLocked(
     throw new TaskError("Use only one of --commit, --accept, or --reject");
   }
   const review = reviewFor(card);
+  const shared = featureWorkspace(card);
   const prFlow = usesPullRequest(card), testing = testResultFor(card);
   const reviewingPR = prFlow && testing !== undefined && testing.role !== card.role;
   if (options.pr !== undefined && !options.accept) throw new TaskError("--pr requires --accept");
+  if (shared && options.pr !== undefined) throw new TaskError("Publish or merge the feature branch after feature validation");
   if (review && review.reviewer !== card.role) {
     throw new TaskError(`Task review assignment is inconsistent: owner ${card.role}, assigned reviewer ${review.reviewer}; ask lead to reconcile it`);
   }
@@ -203,7 +205,7 @@ function handoffLocked(
     reviewPatch = { execution: "task", review: { commit, developer: card.role, reviewer: next, reviewers: [next] }, acceptance: null, integration: null, test_result: null, pr_decision: null };
   }
 
-  if (card.handoff.length === 0 && accepted) {
+  if (card.handoff.length === 0 && accepted && !shared) {
     if (prFlow && !reviewingPR) throw new TaskError("PR review approval is required before merging");
     persist({ ...reviewPatch, status: "review", delivery: null, acceptance: accepted,
       integration: { state: "queued", commit: accepted.commit, queued_at: now.toISOString() } },
@@ -214,10 +216,20 @@ function handoffLocked(
 
   if (card.handoff.length === 0) {
     if (prFlow) throw new TaskError("Complete testing and PR review before finishing this workflow");
+    if (shared && !accepted) {
+      const trees = herdr.worktreeList(taskRepo(project, card)).filter(tree => tree.branch === worktreeBranch(card));
+      if (trees.length !== 1 || git(trees[0]!.path, "status", "--porcelain")) {
+        throw new TaskError("Commit feature work before completing this task");
+      }
+    }
     // 最后一个负责人干完了 —— 没有下一步，整个任务收尾。
     const status = "done";
-    persist({ ...reviewPatch, status, delivery: null }, `- ${stamp(now)}  done  (${previousStatus} → ${status})`, "done");
+    const completion = shared && accepted ? `Verified ${accepted.commit} in ${worktreeBranch(card)}.` : "";
+    persist({ ...reviewPatch, status, delivery: null }, `- ${stamp(now)}  done  (${previousStatus} → ${status})${completion ? ` · ${completion}` : ""}`, "done");
     herdr.refresh(project);
+
+    if (shared) return { id, from, to: null, status, previousStatus, prompted: false, ...summaryReceipt,
+      note: `${id} completed in ${worktreeBranch(card)}. The feature workspace is ready for the next assignment.${deliveryNote}` };
 
     // 收尾就该把 worktree 收掉，否则每做一个任务就多留一个 checkout。
     const cleanup = herdr.cleanup(project, { ...card, status });

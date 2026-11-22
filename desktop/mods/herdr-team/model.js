@@ -54,7 +54,8 @@ export function consoleBinding(binding, space) {
   if (!space.id.startsWith(prefix) || !id || id.includes("/") || (binding.view_space ?? binding.space) !== id ||
       binding.machine !== null || typeof binding.root !== "string" || !binding.root.startsWith("/") ||
       typeof binding.space !== "string" || !binding.space || binding.space.includes("/") ||
-      binding.view_space && (!/^\d{4}$/.test(binding.task ?? "") || typeof binding.checkout !== "string" || !binding.checkout.startsWith("/"))) {
+      binding.view_space && (!/^\d{4}$/.test(binding.task ?? "") && !/^[a-z0-9]+(?:-[a-z0-9]+)*@v?\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(binding.feature ?? "") ||
+        typeof binding.checkout !== "string" || !binding.checkout.startsWith("/"))) {
     throw new Error("Invalid project space binding returned by the CLI");
   }
   return { root: binding.root, space: `${prefix}${binding.space}`, machine: space.machine ?? null };

@@ -3,9 +3,10 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { runtimePath } from "../runtime/state.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
-import type { Project, RoleCard, TaskCard } from "../shared/types.ts";
+import { featureWorkspace, type Project, type RoleCard, type TaskCard } from "../shared/types.ts";
 
 export function taskScoped(task: TaskCard, role?: RoleCard): boolean {
+  if (featureWorkspace(task) && (role?.name ?? task.role) !== "lead") return true;
   if (role?.lifecycle) return role.lifecycle === "temporary";
   if ((role?.name ?? task.role) === "lead") return false;
   return task.meta.execution === "task" || role?.worktree === true;

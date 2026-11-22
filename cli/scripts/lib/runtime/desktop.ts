@@ -11,8 +11,8 @@ export class DesktopError extends Error {
   constructor(message: string, readonly kind?: string) { super(message); }
 }
 export interface DesktopBinding { root: string; space: string; machine: null }
-export interface DesktopTaskSpace { root: string; space: string; owner_space: string; task: string; checkout: string; machine: null }
-export interface DesktopViewBinding extends DesktopBinding { view_space?: string; task?: string; checkout?: string }
+export interface DesktopTaskSpace { root: string; space: string; owner_space: string; task?: string; feature?: string; checkout: string; machine: null }
+export interface DesktopViewBinding extends DesktopBinding { view_space?: string; task?: string; feature?: string; checkout?: string }
 interface Registry { schema: 1; spaces: Record<string, DesktopBinding>; tasks?: Record<string, DesktopTaskSpace> }
 export interface DesktopTerminal {
   address: string; state: string; argv: string[]; cwd: string;
@@ -110,12 +110,15 @@ function readRegistry(client: DesktopClient): { value: Registry; version: number
   if (value.tasks !== undefined && (!value.tasks || typeof value.tasks !== "object" || Array.isArray(value.tasks))) throw new DesktopError("Invalid Desktop task space registry");
   const owners = new Set<string>();
   for (const [space, task] of Object.entries(value.tasks ?? {})) {
+    const workspace = task?.task ?? task?.feature;
     if (!task || task.space !== space || !space || space.includes("/") || value.spaces[space] || task.machine !== null ||
-        !/^\d{4}$/.test(task.task) || !isAbsolute(task.checkout ?? "") || value.spaces[task.owner_space]?.root !== task.root) {
+        !workspace || task.task !== undefined && (task.feature !== undefined || !/^\d{4}$/.test(task.task)) ||
+        task.feature !== undefined && !/^[a-z0-9]+(?:-[a-z0-9]+)*@v?\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(task.feature) ||
+        !isAbsolute(task.checkout ?? "") || value.spaces[task.owner_space]?.root !== task.root) {
       throw new DesktopError(`Invalid Desktop task space binding for ${space}`);
     }
-    const key = JSON.stringify([task.owner_space, task.task]);
-    if (owners.has(key)) throw new DesktopError(`Multiple Desktop spaces for task ${task.task}`);
+    const key = JSON.stringify([task.owner_space, workspace]);
+    if (owners.has(key)) throw new DesktopError(`Multiple Desktop spaces for ${workspace}`);
     owners.add(key);
   }
   return { value, version: result.version };
@@ -132,7 +135,13 @@ export function registeredDesktopBinding(client: DesktopClient, space: string): 
   const { value } = readRegistry(client);
   if (value.spaces[space]) return value.spaces[space]!;
   const task = value.tasks?.[space];
-  return task ? { ...value.spaces[task.owner_space]!, view_space: space, task: task.task, checkout: task.checkout } : null;
+  return task ? { ...value.spaces[task.owner_space]!, view_space: space, checkout: task.checkout,
+    ...(task.feature === undefined ? { task: task.task } : { feature: task.feature }) } : null;
+}
+
+export function terminalMatchesWorkspace(space: Pick<DesktopTaskSpace, "task" | "feature">, terminal: DesktopTerminal): boolean {
+  const label = terminal.labels;
+  return space.feature ? label["team.workspace"] === space.feature : Boolean(space.task && label["team.task"] === space.task);
 }
 
 export function showDesktopBinding(client: DesktopClient, space: string): DesktopViewBinding | null {
@@ -151,7 +160,7 @@ export function forgetDesktopTaskSpace(client: DesktopClient, expected: DesktopT
     const current = registry.value.tasks?.[expected.space];
     if (!current) return;
     if (current.root !== expected.root || current.owner_space !== expected.owner_space ||
-        current.task !== expected.task || current.checkout !== expected.checkout) {
+        current.task !== expected.task || current.feature !== expected.feature || current.checkout !== expected.checkout) {
       throw new DesktopError("Task space binding changed; its record was retained");
     }
     const tasks = { ...registry.value.tasks };
@@ -167,20 +176,21 @@ export function forgetDesktopTaskSpace(client: DesktopClient, expected: DesktopT
 }
 
 /** A stable task space is reserved before launch; native Core opt-in creates its first tab. */
-export function ensureDesktopTaskSpace(project: Pick<Project, "root">, client: DesktopClient, binding: DesktopBinding, task: string, checkout: string, headless = false): DesktopTaskSpace {
+export function ensureDesktopTaskSpace(project: Pick<Project, "root">, client: DesktopClient, binding: DesktopBinding, workspace: string, checkout: string, headless = false): DesktopTaskSpace {
   return withTeamLock(project, "desktop", () => {
     const path = realpathSync(checkout);
+    const scope = /^\d{4}$/.test(workspace) ? { task: workspace } : { feature: workspace };
     for (let attempt = 0; attempt < 5; attempt++) {
       const registry = readRegistry(client);
-      if (registry.value.spaces[binding.space]?.root !== binding.root || !/^\d{4}$/.test(task)) throw new DesktopError("Invalid parent team binding for task space");
-      const existing = Object.values(registry.value.tasks ?? {}).find(item => item.owner_space === binding.space && item.task === task);
+      if (registry.value.spaces[binding.space]?.root !== binding.root) throw new DesktopError("Invalid parent team binding for task space");
+      const existing = Object.values(registry.value.tasks ?? {}).find(item => item.owner_space === binding.space && (item.task ?? item.feature) === workspace);
       if (existing) {
         if (existing.root !== binding.root || realpathSync(existing.checkout) !== path) throw new DesktopError("Task space checkout changed; refusing to rebind it");
         return existing;
       }
       const space = `sp${randomUUID().replaceAll("-", "")}`;
       if ((!headless && client.spaces().some(item => item.id === space)) || registry.value.spaces[space] || registry.value.tasks?.[space]) throw new DesktopError("Task space ID collision; retry without adopting an existing space");
-      const result: DesktopTaskSpace = { root: binding.root, space, owner_space: binding.space, task, checkout: path, machine: null };
+      const result: DesktopTaskSpace = { root: binding.root, space, owner_space: binding.space, ...scope, checkout: path, machine: null };
       try {
         client.rpc("doc.set", { name: desktopDocument, version: registry.version, value: {
           ...registry.value, tasks: { ...registry.value.tasks, [space]: result },
@@ -281,7 +291,7 @@ interface DesktopStopIssue extends DesktopAgentAddress { reason: string }
 export function desktopDown(project: Project, client: DesktopClient, binding: DesktopBinding, caller: string) {
   // Hold the delivery lock while ending agents, including task-scoped sessions.
   return withTeamLock(project, "queue", () => {
-    const taskSpaces = new Map(desktopTaskSpaces(client, binding).map(space => [space.space, space.task]));
+    const taskSpaces = new Map(desktopTaskSpaces(client, binding).map(space => [space.space, space]));
     const { terminals } = client.rpc<{ terminals: Terminal[] }>("terminal.list", {
       labels: { "team.project": binding.root, "team.owner_space": binding.space, "team.runtime": "desktop" },
     });
@@ -295,7 +305,8 @@ export function desktopDown(project: Project, client: DesktopClient, binding: De
           labels["team.project"] !== binding.root || labels["team.owner_space"] !== binding.space ||
           labels["team.runtime"] !== "desktop" || !role || (session !== "resident" && session !== "task")) continue;
       if (session === "task" && (!task || !/^\d{4}$/.test(task))) continue;
-      if (space && space !== binding.space && (session !== "task" || taskSpaces.get(space) !== task)) continue;
+      const workspace = space && taskSpaces.get(space);
+      if (space && space !== binding.space && (session !== "task" || !workspace || !terminalMatchesWorkspace(workspace, terminal))) continue;
       const item = { role, terminal: terminal.address };
       if (!desktopAgentProgram(terminal)) {
         skipped.push({ ...item, reason: "Terminal now runs a different program" });

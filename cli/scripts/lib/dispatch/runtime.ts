@@ -4,8 +4,8 @@ import type { Delivery } from "./delivery.ts";
 import { taskAgent } from "./task-agent.ts";
 import { refreshSidebar } from "../ui/sidebar.ts";
 import { cleanupIfDone, type CleanupResult } from "./cleanup.ts";
-import { worktreeBranch } from "../shared/types.ts";
-import { roleAgentLabel } from "./team-scope.ts";
+import { featureWorkspace, worktreeBranch } from "../shared/types.ts";
+import { projectKey, roleAgentLabel } from "./team-scope.ts";
 
 /** Addresses retain their runtime identity. A Core terminal is never a pane ID. */
 export type DeliveryTarget = Pick<Delivery, "runtime" | "space" | "pane_id" | "terminal" | "session_id" | "process_id">;
@@ -18,6 +18,7 @@ export interface Receiver {
 export interface TaskRuntime {
   scope: DeliveryTarget;
   envOk(): boolean;
+  workspaceBusy?(project: Project, task: TaskCard): boolean;
   assertDelivery(delivery: Delivery): void;
   receiver(project: Project, role: RoleCard, task: TaskCard, delivery: Delivery): Receiver | undefined;
   residentReceiver?(role: RoleCard): Receiver | undefined;
@@ -34,6 +35,14 @@ export function taskRuntime(runtime: Herdr | TaskRuntime): TaskRuntime {
   return {
     scope: {},
     envOk: () => runtime.envOk(),
+    workspaceBusy(project, task) {
+      const feature = featureWorkspace(task);
+      if (!feature) return false;
+      const owner = projectKey(project);
+      return runtime.agentList().some(agent => agent.tokens?.team_project === owner && agent.tokens.team_session === "task" &&
+        agent.tokens.team_feature === feature.feature && agent.tokens.team_iteration === feature.iteration &&
+        agent.tokens.team_task_id !== task.id && !["done", "idle"].includes(agent.agent_status ?? ""));
+    },
     assertDelivery(delivery) {
       if (delivery.runtime === "desktop" || delivery.terminal) throw new Error("Delivery belongs to Desktop; refusing TUI execution");
     },

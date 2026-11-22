@@ -199,7 +199,7 @@ export function up(project: Project, herdr: Herdr, options: { fresh?: boolean } 
 }
 
 /** Add exactly one explicitly selected task to the delivery scheduler. */
-export function dispatch(project: Project, herdr: Herdr | TaskRuntime, id: string): DispatchOutcome[] {
+export function dispatch(project: Project, herdr: Herdr | TaskRuntime, id: string, deferDelivery = false): DispatchOutcome[] {
   const selected = findTask(project, id);
   if (selected.status !== "todo") throw new LaunchError(`${id} is ${selected.status}; only todo tasks can be dispatched`);
   if (!herdr.envOk()) throw new LaunchError("Run this command inside a Herdr pane (HERDR_ENV=1).");
@@ -209,7 +209,7 @@ export function dispatch(project: Project, herdr: Herdr | TaskRuntime, id: strin
     if (delivery && !isTerminal(task.status)) runtime.assertDelivery(delivery);
   }
   enqueueTask(project, id, new Date(), runtime.scope);
-  pumpQueue(project, herdr);
+  if (!deferDelivery) pumpQueue(project, herdr);
   const fresh = loadProject(project.root);
   const task = findTask(fresh, id), delivery = deliveryFor(task)!;
   return [{ id, role: task.role,

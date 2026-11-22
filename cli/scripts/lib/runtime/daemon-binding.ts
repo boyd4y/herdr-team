@@ -1,15 +1,19 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { projectKey } from "../dispatch/team-scope.ts";
-import type { Project } from "../shared/types.ts";
+import { featureWorkspace, workspaceKey, type Project } from "../shared/types.ts";
 import { realHerdr } from "./herdr.ts";
 import { realDesktop, registeredDesktopBinding, savedDesktopBinding } from "./desktop.ts";
 import type { ManagedContext } from "./context.ts";
 import { closeFinishedDesktopTaskAgents, desktopTaskRuntime } from "./desktop-dispatch.ts";
-import { withStateLock } from "./state.ts";
+import { cleanDesktopTasks } from "./desktop-cleanup.ts";
+import { reconcileFeaturePreviews } from "./feature-preview.ts";
+import { confirmedFeatures } from "../team/features.ts";
+import { logDaemon } from "./daemon-log.ts";
+import { runtimePath, withStateLock } from "./state.ts";
 import { isProxyEnv } from "./agent-env.ts";
 
 export const daemonDirectory = () => resolve(process.env.HERDR_TEAM_HOME ?? join(homedir(), ".herdr-team"));
@@ -217,5 +221,17 @@ export function closeRegisteredDesktopTaskAgents(project: Project, team: DaemonT
       space?.root !== binding.root || space.space !== binding.space || space.view_space) {
     throw new Error("Registered Desktop binding changed");
   }
+  reconcileFeaturePreviews(project, client, binding);
   closeFinishedDesktopTaskAgents(project, client, binding);
+  const confirmations = confirmedFeatures(project);
+  const members = project.tasks.filter(task => {
+    if (!featureWorkspace(task)) return false;
+    const key = workspaceKey(task);
+    return Boolean(confirmations.get(key)?.commit && existsSync(runtimePath(project, `desktop/features/${key}.json`)));
+  });
+  if (members.length) {
+    for (const result of cleanDesktopTasks(project, client, binding, undefined, members.map(task => task.id))) {
+      logDaemon("task.cleaned", { project: project.root, task: result.id, state: result.action, reason: result.note });
+    }
+  }
 }

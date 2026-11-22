@@ -32,9 +32,15 @@
 
 ## 最后一棒：完成后收尾
 
-Feature 交付用任务的 `feature` 和迭代圈定范围。各任务完成后先保留会话和工作树。用户确认交付且约定的合并、验证已结束后，由 lead 或协调会话执行 `herdr-team feature finish NAME --iteration VERSION`。daemon 按登记的会话范围收尾。仍有未完投递的共享会话以及常驻角色继续运行。保留工作树和分支，查 daemon 日志确认结果。
+共享工作区的 Feature 先完成组内任务，再在该 Space 验证整条分支。验证可使用 Team 面板的 Preview。得到该 Feature 的合并授权后，协调会话从项目的目标分支检出目录执行：
 
-从主 workspace 执行 `herdr-team feature clean NAME --iteration VERSION` 回收这次确认里的任务 worktree 和本地资源。逐张检查返回值，有阻塞时可用 `clean <id>` 单独处理。任务分支和提交保留。
+```sh
+herdr-team feature merge NAME --iteration VERSION --base develop --commit SHA
+```
+
+`SHA` 是已验证的 Feature 分支头，`--base` 使用项目约定的目标分支。冲突在 Feature 工作区解决，重新验证新提交。成功后 daemon 按 Feature 停止受管预览、关闭临时会话并回收干净的 worktree。用 daemon 日志核对保留原因，必要时用 `feature clean NAME --iteration VERSION` 重试。
+
+此前已派发并拥有各自 worktree 的 Feature 继续用 `feature finish NAME --iteration VERSION` 确认交付，再按该范围执行 `feature clean`。
 
 独立任务使用下面的单任务清理流程。
 

@@ -1,9 +1,11 @@
-import { existsSync, readdirSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, unlinkSync } from "node:fs";
 import { runtimePath } from "../runtime/state.ts";
 import { assertProjectWorkspace } from "./team-scope.ts";
 import { join } from "node:path";
 import type { Herdr } from "../runtime/herdr.ts";
-import { isTerminal, worktreeBranch, type Project, type TaskCard } from "../shared/types.ts";
+import { featureWorkspace, isTerminal, workspaceKey, worktreeBranch, type Project, type TaskCard } from "../shared/types.ts";
+import { confirmedFeatures } from "../team/features.ts";
+import { git } from "../tasks/verification.ts";
 
 
 export type CleanupAction =
@@ -45,6 +47,13 @@ export function releaseTaskResources(project: Project, card: TaskCard): void {
 
 export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): CleanupResult {
   const branch = worktreeBranch(card);
+  const scope = featureWorkspace(card);
+  const key = workspaceKey(card);
+  const members = scope ? project.tasks.filter(task => workspaceKey(task) === key) : [card];
+  const confirmation = scope ? confirmedFeatures(project).get(key) : undefined;
+  if (scope && (!confirmation?.commit || members.some(task => !isTerminal(task.status) || task.meta.pending_history || !confirmation.tasks.includes(task.id)))) {
+    return { id: card.id, branch, action: "retained", note: "Confirm feature delivery before reclaiming the shared checkout" };
+  }
 
   const repoPath = join(project.root, card.repo);
   let trees;
@@ -60,12 +69,30 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
   }
 
   const found = trees.find((t) => t.branch === branch);
+  const ownership = scope ? runtimePath(project, `tui/features/${key}.json`) : undefined;
   if (found === undefined) {
-    releaseTaskResources(project, card);
+    for (const member of members) releaseTaskResources(project, member);
     return { id: card.id, branch, action: "absent", note: `No checkout for ${branch} (not created or already removed)` };
   }
 
   if (found.open_workspace_id === undefined || found.open_workspace_id === null) {
+    if (ownership && existsSync(ownership)) {
+      try {
+        const owner = JSON.parse(readFileSync(ownership, "utf8"));
+        if (owner.repo !== realpathSync(repoPath) || owner.checkout !== realpathSync(found.path) || owner.branch !== branch) {
+          return { id: card.id, branch, action: "foreign", note: "Feature checkout ownership changed" };
+        }
+        if (git(found.path, "status", "--porcelain", "--untracked-files=normal", "--ignored=matching")) {
+          return { id: card.id, branch, action: "dirty", note: `Checkout has local files at ${found.path}` };
+        }
+        git(repoPath, "worktree", "remove", found.path);
+        for (const member of members) releaseTaskResources(project, member);
+        unlinkSync(ownership);
+        return { id: card.id, branch, action: "removed", note: `Reclaimed feature checkout ${branch}; branch retained` };
+      } catch (error) {
+        return { id: card.id, branch, action: "failed", note: error instanceof Error ? error.message : String(error) };
+      }
+    }
     return {
       id: card.id,
       branch,
@@ -77,6 +104,15 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
   try { assertProjectWorkspace(project, herdr, found.open_workspace_id); }
   catch (error) {
     return { id: card.id, branch, action: "foreign", note: `Cannot safely remove ${branch}: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  if (scope) {
+    const space = herdr.workspaceList().find(item => item.workspace_id === found.open_workspace_id);
+    if (space?.tokens?.team_feature_workspace !== key || herdr.paneList(found.open_workspace_id).length) {
+      return { id: card.id, branch, action: "retained", note: "Feature workspace has open panes or unresolved ownership" };
+    }
+    if (git(found.path, "status", "--porcelain", "--untracked-files=normal", "--ignored=matching")) {
+      return { id: card.id, branch, action: "dirty", note: `Checkout has local files at ${found.path}` };
+    }
   }
 
   try {
@@ -90,7 +126,8 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
     };
   }
 
-  releaseTaskResources(project, card);
+  for (const member of members) releaseTaskResources(project, member);
+  if (ownership && existsSync(ownership)) unlinkSync(ownership);
   return {
     id: card.id,
     branch,

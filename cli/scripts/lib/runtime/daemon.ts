@@ -11,14 +11,16 @@ import { needsQueuePass, nextQueueDeadline, pumpQueue, queueRows } from "../disp
 import { projectKey } from "../dispatch/team-scope.ts";
 import { loadProject } from "../team/project.ts";
 import { closeRegisteredDesktopTaskAgents, daemonDirectory, daemonEnv, daemonTeamKeys, daemonTeams, listRegisteredProjects, readDaemonTeam, registeredRuntime, withRegistration, type DaemonTeam } from "./daemon-binding.ts";
-import { processAlive, withStateLock } from "./state.ts";
+import { processAlive, withStateLock, withTeamLock } from "./state.ts";
 import { daemonLogPath, deliveryLogReason, logDaemon } from "./daemon-log.ts";
 import { startAgentMail, type AgentMailStatus } from "./agentmail.ts";
 import { listMail } from "./mail-inbox.ts";
 import { notifyMail } from "./mail-notifications.ts";
-import { isTerminal } from "../shared/types.ts";
+import { featureWorkspace, isTerminal, workspaceKey } from "../shared/types.ts";
 import { confirmedFeatures } from "../team/features.ts";
 import { closeDeliveredTuiAgents } from "./tui-feature-sessions.ts";
+import { cleanupIfDone } from "../dispatch/cleanup.ts";
+import { hasFeaturePreviews } from "./feature-preview.ts";
 
 const cli = fileURLToPath(new URL("../../cli.ts", import.meta.url));
 const infoFile = (directory = daemonDirectory()) => join(directory, "daemon.json");
@@ -31,6 +33,7 @@ export interface DaemonStatus {
   pid?: number;
   teams?: TeamStatus[];
   agentmail?: AgentMailStatus;
+  featureWorkspaces?: boolean;
 }
 
 function info(directory = daemonDirectory()): DaemonInfo | undefined {
@@ -185,11 +188,25 @@ export function daemonPass(key: string): void {
     const project = loadProject(team.root);
     let cleanupPanes: string[] = [];
     try {
-      if (project.tasks.some(task => isTerminal(task.status)) && confirmedFeatures(project).size) {
+      if (team.kind === "desktop" && hasFeaturePreviews(project) || project.tasks.some(task => isTerminal(task.status)) && confirmedFeatures(project).size) {
         if (team.kind === "desktop") closeRegisteredDesktopTaskAgents(project, team);
         else {
           const backend = registeredRuntime(project, team);
-          if ("paneList" in backend) cleanupPanes = closeDeliveredTuiAgents(project, backend);
+          if ("paneList" in backend) {
+            cleanupPanes = closeDeliveredTuiAgents(project, backend);
+            withTeamLock(project, "queue", () => {
+              const fresh = loadProject(project.root);
+              const confirmed = confirmedFeatures(fresh);
+              const seen = new Set<string>();
+              for (const task of fresh.tasks) {
+                const key = workspaceKey(task);
+                if (!featureWorkspace(task) || !confirmed.get(key)?.commit || seen.has(key)) continue;
+                seen.add(key);
+                const result = cleanupIfDone(fresh, backend, task);
+                if (result.action !== "absent") logDaemon("task.cleaned", { project: project.root, task: task.id, state: result.action, reason: result.note });
+              }
+            });
+          }
         }
       }
     } catch (error) {
@@ -383,7 +400,7 @@ export async function serveDaemon(): Promise<void> {
   };
   const status = (): DaemonStatus => {
     const mail = agentmail.status();
-    return { state: stopping ? "stopping" : "running", pid: process.pid,
+    return { state: stopping ? "stopping" : "running", pid: process.pid, featureWorkspaces: true,
       teams: [...active.values()].map(current => current.status()), ...(mail ? { agentmail: mail } : {}) };
   };
   const server = Bun.serve({

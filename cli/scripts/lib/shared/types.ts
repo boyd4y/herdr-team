@@ -89,7 +89,19 @@ export function isolatedAgentName(role: string, id: string): string {
 }
 
 /** 隔离任务的分支名 —— 一眼看出是哪个 feature。 */
-export function worktreeBranch(card: { id: string; slug: string }): string {
+export function featureWorkspace(task: Pick<TaskCard, "meta">): { feature: string; iteration: string } | undefined {
+  const { feature_workspace, feature, iteration } = task.meta;
+  if (feature_workspace === true && typeof feature === "string" && typeof iteration === "string") return { feature, iteration };
+}
+
+export function workspaceKey(task: Pick<TaskCard, "id" | "meta">): string {
+  const scope = featureWorkspace(task);
+  return scope ? `${scope.feature}@${scope.iteration}` : task.id;
+}
+
+export function worktreeBranch(card: Pick<TaskCard, "id" | "slug"> & Partial<Pick<TaskCard, "meta">>): string {
+  const scope = card.meta && featureWorkspace({ meta: card.meta });
+  if (scope) return `feature/${scope.iteration}/${scope.feature}`;
   return `feat/${card.id}-${card.slug}`;
 }
 

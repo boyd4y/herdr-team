@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { projectKey, resolveProjectWorkspace, TeamScopeError } from "./lib/dispatch/team-scope.ts";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import { join, resolve } from "node:path";
 import { cleanupAll, cleanupIfDone, type CleanupResult } from "./lib/dispatch/cleanup.ts";
 import { findRoot, findTeamRoots, loadProject, type ProjectReadOptions } from "./lib/team/project.ts";
@@ -26,8 +27,8 @@ import { acceptRequirement, addRequirement, editRequirements, indexRequirementTa
   setIterationState, setRequirementDisposition, taskIteration, validateIteration } from "./lib/team/requirements.ts";
 import { listIssueMetadata, migrateIssueStore, readIssue, RequirementError, type Requirement } from "./lib/team/issue-store.ts";
 import { formatProblems, validateProject } from "./lib/team/validate.ts";
-import { canonicalKind, CARD_DISPOSITIONS, isRoleLifecycle, isTerminal, NAME_RE, STATUSES, taskDisposition, type Project } from "./lib/shared/types.ts";
-import { confirmedFeatures, FeatureError, featureKey, finishFeature, validateFeature, type FeatureScope } from "./lib/team/features.ts";
+import { canonicalKind, CARD_DISPOSITIONS, featureWorkspace, isRoleLifecycle, isTerminal, NAME_RE, STATUSES, taskDisposition, type Project } from "./lib/shared/types.ts";
+import { confirmedFeatures, FeatureError, featureKey, finishFeature, scopeFor, validateFeature, type FeatureScope } from "./lib/team/features.ts";
 import { callerSpace, managedContext } from "./lib/runtime/context.ts";
 import { readProxyEnv } from "./lib/runtime/agent-env.ts";
 import { bindDesktop, desktopDown, desktopUp, DesktopError, realDesktop, registeredDesktopBinding, savedDesktopBinding, showDesktopBinding, unbindDesktop, type DesktopTerminal } from "./lib/runtime/desktop.ts";
@@ -36,6 +37,7 @@ import { desktopTaskRuntime, syncDesktopTaskSpaces, type DesktopTaskRuntime } fr
 import { taskRuntime } from "./lib/dispatch/runtime.ts";
 import { assertDaemonOwner, daemonDirectory, daemonEndpoint, inboxProjectStates, listRegisteredProjects, makeDaemonTeam, pauseDaemonTeam, readDaemonTeam, registerDaemonTeam, registerProjectRoot, unregisterProjectRoot } from "./lib/runtime/daemon-binding.ts";
 import { daemonPass, daemonStatus, serveDaemon, startDaemon, stopDaemon, wakeDaemon } from "./lib/runtime/daemon.ts";
+import { featurePreviewStatus, queueFeaturePreview } from "./lib/runtime/feature-preview.ts";
 import { daemonLogPath, deliveryLogReason, followDaemonLog, formatDaemonLog, logDaemon, readDaemonLog } from "./lib/runtime/daemon-log.ts";
 import { addAgentMailRoute, AgentMailError, checkAgentMail, readAgentMailRoutes } from "./lib/runtime/agentmail.ts";
 import { MAIL_ID, listMail, mailTrashReasonLabel, readMail, updateMailState } from "./lib/runtime/mail-inbox.ts";
@@ -584,22 +586,41 @@ function cmdIteration(args: string[]): number {
 }
 
 async function cmdFeature(args: string[]): Promise<number> {
-  const parsed = parseArgs(args, ["iteration", "root"]);
+  const parsed = parseArgs(args, ["iteration", "root", "commit", "base"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team feature <finish|clean> <name> --iteration VERSION [--root DIR | --project ID] [--json]\n" +
-      "  finish   Confirm delivery and let the daemon retire eligible temporary sessions.\n" +
-      "  clean    Reclaim only the confirmed delivery's task worktrees, terminals and spaces.\n");
+    process.stdout.write("Usage: herdr-team feature <finish|merge|clean|preview> <name> --iteration VERSION [--root DIR | --project ID] [--json]\n" +
+      "  merge    Integrate the validated feature with --base BRANCH --commit SHA and let the daemon reclaim its workspace.\n" +
+      "  finish   Confirm an existing task-scoped delivery.\n" +
+      "  clean    Reclaim only the confirmed delivery's worktrees, terminals and spaces.\n" +
+      "  preview  Start or reuse the Desktop feature preview configured in herdr-preview.json. Use --retry after a failed preview.\n");
     return 0;
   }
   const [op, name] = parsed.pos;
   const version = parsed.values.get("iteration");
-  if (op !== "finish" && op !== "clean" || parsed.pos.length !== 2 || !name || !version ||
-      [...parsed.flags].some(flag => flag !== "json") ||
-      [...parsed.values.keys()].some(key => key !== "root" && key !== "iteration")) {
-    throw new UsageError("Use herdr-team feature <finish|clean> <name> --iteration VERSION");
+  const commit = parsed.values.get("commit"), base = parsed.values.get("base");
+  if (op !== "finish" && op !== "merge" && op !== "clean" && op !== "preview" || parsed.pos.length !== 2 || !name || !version ||
+      op === "merge" && (!commit || !base) ||
+      [...parsed.flags].some(flag => flag !== "json" && !(op === "preview" && flag === "retry")) ||
+      [...parsed.values.keys()].some(key => key !== "root" && key !== "iteration" && (op !== "merge" || key !== "commit" && key !== "base"))) {
+    throw new UsageError("Run herdr-team feature --help for the required arguments");
   }
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
+  if (op === "preview") {
+    const daemon = await daemonStatus();
+    if (readDaemonTeam(projectKey(project))?.kind !== "desktop" || daemon.state !== "running") {
+      throw new FeatureError("Start the Desktop team before opening its feature preview");
+    }
+    if (!daemon.featureWorkspaces) throw new FeatureError("Restart the team daemon to enable feature previews");
+    const scope = { feature: validateFeature(name), iteration: validateIteration(version) };
+    let state = queueFeaturePreview(project, scope, parsed.flags.has("retry"));
+    await wakeDaemon(root);
+    for (let count = 0; count < 30 && (state.state === "queued" || state.state === "starting"); count++) {
+      await delay(100);
+      state = featurePreviewStatus(project, scope) ?? state;
+    }
+    return out(parsed, state, state.error ?? (state.state === "running" ? state.url ?? "Desktop preview launched." : "Preview startup is queued."));
+  }
   if (op === "clean") {
     const scope = { feature: validateFeature(name), iteration: validateIteration(version) };
     const key = featureKey(scope);
@@ -607,10 +628,11 @@ async function cmdFeature(args: string[]): Promise<number> {
     if (!confirmation) throw new FeatureError(`Confirm delivery of ${key} before cleaning it`);
     return printCleanup(parsed, project, cleanTasks(project, confirmation.tasks), scope);
   }
-  const result = finishFeature(project, name, version);
+  const result = finishFeature(project, name, version, op === "merge" ? { commit: commit!, base: base! } : undefined);
   logDaemon("feature.delivered", { project: root, feature: result.feature, iteration: result.iteration, count: result.tasks.length });
   await wakeDaemon(root);
-  return out(parsed, result, `Confirmed delivery of ${featureKey(result)}. The daemon will close eligible temporary sessions.`);
+  return out(parsed, result, op === "merge" ? `Integrated ${featureKey(result)} into ${base}. The daemon will reclaim eligible workspace resources.`
+    : `Confirmed delivery of ${featureKey(result)}. The daemon will close eligible temporary sessions.`);
 }
 
 async function cmdEdit(args: string[], name = "edit"): Promise<number> {
@@ -801,7 +823,7 @@ async function cmdHandoff(args: string[], name = "handoff"): Promise<number> {
 
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
-  const deferDelivery = daemonDirectory() === join(project.root, ".herdr", "demo", "service") && isDesktopDemo(project.root);
+  const deferDelivery = Boolean(featureWorkspace(findTask(project, id))) || daemonDirectory() === join(project.root, ".herdr", "demo", "service") && isDesktopDemo(project.root);
   const result = handoff(project, executionRuntime(project), id, new Date(), { summary, delivery: parsed.values.get("delivery"), commit: parsed.values.get("commit"), accept: parsed.values.get("accept"), reject: parsed.flags.has("reject"), pr: parsed.values.get("pr"), deferDelivery });
   logDaemon("task.handoff", { project: root, task: result.id, from: result.from, to: result.to,
     state: result.status, delivery: result.delivery, deliveryState: result.queueState, duplicate: result.duplicate ?? false });
@@ -1120,7 +1142,15 @@ async function cmdDispatch(args: string[], name = "dispatch"): Promise<number> {
   }
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
-  const result = dispatch(project, executionRuntime(project), id);
+  const task = findTask(project, id);
+  const shared = Boolean(scopeFor(project, task) && (task.meta.feature_dispatched !== true || featureWorkspace(task)));
+  if (shared) {
+    const daemon = await daemonStatus();
+    if (daemon.state === "running" && !daemon.featureWorkspaces) {
+      throw new FeatureError("Restart the team daemon to enable shared feature workspaces");
+    }
+  }
+  const result = dispatch(project, executionRuntime(project), id, shared);
   logDaemon("dispatch.completed", { project: root, task: id, count: result.length });
   for (const delivery of result) logDaemon("dispatch.result", { project: root, task: delivery.id,
     role: delivery.role, state: delivery.action, reason: deliveryLogReason(delivery.reason) });

@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { makeProject, taskMeta, writeRole, writeTask } from "./helpers.ts";
 import { loadProject } from "../scripts/lib/team/project.ts";
 import { bindDesktop, desktopDown, DesktopError, desktopUp, showDesktopBinding, type DesktopClient, type DesktopTerminal } from "../scripts/lib/runtime/desktop.ts";
 import { closeFinishedDesktopTaskAgents, desktopTaskRuntime, syncDesktopTaskSpaces } from "../scripts/lib/runtime/desktop-dispatch.ts";
 import { desktopWorktrees } from "../scripts/lib/runtime/desktop-worktrees.ts";
+import { cleanDesktopTasks } from "../scripts/lib/runtime/desktop-cleanup.ts";
+import { featurePreviewStatus, queueFeaturePreview, reconcileFeaturePreviews } from "../scripts/lib/runtime/feature-preview.ts";
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, pumpQueue, queueRows } from "../scripts/lib/dispatch/queue.ts";
 import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
@@ -148,6 +150,95 @@ test("Desktop dispatch starts exactly the selected task in an owned checkout wit
   } finally { f.cleanup(); }
 });
 
+test("Desktop shares one workspace per feature, serializes assignments and cleans only the merged feature", () => {
+  const f = fixture();
+  try {
+    const config = "herdr-preview.json";
+    writeFileSync(join(f.root, config), JSON.stringify({ argv: ["tauri", "dev"], kind: "desktop", tauriBeforeDev: "bun run web:dev --port $PORT" }));
+    git(f.root, "add", config); git(f.root, "commit", "-qm", "Configure preview");
+    for (const id of ["0003", "0004"]) writeTask(f.root, `${id}-metrics`, taskMeta());
+    for (const id of ["0001", "0002", "0003", "0004"]) {
+      writeTaskMeta(f.load(), f.task(id), { feature: Number(id) < 3 ? "search" : "metrics", iteration: "v1.2", handoff: id === "0001" ? ["qa"] : [] });
+    }
+    for (const id of ["0001", "0002", "0003", "0004"]) dispatch(f.load(), f.runtime(), id);
+    const workers = () => f.terminals.filter(t => t.labels["team.session"] === "task");
+    expect(workers().map(t => t.labels["team.task"])).toEqual(["0001", "0003"]);
+    expect(deliveryFor(f.task("0002"))?.reason).toContain("processing #0001");
+    expect(deliveryFor(f.task("0004"))?.reason).toContain("processing #0003");
+    const [first, other] = workers();
+    expect(first!.cwd).not.toBe(other!.cwd);
+    expect(git(first!.cwd, "branch", "--show-current")).toBe("feature/v1.2/search");
+    expect(showDesktopBinding(f.client, first!.labels["herdr.space"]!)).toMatchObject({ feature: "search@v1.2", checkout: first!.cwd });
+    const binding = showDesktopBinding(f.client, "s1")!;
+    const search = { feature: "search", iteration: "v1.2" }, metrics = { ...search, feature: "metrics" };
+    const searchPreview = queueFeaturePreview(f.load(), search), metricsPreview = queueFeaturePreview(f.load(), metrics);
+    const reconcile = () => reconcileFeaturePreviews(f.load(), f.client, binding);
+    reconcile(); reconcile();
+    expect(searchPreview.port).not.toBe(metricsPreview.port);
+    const previews = f.terminals.filter(t => t.labels["team.session"] === "preview");
+    expect(previews).toHaveLength(2);
+    const [metricsTerminal, searchTerminal] = previews;
+    expect(searchTerminal!.cwd).toBe(first!.cwd);
+    const configFor = (terminal: DesktopTerminal) => JSON.parse(terminal.argv.at(-1)!);
+    expect(configFor(searchTerminal!).identifier).not.toBe(configFor(metricsTerminal!).identifier);
+    expect(configFor(searchTerminal!).build.devUrl).toBe(`http://127.0.0.1:${searchPreview.port}`);
+    writeFileSync(join(first!.cwd, "search.txt"), "search\n");
+    git(first!.cwd, "add", "search.txt"); git(first!.cwd, "commit", "-qm", "Implement search");
+    const sha = git(first!.cwd, "rev-parse", "HEAD");
+    const settle = (worker: DesktopTerminal) => {
+      worker.status = { app: basename(worker.argv[0]!), state: "done" };
+      worker.foreground = { cwd: worker.cwd, argv: worker.argv, pid: worker.pid! };
+      worker.turn = 1;
+    };
+    f.claim("0001", first);
+    handoff(f.load(), f.runtime(first), "0001", new Date(), { delivery: deliveryFor(f.task())!.id, commit: sha });
+    const reviewer = workers().at(-1)!;
+    expect(reviewer.cwd).toBe(first!.cwd);
+    settle(first!);
+    f.claim("0001", reviewer);
+    handoff(f.load(), f.runtime(reviewer), "0001", new Date(), { delivery: deliveryFor(f.task())!.id, accept: sha, summary: "Validated" });
+    expect(f.task().status).toBe("done");
+    expect(deliveryFor(f.task("0002"))?.state).toBe("queued");
+    settle(reviewer);
+    pumpQueue(f.load(), f.runtime());
+    const next = workers().at(-1)!;
+    expect(next.labels["team.task"]).toBe("0002");
+    expect(next.cwd).toBe(first!.cwd);
+    expect(next.labels["herdr.space"]).toBe(first!.labels["herdr.space"]);
+    expect(f.runtime().clean("0001")[0]?.action).toBe("retained");
+    f.claim("0002", next);
+    handoff(f.load(), f.runtime(next), "0002", new Date(), { delivery: deliveryFor(f.task("0002"))!.id, summary: "Final check" });
+    settle(next);
+    const base = git(f.root, "branch", "--show-current");
+    expect(finishFeature(f.load(), "search", "v1.2", { base, commit: sha })).toMatchObject({ commit: sha, tasks: ["0001", "0002"] });
+    expect(git(f.root, "merge-base", "HEAD", sha)).toBe(sha);
+    reconcile();
+    expect(featurePreviewStatus(f.load(), search)).toBeUndefined();
+    expect(metricsTerminal!.state).toBe("live");
+    const [result] = cleanDesktopTasks(f.load(), f.client, binding, undefined, ["0001", "0002"]);
+    expect(result).toMatchObject({ action: "removed" });
+    expect(existsSync(first!.cwd)).toBe(false);
+    expect(existsSync(other!.cwd)).toBe(true);
+    expect(other!.state).toBe("live");
+  } finally { f.cleanup(); }
+});
+
+test("a feature assignment keeps the resident lead in the project Space", () => {
+  const f = fixture();
+  try {
+    writeRole(f.root, "lead", { kind: "codex", worktree: false });
+    writeTaskMeta(f.load(), f.task(), { role: "lead", feature: "search", iteration: "v1.2" });
+    const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
+    const terminal = f.terminals.find(item => item.address === lead.terminal)!;
+    terminal.status = { app: "codex", state: "idle" };
+    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "dispatched" }]);
+    expect(deliveryFor(f.task())?.terminal).toBe(terminal.address);
+    expect(terminal.labels["herdr.space"]).toBe("s1");
+    expect(desktopWorktrees(f.root).some(tree => tree.branch === "feature/v1.2/search")).toBe(true);
+    f.claim("0001", terminal);
+  } finally { f.cleanup(); }
+});
+
 test("Desktop up and delivery share a private project proxy snapshot; roles override both spellings", () => {
   const f = fixture();
   try {
@@ -279,8 +370,8 @@ test("Desktop closes only the confirmed feature iteration, preserving shared and
   const f = fixture();
   try {
     writeRole(f.root, "lead", { kind: "codex", worktree: false });
-    writeTaskMeta(f.load(), f.task(), { feature: "search", iteration: "v1.1" });
-    writeTaskMeta(f.load(), f.task("0002"), { feature: "search", iteration: "v1.2" });
+    writeTaskMeta(f.load(), f.task(), { feature: "search", iteration: "v1.1", feature_dispatched: true });
+    writeTaskMeta(f.load(), f.task("0002"), { feature: "search", iteration: "v1.2", feature_dispatched: true });
     const { binding } = desktopUp(f.load(), f.client);
     dispatch(f.load(), f.runtime(), "0001");
     dispatch(f.load(), f.runtime(), "0002");
@@ -388,7 +479,7 @@ test("Desktop clean removes an owned checkout, task terminal and native space an
 test("Desktop clean preserves ignored files, foreign panes and unconfirmed feature sessions", () => {
   const f = fixture();
   try {
-    writeTaskMeta(f.load(), f.task(), { feature: "search", iteration: "v1.2" });
+    writeTaskMeta(f.load(), f.task(), { feature: "search", iteration: "v1.2", feature_dispatched: true });
     dispatch(f.load(), f.runtime(), "0001");
     const worker = f.terminals[1]!;
     writeTaskMeta(f.load(), f.task(), { status: "done", completed_deliveries: [deliveryFor(f.task())!.id], delivery: null });

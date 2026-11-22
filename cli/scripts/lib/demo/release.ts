@@ -7,6 +7,7 @@ import { completedDeliveries, deliveryFor } from "../dispatch/delivery.ts";
 import { enqueueTask, shellQuote } from "../dispatch/queue.ts";
 import { loadProject } from "../team/project.ts";
 import { integrationFor, verifyCheckout } from "../tasks/verification.ts";
+import { findTask, writeTaskMeta } from "../tasks/cards.ts";
 import type { RoleCard, TaskCard } from "../shared/types.ts";
 import { realDesktop, savedDesktopBinding, type DesktopTerminal } from "../runtime/desktop.ts";
 import { managedContext } from "../runtime/context.ts";
@@ -141,6 +142,9 @@ export async function runRelease(root: string, options: ReleaseOptions) {
       "--handoff", handoff.join(","), "--requirement", issue,
       "--body", content?.body ?? `${lane.label}\n\n${expectation}`,
       "--feature", feature, "--priority", lane.priority ?? "P2", ...(dependency ? ["--depends-on", dependency] : []));
+    // The showcase and its manual merge smoke teach the individual task merge gate.
+    const project = loadProject(root);
+    writeTaskMeta(project, findTask(project, task.id), { feature_dispatched: true, iteration: version });
     taskBySlug.set(lane.slug, task.id);
     // Workflow purges can reuse iteration names while retaining the integrated Git files.
     const filename = `${version.toLowerCase().replace(/\./g, "-")}-${task.id}-${lane.slug}.ts`;

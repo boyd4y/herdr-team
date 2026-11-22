@@ -87,23 +87,50 @@ roles need a feature and iteration. Use `add ... --feature NAME --iteration VERS
 or set these fields on an existing task with `edit`. A task can inherit the
 linked issue's iteration.
 
-After confirming delivery, run `herdr-team feature finish NAME --iteration VERSION`.
-The daemon closes settled temporary sessions launched for that feature and
-iteration. Open assignments keep shared sessions available. Resident agents
-run until `herdr-team team down`. Task records, worktrees and branches are retained.
-Closure and failures are recorded in `daemon logs`.
-Run `herdr-team feature clean NAME --iteration VERSION` to reclaim the worktrees
-and Desktop resources of the task IDs in that confirmation.
+New Feature assignments share one worktree and Space per project, feature and
+iteration. The daemon advances one task at a time in each Feature, and separate
+Features can run concurrently. Final task review confirms the exact commit in
+the Feature branch. After validating the integrated Feature and approving its
+merge, run `herdr-team feature merge NAME --iteration VERSION --base BRANCH --commit SHA`
+from the base checkout. The daemon reclaims the merged Feature's clean workspace
+and stops its managed previews and temporary agents. Existing task-scoped
+deliveries still use `feature finish` followed by `feature clean`.
+
+### Feature previews
+
+Desktop uses an explicit project-root `herdr-preview.json` to launch a preview
+in the owned Feature checkout. Set `argv` to the development command. The program
+receives `PORT`, `HERDR_TEAM_PREVIEW_PORT`, `HERDR_TEAM_PREVIEW_APP_ID` and
+`HERDR_TEAM_PREVIEW_DATA_DIR`. Web commands should bind to the assigned
+loopback port. Use Preview in the Feature Space or
+`herdr-team feature preview NAME --iteration VERSION`.
+
+For Tauri, set `kind` to `desktop` and provide a Tauri dev command and its
+`tauriBeforeDev` command. The launcher appends a configuration override for
+the Feature's app identifier and dev URL. Example for a project with Vite:
+
+```json
+{
+  "kind": "desktop",
+  "argv": ["bun", "run", "--cwd", "app", "dev"],
+  "tauriBeforeDev": "bun run sidecar && bun run web:dev --port \"$PORT\""
+}
+```
+
+Map the assigned preview data directory in the application launcher when the
+app needs a custom state location. Applications with shared OS deep links
+must route login callbacks to the initiating preview.
 
 Agents, Tasks and Inbox commands each use a single project. Run them in that
 project or its Git worktree to select it by default. From elsewhere or when
 multiple projects match, use `--root DIR` or `--project ID`, with the ID from
 `project list`. The project list and daemon controls work from any directory.
 
-Desktop mods display team records. After final handoff, run `herdr-team task clean <id>`
-from the team Space to reclaim the task's owned Git worktree, terminals and
-native task Space. The cleanup keeps the branch and task history. It reports
-any changes or other sessions that prevent safe removal.
+Desktop mods display team records. Use `herdr-team task clean <id>` from the team
+Space to reclaim an individually scoped worktree and its terminals after final
+handoff. For shared Feature workspaces, use `herdr-team feature clean` to retry
+daemon cleanup after integration. Cleanup keeps the branch and task history and
+reports any changes or other sessions that prevent safe removal.
 
 ## Source ownership
 
