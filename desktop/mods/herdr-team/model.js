@@ -24,14 +24,13 @@ export function tasksForIteration(tasks, iteration) {
 }
 
 export function issueFolder(card) {
-  if (card.disposition === "archived") return "archive";
-  if (card.disposition === "deleted") return "trash";
-  return "current";
+  return card.disposition === "archived" ? "archive" : "current";
 }
 
-export function requirementsForIteration(requirements, iteration, type = null, folder = "current") {
-  return requirements.filter(card => (iteration === null || iterationVersion(card.iteration) === iteration) &&
-    (type === null || type === card.type) && issueFolder(card) === folder);
+export function requirementsForIteration(requirements, iteration, type = null, filter = "all") {
+  return requirements.filter(card => card.disposition !== "deleted" &&
+    (iteration === null || iterationVersion(card.iteration) === iteration) && (type === null || card.type === type) &&
+    (filter === "all" || (filter === "archive" ? card.disposition === "archived" : !card.disposition && card.status !== "accepted")));
 }
 
 /** The shown space is a lookup key, never evidence of project ownership. */

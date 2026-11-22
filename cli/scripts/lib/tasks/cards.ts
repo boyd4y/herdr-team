@@ -122,8 +122,10 @@ export interface CreatedTask {
 }
 
 export function createTask(project: Project, opts: CreateOptions): CreatedTask {
-  if (opts.requirement !== undefined && requireIssueMetadata(project, opts.requirement).acceptedAt) {
-    throw new RequirementError(`Requirement ${opts.requirement} has already been accepted`);
+  if (opts.requirement !== undefined) {
+    const issue = requireIssueMetadata(project, opts.requirement);
+    if (issue.disposition === "deleted") throw new RequirementError(`Issue ${opts.requirement} was permanently deleted`);
+    if (issue.acceptedAt) throw new RequirementError(`Requirement ${opts.requirement} has already been accepted`);
   }
   const iteration = validateIteration(opts.iteration ?? "");
   const feature = validateFeature(opts.feature ?? "");
@@ -192,6 +194,7 @@ export function linkRequirementTask(project: Project, requirement: string, taskI
       writeTaskMeta(fresh, task, { requirement: null });
       return;
     }
+    if (card.disposition === "deleted") throw new RequirementError(`Issue ${requirement} was permanently deleted`);
     if (previous === requirement) return;
     if (previous) throw new RequirementError(`Task ${taskId} is already linked to ${previous}; unlink it first`);
     if (card.acceptedAt && task.status !== "done") throw new RequirementError(`Requirement ${requirement} has already been accepted`);
@@ -239,8 +242,11 @@ export function setTaskDisposition(project: Project, id: string, disposition?: C
     } else if (!disposition) {
       assertRole(fresh, card.role, "role");
       for (const role of card.handoff) assertRole(fresh, role, "handoff entry");
-      if (typeof card.meta.requirement === "string" && requireIssueMetadata(fresh, card.meta.requirement).acceptedAt) {
-        throw new TaskError(`Task #${id} belongs to an accepted issue. Create a follow-up task instead.`);
+      if (typeof card.meta.requirement === "string") {
+        const issue = requireIssueMetadata(fresh, card.meta.requirement);
+        if (issue.disposition !== "deleted" && issue.acceptedAt) {
+          throw new TaskError(`Task #${id} belongs to an accepted issue. Create a follow-up task instead.`);
+        }
       }
       writeTaskMeta(fresh, card, { status: "todo", ...clearedAssignment });
     } else if (isTerminal(card.status)) {

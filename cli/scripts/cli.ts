@@ -165,8 +165,8 @@ const ISSUE_USAGE = `Usage: herdr-team issue <list|show|create|update|accept|arc
   update ID [--title TITLE] [--iteration VERSION]
   accept ID
   archive ID                  Move an issue to Archive
-  restore ID                  Return an issue from Archive or Trash
-  delete ID                   Move an issue to Trash
+  restore ID                  Return an issue from Archive
+  delete ID                   Permanently delete an issue
   link ISSUE_ID TASK_ID
   unlink ISSUE_ID TASK_ID
   migrate                     Convert legacy issue storage to per-issue files
@@ -443,7 +443,7 @@ function cmdBacklog(args: string[], name = "backlog"): number {
       `       herdr-team ${name} ${name === "issue" ? "update" : "edit"} ID [--title TITLE] [--priority Pn] [--type TYPE] [--body TEXT] [--acceptance TEXT] [--iteration VERSION]\n` +
       `       herdr-team ${name} <show|accept> ID\n` +
       `       herdr-team ${name} <link|unlink> ISSUE_ID TASK_ID\n` +
-      `Status values: ${[...REQUIREMENT_STATUSES, ...CARD_DISPOSITIONS].join(", ")}. --all includes Archive and Trash.\n` +
+      `Status values: ${[...REQUIREMENT_STATUSES, "archived"].join(", ")}. --all includes Archive.\n` +
       "Use a version such as v1.1. Use --iteration '' to show items without an iteration or clear an assignment. Supports --root DIR, --project ID and --json.\n",
     );
     return 0;
@@ -469,7 +469,7 @@ function cmdBacklog(args: string[], name = "backlog"): number {
     const selectedType = type === undefined ? undefined : requirementType(type);
     const selectedVersion = iteration === undefined ? undefined : validateIteration(iteration);
     const status = parsed.values.get("status");
-    const filters: readonly string[] = [...REQUIREMENT_STATUSES, ...CARD_DISPOSITIONS];
+    const filters: readonly string[] = [...REQUIREMENT_STATUSES, "archived"];
     if (status !== undefined && !filters.includes(status)) throw new UsageError(`Use one of these issue filters: ${filters.join(", ")}.`);
     const includeHidden = parsed.flags.has("all") || status !== undefined;
     const hidden = readHiddenIterations(project);
@@ -477,13 +477,13 @@ function cmdBacklog(args: string[], name = "backlog"): number {
     const rows = listIssueMetadata(project)
       .filter(card => {
         const version = iterationVersion(card.iteration);
-        return !hidden.has(version) && (includeHidden || card.disposition === undefined) && (selectedType === undefined || card.type === selectedType) &&
+        return card.disposition !== "deleted" && !hidden.has(version) && (includeHidden || card.disposition === undefined) && (selectedType === undefined || card.type === selectedType) &&
           (selectedVersion === undefined || version === selectedVersion);
       })
       .sort((a, b) => a.priority.localeCompare(b.priority) || b.id.localeCompare(a.id))
       .map(card => requirementSummary(card, linkedTasks.get(card.id) ?? []))
       .filter(card => status === undefined || (card.disposition ?? card.status) === status);
-    return out(parsed, rows, rows.length ? rows.map(render).join("\n") : "No issues match. Use issue list --all to include Archive and Trash.");
+    return out(parsed, rows, rows.length ? rows.map(render).join("\n") : "No issues match. Use issue list --all to include Archive.");
   }
   if (operation === "add") {
     const card = addRequirement(project, {
@@ -538,7 +538,7 @@ function cmdIssueDisposition(args: string[], action: "archive" | "delete" | "res
   if (!id || parsed.pos.length !== 1) throw new UsageError(`Provide one issue ID to ${action}.`);
   const project = loadValidated(resolveRoot(parsed.values.get("root")), { taskBodies: false, roleBodies: false });
   const card = setRequirementDisposition(project, id, action === "archive" ? "archived" : action === "delete" ? "deleted" : undefined);
-  return out(parsed, card, `${action === "archive" ? "Archived" : action === "delete" ? "Moved to Trash:" : "Restored"} issue ${id}.`);
+  return out(parsed, card, `${action === "archive" ? "Archived" : action === "delete" ? "Deleted" : "Restored"} issue ${id}.`);
 }
 
 function cmdIssueMigrate(args: string[]): number {

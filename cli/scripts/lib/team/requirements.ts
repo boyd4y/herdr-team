@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { withTeamLock } from "../runtime/state.ts";
 import { replaceFile } from "../shared/atomic-file.ts";
 import { PRIORITIES, type CardDisposition, type Project, type TaskCard } from "../shared/types.ts";
-import { createIssue, issueIds, listIssueMetadata, migrateIssueStore, readIssue, RequirementError, requireIssueMetadata, saveIssue, saveIssueMetadata,
+import { createIssue, eraseDeletedIssueText, issueIds, listIssueMetadata, migrateIssueStore, readIssue, RequirementError, requireIssueMetadata, saveIssue, saveIssueMetadata,
   type Requirement, type RequirementMetadata, type RequirementType } from "./issue-store.ts";
 import { loadProject } from "./project.ts";
 
@@ -168,11 +168,13 @@ export function acceptRequirement(project: Project, id: string): Requirement {
 export function setRequirementDisposition(project: Project, id: string, disposition?: CardDisposition): RequirementMetadata {
   return withTeamLock(project, "queue", () => {
     const card = requireIssueMetadata(project, id);
-    if (card.disposition === disposition) return card;
+    if (card.disposition === "deleted" && disposition !== "deleted") throw new RequirementError(`Issue ${id} was permanently deleted`);
+    if (card.disposition === disposition && disposition !== "deleted") return card;
     migrateIssueStore(project);
     const { disposition: _previous, ...metadata } = card;
     const updated = disposition === undefined ? metadata : { ...metadata, disposition };
     saveIssueMetadata(project, updated, card);
+    if (disposition === "deleted") eraseDeletedIssueText(project, id);
     return updated;
   });
 }

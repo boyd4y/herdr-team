@@ -11,7 +11,7 @@ const LABEL = { blocked: "Blocked", "needs input": "Needs input", error: "Error"
   doing: "In progress", todo: "Todo", review: "Review" };
 const label = status => LABEL[status] ?? status;
 const REQUIREMENT_STATUS = { backlog: "Backlog", planned: "Planned", "in-progress": "Active", ready: "Ready", accepted: "Accepted" };
-const REQUIREMENT_TYPES = [[null, "All"], ["requirement", "Requirements"], ["defect", "Defects"]];
+const REQUIREMENT_TYPES = [[null, "All"], ["requirement", "Requirement"], ["defect", "Defect"]];
 const WIDE = 520;
 
 // herdr-team is a bun script; GUI-launched apps often lack the user's shell PATH additions.
@@ -62,7 +62,7 @@ export default class TeamConsole extends View {
     this.popout = Boolean(props()?.task);
     this.tasks = []; this.roles = []; this.selected = props()?.task ?? null; this.error = null; this.loading = false;
     this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
-    this.issueFolder = "current"; this.issueAction = null;
+    this.issueFolder = "all"; this.issueAction = null;
     this.section = "tasks"; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
     this.inboxFolder = "active"; this.inboxRows = []; this.inboxRequest = 0; this.mail = null;
     this.bodies = new Map();
@@ -175,7 +175,7 @@ export default class TeamConsole extends View {
     this.resetInbox();
     this.binding = null; this.tasks = []; this.roles = []; this.selected = null; this.error = null; this.watchError = null; this.viewBinding = null;
     this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
-    this.issueFolder = "current"; this.issueAction = null;
+    this.issueFolder = "all"; this.issueAction = null;
     this.iteration = null; this.iterationMenu = false; this.requirementType = null;
     this.taskFolder = "current"; this.taskAction = null;
     this.bodies = new Map();
@@ -608,7 +608,7 @@ export default class TeamConsole extends View {
     this.preview = preview;
     this.selected = null;
     this.selectedRequirement = null; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
-    this.issueFolder = "current"; this.issueAction = null;
+    this.issueFolder = "all"; this.issueAction = null;
     this.resetInbox();
     if (this.preview) { this.pendingWatch?.cancel(); this.watchFor = null; }
     else this.load(cx);
@@ -689,11 +689,7 @@ export default class TeamConsole extends View {
     this.selectedRequirement = id;
     this.issueAction = null;
     this.iterationMenu = false;
-    if (id) {
-      const card = (this.preview ? sample().requirements : this.requirements).find(card => card.id === id);
-      if (card) this.issueFolder = issueFolder(card);
-      this.loadRequirement(id, cx);
-    }
+    if (id) this.loadRequirement(id, cx);
     cx.notify();
   }
 
@@ -708,12 +704,12 @@ export default class TeamConsole extends View {
           { cwd: binding.root, timeout: 50_000 });
         const updated = teamJson(result, `issue ${action}`);
         if (this.closed || this.binding !== binding) return;
-        this.requirements = this.requirements.map(row => row.id === card.id ? {
+        this.requirements = action === "delete" ? this.requirements.filter(row => row.id !== card.id) : this.requirements.map(row => row.id === card.id ? {
           ...row, acceptedAt: updated.acceptedAt, disposition: updated.disposition,
           status: updated.acceptedAt ? "accepted" : row.status,
         } : row);
         if (this.issueAction === request) {
-          this.issueFolder = issueFolder(updated);
+          if (action === "delete") this.selectedRequirement = null;
           this.issueAction = null;
         }
         this.load(cx);
@@ -734,7 +730,7 @@ export default class TeamConsole extends View {
     const visibleRole = name => showcase ? name?.replace(/^demo-(dev|test|review)$/, "$1") : name;
     const remoteMachine = !this.preview && (this.pinned?.machine ?? this.place?.machine);
     const setup = !this.binding && !this.resolving ? this.setup : null;
-    const requirements = demo?.requirements ?? this.requirements;
+    const requirements = (demo?.requirements ?? this.requirements).filter(card => card.disposition !== "deleted");
     const tasks = sortTasks(tasksWithIterations(demo?.tasks ?? this.tasks, requirements));
     const folderTasks = tasksForIteration(tasks, this.iteration);
     const iterationTasks = folderTasks.filter(task => taskFolder(task) === "current");
@@ -1039,13 +1035,16 @@ export default class TeamConsole extends View {
           .child(div().flex_1().min_w(0).truncate().child(iterationTitle(value)))
           .when(value === this.iteration, el => el.child(svg(ICON("check")).size(12).flex_none().text_color(t.accent))))));
     const requirementList = v_flex().min_w(0).gap(8)
-      .child(folderTabs("issue", this.issueFolder, (folder, cx) => { this.issueFolder = folder; cx.notify(); }))
-      .child(h_flex().gap(2).p(2).rounded(7).bg(t.raised).flex_wrap()
-        .children(REQUIREMENT_TYPES.map(([type, name], index) => segment(`requirement-type-${index}`, name,
-          type === this.requirementType, cx => { this.requirementType = type; cx.notify(); }))))
+      .child(h_flex().id("issue-filters").items_center().justify_between().flex_wrap().gap(6)
+        .child(h_flex().flex_none().gap(2).p(2).rounded(7).bg(t.raised)
+          .children([["all", "All"], ["active", "Active"], ["archive", "Archive"]].map(([filter, name]) =>
+            segment(`issue-folder-${filter}`, name, this.issueFolder === filter, cx => { this.issueFolder = filter; cx.notify(); }))))
+        .child(h_flex().flex_none().gap(2).p(2).rounded(7).bg(t.raised)
+          .children(REQUIREMENT_TYPES.map(([type, name], index) => segment(`requirement-type-${index}`, name,
+            type === this.requirementType, cx => { this.requirementType = type; cx.notify(); })))))
       .child(v_flex().gap(1).children(visibleRequirements.map(requirementRow))
         .when(!visibleRequirements.length, el => el.child(div().px(6).py(14).text_size(12).text_color(t.muted)
-          .child(this.issueFolder === "archive" ? "No archived issues match." : this.issueFolder === "trash" ? "No deleted issues match."
+          .child(this.issueFolder === "archive" ? "No archived issues match." : this.issueFolder === "active" ? "No active issues match."
             : requirements.length ? "No items match these filters." : "No requirements or defects yet."))));
     const requirementPage = card => {
       const detail = this.preview ? card : this.requirementDetails.get(card.id);
@@ -1071,15 +1070,15 @@ export default class TeamConsole extends View {
             cx => this.changeIssue(card, "archive", cx), false, action?.busy)))
           .when(canEditIssue && folder !== "current", el => el.child(actionButton("issue-restore", "Restore",
             cx => this.changeIssue(card, "restore", cx), false, action?.busy)))
-          .when(canEditIssue && folder !== "trash", el => el.child(actionButton("issue-delete", "Delete", cx => {
+          .when(canEditIssue, el => el.child(actionButton("issue-delete", "Delete", cx => {
             this.issueAction = { id: card.id, action: "delete" }; cx.notify();
           }, true, action?.busy))))
         .when(Boolean(action && !action.busy && !action.error), el => el.child(v_flex().p(10).gap(8).rounded(7).bg(t.surface)
-          .child(div().font_semibold().child(`Move ${card.id} to Trash?`))
-          .child(div().text_size(12).text_color(t.muted).child("The issue can be restored from Trash."))
+          .child(div().font_semibold().child(`Delete ${card.id}?`))
+          .child(div().text_size(12).text_color(t.muted).child("This permanently deletes the issue. Linked tasks are kept."))
           .child(h_flex().gap(6).flex_wrap()
             .child(actionButton("issue-action-back", "Go back", cx => { this.issueAction = null; cx.notify(); }))
-            .child(actionButton("issue-action-confirm", "Move to Trash", cx => this.changeIssue(card, "delete", cx), true)))))
+            .child(actionButton("issue-action-confirm", "Delete issue", cx => this.changeIssue(card, "delete", cx), true)))))
         .when(Boolean(action?.busy), el => el.child(div().text_size(12).text_color(t.muted).child("Updating issue…")))
         .when(Boolean(action?.error), el => el.child(div().text_size(12).text_color(t.blocked).child(action?.error)))
         .child(h_flex().gap(6).items_center().flex_wrap().child(typePill(card.type))

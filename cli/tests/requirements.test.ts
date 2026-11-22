@@ -83,7 +83,7 @@ test("requirements and defects share an optional iteration; old and independent 
   } finally { fixture.cleanup(); }
 });
 
-test("single-issue archive, Trash and restore preserve linked work and acceptance", () => {
+test("issues can be restored from Archive and deleted permanently while linked tasks are kept", () => {
   const fixture = makeProject();
   try {
     const { root } = fixture;
@@ -110,18 +110,15 @@ test("single-issue archive, Trash and restore preserve linked work and acceptanc
     expect(json("issue", "show", id)).toEqual({ ...original, disposition: "archived" });
     expect(json("task", "show", task.id)).toEqual(linked);
 
-    expect(json("issue", "delete", id)).toMatchObject({ id, disposition: "deleted" });
-    expect(json("issue", "list", "--status", "archived")).toEqual([]);
-    expect(json("issue", "list", "--status", "deleted")).toMatchObject([{ id }]);
     json("issue", "restore", id);
     expect(json("issue", "show", id)).toEqual(original);
-
-    json("issue", "unlink", id, task.id);
-    const { acceptedAt } = json("issue", "accept", id);
-    expect(typeof acceptedAt).toBe("string");
     json("issue", "delete", id);
-    json("issue", "restore", id);
-    expect(json("issue", "list", "--status", "accepted")).toMatchObject([{ id, acceptedAt, status: "accepted" }]);
+    expect(json("issue", "list", "--all")).toEqual([]);
+    expect(run("issue", "show", id).exitCode).toBe(2);
+    expect(run("issue", "restore", id).exitCode).toBe(2);
+    expect(existsSync(join(root, ".herdr", "issues", id, "issue.md"))).toBe(false);
+    expect(json("task", "show", task.id)).toEqual(linked);
+    expect(json("issue", "create", "Another issue").id).not.toBe(id);
   } finally { fixture.cleanup(); }
 });
 

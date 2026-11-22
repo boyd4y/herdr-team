@@ -72,9 +72,9 @@ test("issue folders compose with the type and iteration filters", () => {
     { id: "R0003", iteration: "v1.2", type: "requirement", disposition: "deleted" },
     { id: "R0004", iteration: "v1.3", type: "defect", disposition: "archived" },
   ];
-  assert.deepEqual(requirementsForIteration(cards, null), [cards[0]]);
+  assert.deepEqual(requirementsForIteration(cards, null), [cards[0], cards[1], cards[3]]);
+  assert.deepEqual(requirementsForIteration(cards, null, null, "active"), [cards[0]]);
   assert.deepEqual(requirementsForIteration(cards, "v1.2", "defect", "archive"), [cards[1]]);
-  assert.deepEqual(requirementsForIteration(cards, null, null, "trash"), [cards[2]]);
 });
 
 test("both task views use the shared iteration and retain task-only versions", () => {

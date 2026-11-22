@@ -163,14 +163,16 @@ export function readIssue(project: IssueProject, id: string): Requirement {
     const store = issueCollection(project);
     if ("legacy" in store) {
       const found = store.legacy.find(card => card.id === id);
-      if (found) return found;
+      if (found && found.disposition !== "deleted") return found;
     } else {
       const directory = join(store.root, id);
-      if (exists(directory, "directory")) return {
-        ...readMetadata(directory, id),
-        body: readFileSync(join(directory, bodyName), "utf8"),
-        acceptance: readFileSync(join(directory, acceptanceName), "utf8"),
-      };
+      if (exists(directory, "directory")) {
+        const fields = readMetadata(directory, id);
+        if (fields.disposition !== "deleted") return {
+          ...fields, body: readFileSync(join(directory, bodyName), "utf8"),
+          acceptance: readFileSync(join(directory, acceptanceName), "utf8"),
+        };
+      }
     }
   }
   throw new RequirementError(`Requirement ${id} not found`);
@@ -233,4 +235,11 @@ export function saveIssueMetadata(project: IssueProject, card: RequirementMetada
   const { id: _oldId, ...oldFields } = previous;
   const yaml = emitYaml(fields, metadataOrder);
   if (yaml !== emitYaml(oldFields, metadataOrder)) replaceFile(join(issueRoot(project), id, metadataName), yaml, 0o600);
+}
+
+export function eraseDeletedIssueText(project: IssueProject, id: string): void {
+  const path = join(issueRoot(project), id);
+  // The metadata tombstone keeps the ID reserved and preserves linked task schedules.
+  rmSync(join(path, bodyName), { force: true });
+  rmSync(join(path, acceptanceName), { force: true });
 }
