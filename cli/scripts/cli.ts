@@ -996,7 +996,8 @@ async function cmdDaemon(args: string[]): Promise<number> {
   if (operation !== "start") logDaemon(`daemon.${operation}`, {
     state: result.state, daemonPid: result.pid, projects: result.teams?.length ?? 0,
   });
-  return out(parsed, result, [
+  const directory = daemonDirectory();
+  return out(parsed, operation === "status" ? { ...result, directory: existsSync(directory) ? realpathSync(directory) : directory } : result, [
     `Team daemon ${result.state}${result.pid ? ` (PID ${result.pid})` : ""}`,
     ...(result.teams ?? []).map(team => `  ${team.runtime} ${team.space}  ${team.root}${team.error ? `  (${team.error})` : ""}`),
     ...(result.state === "running" && !result.teams?.length ? ["  No active projects."] : []),

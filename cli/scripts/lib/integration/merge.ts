@@ -68,9 +68,10 @@ export function mergeTask(project: Project, id?: string, migrate?: string, githu
       } else git(repo, "merge", "--no-ff", "--no-edit", item.commit);
       if (migrate !== undefined) {
         if (!migrate.trim()) throw new TaskError("Migration command cannot be empty");
-        const run = spawnSync(process.env.SHELL || "/bin/sh", ["-c", migrate], {
-          cwd: repo, encoding: "utf8", timeout: 600_000, maxBuffer: 4 * 1024 * 1024,
-        });
+        const options = { cwd: repo, encoding: "utf8" as const, timeout: 600_000, maxBuffer: 4 * 1024 * 1024 };
+        const run = process.platform === "win32"
+          ? spawnSync(migrate, { ...options, shell: true, windowsHide: true })
+          : spawnSync(process.env.SHELL || "/bin/sh", ["-c", migrate], options);
         if (run.error || run.status !== 0) throw new TaskError(`Local migration failed: ${run.error?.message ?? (run.stderr || run.stdout).trim()}`);
       }
       transition("done");

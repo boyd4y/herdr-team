@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import {
   ID_RE,
   KINDS,
@@ -26,9 +27,11 @@ const TITLE_MAX = 80;
 
 /** 相对项目根、且不逃逸。返回错误说明，合法时返回 null。 */
 function cwdProblem(cwd: string): string | null {
-  if (cwd.startsWith("/") || cwd.startsWith("~")) return "must be relative to the project root";
+  if (isAbsolute(cwd) || cwd.startsWith("~") || process.platform === "win32" && /^[a-z]:/i.test(cwd)) {
+    return "must be relative to the project root";
+  }
   let depth = 0;
-  for (const part of cwd.split("/")) {
+  for (const part of cwd.split(process.platform === "win32" ? /[\\/]/ : "/")) {
     if (part === "" || part === ".") continue;
     if (part === "..") {
       depth -= 1;

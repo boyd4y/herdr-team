@@ -46,7 +46,7 @@ function mainCheckoutRoot(dir: string): string | null {
     // （跑测试时段错误过一次，Bun 自己报的 "bug in Bun"）。
     const proc = spawnSync("git", ["-C", dir, "rev-parse", "--git-common-dir"], {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
     });
     if (proc.status !== 0 || proc.stdout === null) return null;
     const common = proc.stdout.trim();
@@ -83,9 +83,9 @@ export function findRoot(start: string): string | null {
 export function findTeamRoots(start: string, includeAgentConfig = false): string[] {
   const directory = canonical(resolve(start));
   const git = spawnSync("git", ["-C", directory, "rev-parse", "--show-toplevel", "--git-common-dir"], {
-    encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
   });
-  const [top, common] = git.status === 0 ? git.stdout.trimEnd().split("\n") : [];
+  const [top, common] = git.status === 0 ? git.stdout.trimEnd().split(/\r?\n/) : [];
   const checkout = top && canonical(top);
   const main = common && canonical(dirname(resolve(directory, common)));
   const linked = checkout && main && checkout !== main;

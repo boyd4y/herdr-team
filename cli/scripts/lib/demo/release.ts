@@ -59,8 +59,9 @@ const roles = [
 interface CleanupRow { id: string; action: string; note: string }
 
 export function installMockRoles(root: string, area: string, serviceHome = process.env.HERDR_TEAM_HOME) {
-  const bin = join(area, "mock-bin");
-  mkdirSync(bin, { recursive: true, mode: 0o700 });
+  // Windows Core launches Bun directly so the assignment remains an argv value.
+  const bin = process.platform === "win32" ? undefined : join(area, "mock-bin");
+  if (bin) mkdirSync(bin, { recursive: true, mode: 0o700 });
   const entry = fileURLToPath(new URL("task-agent.ts", import.meta.url));
   const shell = `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(entry)} "$@"\n`;
   const manifest = join(area, "run.json");
@@ -89,13 +90,15 @@ export function installMockRoles(root: string, area: string, serviceHome = proce
   });
   return roles.map(({ harness, stage, responsibility }) => {
     const old = existing.get(stage);
-    const program = join(bin, harness);
-    const stat = lstatSync(program, { throwIfNoEntry: false });
-    if (stat && !stat.isFile()) throw new Error(`The demo launcher is not a regular file: ${program}`);
-    if (stat && readFileSync(program, "utf8") !== shell) {
-      if (!old) throw new Error(`The demo launcher path is already in use: ${program}`);
-      writeFileSync(program, shell, { mode: 0o700 });
-    } else if (!stat) writeFileSync(program, shell, { flag: "wx", mode: 0o700 });
+    if (bin) {
+      const program = join(bin, harness);
+      const stat = lstatSync(program, { throwIfNoEntry: false });
+      if (stat && !stat.isFile()) throw new Error(`The demo launcher is not a regular file: ${program}`);
+      if (stat && readFileSync(program, "utf8") !== shell) {
+        if (!old) throw new Error(`The demo launcher path is already in use: ${program}`);
+        writeFileSync(program, shell, { mode: 0o700 });
+      } else if (!stat) writeFileSync(program, shell, { flag: "wx", mode: 0o700 });
+    }
     const environment = [`PATH=${demoPath(bin)}`, `HERDR_SMOKE_MANIFEST=${manifest}`,
       `HERDR_SMOKE_STEP=${stage}`, `HERDR_SMOKE_HARNESS=${harness}`];
     if (serviceHome) environment.push(`HERDR_TEAM_HOME=${serviceHome}`);

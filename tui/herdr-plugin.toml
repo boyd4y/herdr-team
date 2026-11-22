@@ -3,7 +3,7 @@ name = "Herdr Team"
 version = "0.1.56"
 min_herdr_version = "0.9.3"
 description = "Project agent teams with a skill, CLI, sidebar and managed Team Console."
-platforms = ["linux", "macos"]
+platforms = ["linux", "macos", "windows"]
 
 # GitHub installs perform setup once. Local links use the actions below.
 # Node finds the workspace script from either GitHub install path, root or tui/.
@@ -14,7 +14,8 @@ command = ["node", "--run", "setup:tui"]
 id = "console"
 title = "console"
 placement = "tab"
-command = ["env", "HERDR_TEAM_TUI_VIEW=1", "herdr-team"]
+# Pane cwd is the project. The host supplies the separate plugin root.
+command = ["bun", "-e", "await import(require('node:url').pathToFileURL(require('node:path').join(process.env.HERDR_PLUGIN_ROOT, 'bin', 'console.mjs')).href)"]
 
 [[actions]]
 id = "open-console"

@@ -7,6 +7,7 @@ import { demoContent } from "../scripts/lib/demo/content.ts";
 import { showcaseLanes } from "../scripts/lib/demo/release.ts";
 import { smokeSource } from "../scripts/lib/demo/scenario.ts";
 import { checkArtifact } from "../scripts/lib/demo/shared.ts";
+import { windowsMockArgv, windowsMockProgram } from "../scripts/lib/demo/windows-launcher.ts";
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "herdr-demo-test-"));
@@ -14,6 +15,15 @@ function fixture() {
   const save = (record: unknown) => writeFileSync(join(root, ".herdr/demo.json"), JSON.stringify(record));
   return { root, save, clean: () => rmSync(root, { recursive: true, force: true }) };
 }
+
+test("the Windows mock launcher only identifies its own bundled script and harness", () => {
+  const argv = windowsMockArgv("grok");
+  expect(argv[0]).toBe(process.execPath);
+  expect(windowsMockProgram([...argv, "line one\nline two"])).toBe("grok");
+  expect(windowsMockProgram([argv[0]!, "elsewhere.ts", "grok"])).toBeUndefined();
+  expect(windowsMockProgram([argv[0]!, argv[1]!, "unknown"])).toBeUndefined();
+  expect(() => windowsMockArgv("unknown")).toThrow("Unknown demo harness");
+});
 
 test("local demo controls are opt-in, validated and overridden by environment", () => {
   const f = fixture();

@@ -1,9 +1,10 @@
 import { View, div, image, svg } from "gpui-kit";
 import { Button, Popover, TextView, h_flex, v_flex } from "gpui-base";
-import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder } from "herdr";
+import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder, window } from "herdr";
 import { boardColumns, consoleBinding, filterInbox, flowNodes, groupIssues, INBOX_FILTERS, issueStatusLabel, iterationGroups, iterationVersion, listFilters, listTasks,
   roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
 import { sample } from "./sample.js";
+import { absolutePath, childPath, pathKey, teamArgv } from "./platform.js";
 
 const ICON = name => `mods/workspace-chrome/${name}.svg`;
 const LABEL = { blocked: "Blocked", "needs input": "Needs input", error: "Error", working: "Working", done: "Done", idle: "Idle", unknown: "Unknown",
@@ -13,9 +14,11 @@ const label = status => LABEL[status] ?? status;
 const REQUIREMENT_TYPES = [[null, "All"], ["requirement", "Requirement"], ["defect", "Defect"]];
 const WIDE = 520;
 
-// herdr-team is a bun script; GUI-launched apps often lack the user's shell PATH additions.
-const team = (args, options) => exec("sh", ["-c", 'PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH" exec herdr-team "$@"', "herdr-team", ...args], options);
-const teamStateFolder = options => exec("sh", ["-c", 'cd -P "${HERDR_TEAM_HOME:-$HOME/.herdr-team}" && pwd -P'], options);
+const team = (args, options, onFolder) => {
+  const [command, ...argv] = teamArgv(args, window()?.platform, { ...options, onFolder });
+  return exec(command, argv, options);
+};
+const teamStateFolder = async options => teamJson(await team(["daemon", "status", "--json"], options), "daemon status").directory;
 const firstLine = value => (value || "").trim().split("\n", 1)[0].replace(/^Error:\s*/, "");
 const errorMessage = error => error instanceof Error ? error.message : String(error);
 function teamJson(result, command, type = "object") {
@@ -36,7 +39,7 @@ async function initializedProject(cwd) {
   const result = await team(["project", "show", "--json"], { cwd, timeout: 10000 });
   if (result.code !== 0) return null;
   const project = teamJson(result, "project show");
-  if (!project.registered || !project.root?.startsWith("/")) return null;
+  if (!project.registered || !absolutePath(project.root)) return null;
   const validation = await team(["team", "validate", "--root", project.root], { timeout: 10000 });
   return validation.code === 0 ? project.root : null;
 }
@@ -105,7 +108,7 @@ export default class TeamConsole extends View {
       const tab = space.tabs.find(tab => tab.active);
       const cwd = (focus?.space === space.id ? focus.cwd : null) ??
         (tab && panes().find(pane => pane.tab === tab.id && pane.terminal && pane.cwd)?.cwd) ?? space.folder;
-      if (cwd?.startsWith("/") && (force || this.setup?.space !== space.id || this.setup?.cwd !== cwd)) {
+      if (absolutePath(cwd) && (force || this.setup?.space !== space.id || this.setup?.cwd !== cwd)) {
         if (this.setup?.cwd !== cwd) this.setPreview(false, cx);
         this.setupConfigWatch?.cancel();
         const setup = this.setup = { space: space.id, cwd, action: null, busy: true, error: "" };
@@ -129,7 +132,7 @@ export default class TeamConsole extends View {
         });
         return;
       }
-      if (cwd?.startsWith("/")) return;
+      if (absolutePath(cwd)) return;
     }
     this.setupWatch?.cancel();
     this.setupConfigWatch?.cancel();
@@ -138,7 +141,9 @@ export default class TeamConsole extends View {
 
   watchSetupConfig(setup, cx, root = setup.root) {
     this.setupConfigWatch?.cancel();
-    const config = `${root}/.herdr`;
+    const config = pathKey(childPath(root, ".herdr"));
+    const agreement = pathKey(childPath(root, "TEAM.md"));
+    const agentConfig = pathKey(childPath(root, "agents.json"));
     cx.spawn(async cx => {
       // Watch the parent so removing .herdr itself invalidates the ready state.
       while (!this.closed && this.setup === setup && !this.binding) {
@@ -146,8 +151,8 @@ export default class TeamConsole extends View {
         try {
           const paths = await pending;
           if (!paths.length || this.setupConfigWatch !== pending || this.setup !== setup || this.closed) break;
-          if (!paths.some(path => path === root || path === config || path.startsWith(config + "/roles/") ||
-            path === `${root}/TEAM.md` || path === `${root}/agents.json`)) continue;
+          if (!paths.map(pathKey).some(path => path === pathKey(root) || path === config || path.startsWith(config + "/roles/") ||
+            path === agreement || path === agentConfig)) continue;
           if (setup.action === "up") {
             this.follow(cx, true);
             break;
@@ -210,7 +215,7 @@ export default class TeamConsole extends View {
       try {
         const args = ["space", "show", "--space", target.localId, "--json"];
         if (machine) args.push("--core");
-        const result = await team(args, { on: machine, timeout: 10000 });
+        const result = await team(args, { on: machine, timeout: 10000 }, target.space.folder);
         if (this.closed || this.followGeneration !== generation) return;
         const record = teamJson(result, "space show").binding;
         const binding = consoleBinding(record, target.space);
@@ -260,18 +265,18 @@ export default class TeamConsole extends View {
     const runtime = this.runtime = { binding, running: null };
     cx.spawn(async cx => {
       try {
-        const result = await teamStateFolder({ cwd: binding.root, timeout: 10000 });
+        const path = await teamStateFolder({ cwd: binding.root, timeout: 10000 });
         if (this.closed || this.runtime !== runtime) return;
-        const path = result.stdout.trim();
-        if (result.code !== 0 || !path.startsWith("/")) { await this.readRuntime(runtime, cx); return; }
+        if (!absolutePath(path)) { await this.readRuntime(runtime, cx); return; }
+        const key = pathKey(path), teams = pathKey(childPath(path, "teams")), record = pathKey(childPath(path, "daemon.json"));
         let changed = true;
         while (!this.closed && this.runtime === runtime) {
           runtime.pending = watchFolder(path);
           if (changed) await this.readRuntime(runtime, cx);
           const paths = await runtime.pending;
           if (!paths.length) break;
-          changed = paths.some(file => file === path || file === `${path}/daemon.json` ||
-            file === `${path}/teams` || (file.startsWith(`${path}/teams/`) && file.endsWith(".json")));
+          changed = paths.map(pathKey).some(file => file === key || file === record ||
+            file === teams || (file.startsWith(`${teams}/`) && file.endsWith(".json")));
         }
       } catch {
         if (this.runtime === runtime && runtime.running === null) await this.readRuntime(runtime, cx);
@@ -371,7 +376,7 @@ export default class TeamConsole extends View {
     cx.spawn(async cx => {
       try {
         while (!this.closed && !this.preview && this.binding === binding) {
-          const pending = this.pendingWatch = watchFolder(`${binding.root}/.herdr`);
+          const pending = this.pendingWatch = watchFolder(childPath(binding.root, ".herdr"));
           const paths = await pending;
           if (this.pendingWatch === pending) this.pendingWatch = null;
           if (this.closed || this.preview || this.binding !== binding) break;
@@ -471,15 +476,15 @@ export default class TeamConsole extends View {
       try {
         // Resolve the same local state directory as the CLI. Other files here,
         // including logs written by inbox reads, do not affect the mail view.
-        const result = await teamStateFolder(
+        const path = await teamStateFolder(
           { cwd: binding.root, on: binding.machine, timeout: 10000 });
-        const path = result.stdout.trim();
-        if (result.code !== 0 || !path.startsWith("/")) return;
+        if (!absolutePath(path)) return;
+        const key = pathKey(path), mail = pathKey(childPath(path, "agentmail"));
         while (current()) {
           watch.pending = watchFolder(path);
           const paths = await watch.pending;
-          if (current() && paths.some(changed => changed === path || changed === `${path}/agentmail` ||
-              changed.startsWith(`${path}/agentmail/`))) this.loadInbox(cx);
+          if (current() && paths.map(pathKey).some(changed => changed === key || changed === mail ||
+              changed.startsWith(`${mail}/`))) this.loadInbox(cx);
         }
       } catch {
         // The refresh button remains available if the state directory cannot be watched.
@@ -534,7 +539,7 @@ export default class TeamConsole extends View {
         let root = setup.cwd;
         try {
           const git = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: setup.cwd, timeout: 3000 });
-          if (git.code === 0 && git.stdout.trim().startsWith("/")) root = git.stdout.trim();
+          if (git.code === 0 && absolutePath(git.stdout.trim())) root = git.stdout.trim();
         } catch { /* A project can also be a standalone folder. */ }
         if (this.closed || this.setup !== setup || this.target()?.space.id !== setup.space || setup.action !== "init") return;
         const argv = agent.key === "codex" ? agent.run.filter((arg, index) => index === 0 || arg !== "--daemon") : agent.run;
@@ -562,7 +567,7 @@ export default class TeamConsole extends View {
         if (setup.action === "init") {
           const result = await team(["team", "init", "--json"], { cwd: setup.cwd, timeout: 15000 });
           const init = teamJson(result, "team init");
-          if (!init.registered || !init.root?.startsWith("/")) throw new Error("Update the shared herdr-team CLI to register a project with Init.");
+          if (!init.registered || !absolutePath(init.root)) throw new Error("Update the shared herdr-team CLI to register a project with Init.");
           setup.action = "up"; setup.root = init.root;
           if (current()) {
             this.setPreview(false, cx);
@@ -575,7 +580,8 @@ export default class TeamConsole extends View {
             this.follow(cx, true);
             return;
           }
-          const folder = `${setup.root}/.herdr`;
+          const folder = childPath(setup.root, ".herdr");
+          const key = pathKey(folder), record = pathKey(childPath(folder, "desktop.json"));
           const watching = () => !this.closed && this.place?.id === setup.space && !this.binding;
           this.setupWatch?.cancel();
           cx.spawn(async cx => {
@@ -584,7 +590,7 @@ export default class TeamConsole extends View {
               try {
                 const paths = await pending;
                 if (!paths.length || !watching() || this.setupWatch !== pending) break;
-                if (paths.some(path => path === folder || path.endsWith("/desktop.json"))) {
+                if (paths.map(pathKey).some(path => path === key || path === record)) {
                   this.follow(cx, true); break;
                 }
               } catch { break; }
@@ -599,8 +605,11 @@ export default class TeamConsole extends View {
   }
 
   launchTeam({ root, space, cwd }) {
+    const platform = window()?.platform;
+    const argv = platform === "windows" ? teamArgv(["team", "up", "--root", root], platform) :
+      ["zsh", "-ilc", 'PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"; export PATH; herdr-team team up --root "$1" || exec zsh -i', "herdr-team", root];
     run("tab.new", { name: "Team Up", space, folder: cwd, focus: true,
-      argv: ["zsh", "-ilc", 'PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"; export PATH; herdr-team team up --root "$1" || exec zsh -i', "herdr-team", root] });
+      argv });
   }
 
   startStoppedTeam(cx) {

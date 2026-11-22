@@ -9,6 +9,15 @@ HERDR_TEAM_DEMO=1 herdr-team team init
 herdr-team team up
 ```
 
+Windows PowerShell 中可以这样初始化并启动。
+
+```powershell
+$env:HERDR_TEAM_DEMO = '1'
+herdr-team team init
+Remove-Item Env:HERDR_TEAM_DEMO
+herdr-team team up
+```
+
 初始化会在忽略的 `.herdr/demo.json` 中保存设置。已有 `"kind": "herdr-team-demo"` 的项目默认启用，可用 `"enabled": false` 暂停自动启动。正常启动使用 `herdr-team team up`，角色显示为 `dev`、`test` 和 `review`。
 
 ```json

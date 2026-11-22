@@ -41,6 +41,12 @@ Install Herdr Desktop, Node.js 22+ and Bun 1.3.14+. From a single checkout of th
 npm run setup:desktop
 ```
 
+On Windows x64, use Git for Windows and make `bun.exe` and the agent CLI
+available on your user PATH. The installer puts `herdr-team.cmd` in Bun's
+`bin` directory (`%USERPROFILE%\.bun\bin` by default), or in `XDG_BIN_HOME`
+when set. The destination must already be on PATH. In PowerShell, you can run
+`npm.cmd run setup:desktop` to use npm's command launcher.
+
 In Herdr, select the `herdr-team` layout. Inside a project terminal,
 run `herdr-team team up` to establish the binding and start resident roles.
 Isolated roles start when dispatched.
@@ -173,7 +179,7 @@ herdr plugin link ./tui
 npm run setup:tui
 ```
 
-From within a managed TUI session, `herdr plugin action invoke herdr-team.install` also applies the setup and reloads the config. For a GitHub install, use `herdr plugin install boyd4y/herdr-team/tui --ref main`. Existing repo-root installs can continue to update through the original source. The [team runtime guide](docs/team-runtime.md) covers CLI-only and Skill-only installs.
+From within a managed TUI session, `herdr plugin action invoke herdr-team.install` also applies the setup and reloads the config. For a GitHub install, use `herdr plugin install boyd4y/herdr-team/tui --ref main`. On Windows, use the `tui` directory for local and GitHub installs. Existing repo-root installs on macOS and Linux can continue to update through the original source. The [team runtime guide](docs/team-runtime.md) covers CLI-only and Skill-only installs.
 
 ## Design and contribution
 

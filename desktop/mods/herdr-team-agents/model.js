@@ -1,3 +1,5 @@
+import { absolutePath } from "./platform.js";
+
 // Match the installed Spaces mod's avatar colors, indexed by actual space ID.
 const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
 export function spaceColor(id, colors, theme) {
@@ -8,7 +10,7 @@ export function spaceColor(id, colors, theme) {
 /** Validate explicit terminal scope; a display name never supplies ownership. */
 export function agentTeam(agent, terminal) {
   const labels = terminal?.labels;
-  if (terminal?.address !== agent.address || terminal.state !== "live" || !labels?.["team.project"]?.startsWith("/") || !labels["team.role"]) return null;
+  if (terminal?.address !== agent.address || terminal.state !== "live" || !absolutePath(labels?.["team.project"]) || !labels["team.role"]) return null;
   const machine = agent.address.includes("/") ? agent.address.slice(0, agent.address.indexOf("/")) : null;
   const prefix = machine ? `${machine}/` : "";
   if (prefix && !agent.space.startsWith(prefix) || !prefix && agent.space.includes("/")) return null;

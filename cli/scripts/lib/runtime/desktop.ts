@@ -1,9 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, win32 } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { withTeamLock } from "./state.ts";
 import { desktopLaunchEnv } from "./agent-env.ts";
+import { windowsAgentExecutable } from "./windows-agent.ts";
+import { windowsMockArgv, windowsMockProgram } from "../demo/windows-launcher.ts";
+import { outsideRoot } from "../shared/paths.ts";
 import { startsResident, type Project, type RoleCard } from "../shared/types.ts";
 
 export const desktopDocument = "herdr-team";
@@ -33,14 +36,24 @@ export interface DesktopClient {
   closeEmptyTaskSpace(space: string, removedTerminals: ReadonlySet<string>): void;
 }
 
-export function desktopAgentProgram(terminal: DesktopTerminal): string | undefined {
-  const program = basename(terminal.argv[0] ?? "");
+export function desktopAgentProgram(terminal: DesktopTerminal, platform = process.platform): string | undefined {
+  if (platform === "win32" && terminal.labels["team.mock"] === "1") return windowsMockProgram(terminal.argv);
+  const executable = terminal.argv[0] ?? "";
+  const program = platform === "win32" ? win32.basename(executable).toLowerCase().replace(/\.exe$/, "") : basename(executable);
   if (program === "claude" || program === "codex" || program === "grok" && terminal.labels["team.mock"] === "1") return program;
+}
+
+export function desktopProgramMatches(terminal: DesktopTerminal, argv: string[], platform = process.platform): boolean {
+  if (platform !== "win32") return basename(terminal.argv[0] ?? "") === basename(argv[0] ?? "");
+  const mock = windowsMockProgram(argv);
+  if (mock) return desktopAgentProgram(terminal, platform) === mock && terminal.labels["team.mock"] === "1";
+  const actual = terminal.argv[0], expected = argv[0];
+  return Boolean(actual && expected && win32.isAbsolute(actual) && win32.relative(actual, expected) === "");
 }
 
 export function realDesktop(): DesktopClient {
   function execute(command: string, args: string[], input?: string) {
-    const result = spawnSync(command, args, { input, encoding: "utf8", timeout: 80_000, maxBuffer: 4 * 1024 * 1024 });
+    const result = spawnSync(command, args, { input, encoding: "utf8", timeout: 80_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
     if (result.error || result.status !== 0) throw new DesktopError(`${command}: ${result.error?.message ?? result.stderr.trim() ?? "Command failed"}`);
     return result.stdout;
   }
@@ -86,8 +99,12 @@ export function realDesktop(): DesktopClient {
       const mockManifest = env?.HERDR_SMOKE_MANIFEST;
       const command = kind === "claude" || kind === "codex" || kind === "grok" && mockManifest ? kind : null;
       if (!command) throw new DesktopError(`Desktop resident launch is not implemented for ${kind}`);
-      const path = Bun.which(command, { PATH: env?.PATH ?? process.env["PATH"] });
-      if (!path) throw new DesktopError(`${command} is not on PATH`);
+      const PATH = env?.PATH ?? process.env["PATH"];
+      const nativeWindows = process.platform === "win32" && command !== "grok";
+      const path = nativeWindows ? windowsAgentExecutable(command, PATH) : Bun.which(command, { PATH });
+      if (!path) throw new DesktopError(nativeWindows
+        ? `Cannot find the native Windows ${command}.exe. Install the official ${command} CLI and place it on PATH.`
+        : `${command} is not on PATH`);
       if (kind === "grok" && path !== join(dirname(mockManifest!), "mock-bin", "grok")) {
         throw new DesktopError("The Grok demo launcher must be in the project's mock-bin");
       }
@@ -272,14 +289,16 @@ export function roleArgv(role: RoleCard, client: DesktopClient) {
     if (!args.includes("--no-daemon")) args.push("--no-daemon");
     if (role.model && role.model !== "default" && !args.includes("-m") && !args.includes("--model")) args.push("-m", role.model);
   } else if (role.kind === "claude" && role.model && role.model !== "default" && !args.includes("--model")) args.push("--model", role.model);
-  return [client.executable(role.kind, role.env), ...args];
+  const command = process.platform === "win32" && role.env?.HERDR_SMOKE_MANIFEST
+    ? windowsMockArgv(role.kind) : [client.executable(role.kind, role.env)];
+  return [...command, ...args];
 }
 
 export function desktopLaunchArgv(role: RoleCard, argv: string[], checkout: string, cwd: string): string[] {
-  if (role.kind !== "codex") return argv;
+  if (role.kind !== "codex" || process.platform === "win32" && role.env?.HERDR_SMOKE_MANIFEST) return argv;
   const root = realpathSync(checkout), directory = realpathSync(cwd);
   const offset = relative(root, directory);
-  if (offset === ".." || offset.startsWith(".." + sep) || isAbsolute(offset)) return argv;
+  if (outsideRoot(offset)) return argv;
   // Codex treats dots in -c keys as nesting, so pass paths as keys in a TOML table.
   const projects = [...new Set([root, directory])].map(path => `${JSON.stringify(path)}={trust_level="trusted"}`);
   return [argv[0]!, "-c", `projects={${projects.join(",")}}`, ...argv.slice(1)];
@@ -348,7 +367,7 @@ export function desktopUp(project: Project, client: DesktopClient, options: { sp
       if (matches.length > 1) throw new DesktopError(`Multiple resident terminals for ${role.name}; inspect before retrying`);
       const existing = matches[0];
       if (existing) {
-        if (basename(existing.argv[0] ?? "") === basename(argv[0]!)) {
+        if (desktopProgramMatches(existing, argv)) {
           roles.push({ role: role.name, action: "reused", terminal: existing.address, status: existing.status?.state ?? null });
           continue;
         }
@@ -380,7 +399,8 @@ export function desktopUp(project: Project, client: DesktopClient, options: { sp
           env: desktopLaunchEnv(options.proxyEnv ?? {}, role.env), name,
           no_parent: true, outlive_parent: true, keep: false,
           labels: { "team.project": binding.root, "team.owner_space": binding.space, "herdr.space": binding.space,
-            "team.role": role.name, "team.session": "resident", "team.runtime": "desktop" },
+            "team.role": role.name, "team.session": "resident", "team.runtime": "desktop",
+            ...(role.env?.HERDR_SMOKE_MANIFEST ? { "team.mock": "1" } : {}) },
         });
         roles.push({ role: role.name, action: terminal.state === "finished" ? "failed" : "started", terminal: terminal.address,
           status: terminal.status?.state ?? null, ...(terminal.state === "finished" ? { failure: "Program exited during startup" } : {}) });

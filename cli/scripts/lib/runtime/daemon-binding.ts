@@ -26,6 +26,8 @@ const runtimeKeys = ["PATH", "HC_SESSION", "HC_SOCKET", "HERDR_APP_HOME", "HERDR
   "HERDR_SOCKET_PATH", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_CONFIG_HOME", "HERDR_PLUGIN_STATE_DIR",
   "HERDR_TEAM_TRUST_HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR"] as const;
 const envKeys = ["HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "PATH"];
+const windowsEnvKeys = ["SystemRoot", "SystemDrive", "WINDIR", "ComSpec", "PATHEXT", "USERPROFILE", "USERNAME",
+  "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "TEMP", "TMP", "HOMEDRIVE", "HOMEPATH"];
 
 export interface DaemonTeam {
   root: string;
@@ -38,18 +40,33 @@ export interface DaemonTeam {
 }
 
 export function daemonEnv(): Record<string, string> {
-  return { ...Object.fromEntries(envKeys.flatMap(key => process.env[key] === undefined ? [] : [[key, process.env[key]!]])),
+  const keys = process.platform === "win32" ? [...envKeys, ...windowsEnvKeys] : envKeys;
+  return { ...Object.fromEntries(keys.flatMap(key => process.env[key] === undefined ? [] : [[key, process.env[key]!]])),
     HERDR_TEAM_HOME: daemonDirectory() };
 }
 
 function tuiSocket(): string {
+  if (process.platform === "win32") {
+    // Windows Herdr publishes the literal marker name. The named pipe uses
+    // that spelling, so fs.realpath would change the identifier in some setups.
+    const marker = process.env.HERDR_SOCKET_PATH;
+    if (marker) return marker;
+    const result = spawnSync(process.env.HERDR_BIN_PATH || "herdr", ["status", "server", "--json"], {
+      encoding: "utf8", timeout: 3000,
+    });
+    const status = result.status === 0 ? JSON.parse(result.stdout) : null;
+    if (!status?.running || typeof status.socket !== "string" || !status.socket) {
+      throw new Error("Windows Herdr server did not report its socket marker");
+    }
+    return status.socket;
+  }
   return process.env.HERDR_SOCKET_PATH ?? join(process.env.HERDR_CONFIG_PATH
     ? dirname(process.env.HERDR_CONFIG_PATH)
     : join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "herdr"), "herdr.sock");
 }
 
 function coreId(): string {
-  const output = spawnSync("hc", ["server", "status"], { encoding: "utf8", timeout: 3000 });
+  const output = spawnSync("hc", ["server", "status"], { encoding: "utf8", timeout: 3000, windowsHide: true });
   if (output.status !== 0) throw new Error("Desktop Core is unavailable");
   const id = JSON.parse(output.stdout)?.core?.id;
   if (typeof id !== "string" || !id) throw new Error("Desktop Core did not report its identity");
@@ -57,7 +74,15 @@ function coreId(): string {
 }
 
 export function daemonEndpoint(kind: DaemonTeam["kind"]): string {
-  return kind === "desktop" ? coreId() : realpathSync(tuiSocket());
+  if (kind === "desktop") return coreId();
+  const socket = tuiSocket();
+  return process.platform === "win32" ? socket : realpathSync(socket);
+}
+
+export function tuiSubscriptionPath(endpoint: string, platform = process.platform): string {
+  // Herdr uses interprocess's GenericNamespaced, which prepends the pipe
+  // namespace to the marker verbatim. Keep the marker for Herdr CLI calls.
+  return platform === "win32" ? "\\\\.\\pipe\\" + endpoint : endpoint;
 }
 
 export function makeDaemonTeam(project: Project, kind: DaemonTeam["kind"], endpoint: string, space: string, proxyEnv?: Record<string, string>): DaemonTeam {

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Keep the checkout as the owner so existing registrations survive the move.
 const checkout = dirname(desktop);
-const home = resolve(process.env.HERDR_APP_HOME || join(homedir(), ".config/herdr-app"));
+const home = resolve(process.env.HERDR_APP_HOME || join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "herdr-app"));
 const name = "herdr-team";
 const manifestPath = join(home, `.${name}.json`);
 const modPaths = [`mods/${name}`, `mods/${name}-agents`];
@@ -76,7 +76,8 @@ function sync() {
     throw new Error(`Existing personal files found for ${name}; move them aside or choose another HERDR_APP_HOME.`);
   }
   for (const path of new Set([...Object.keys(previous.files), ...files.keys()])) {
-    if (path !== layoutPath && (!modPaths.some(mod => path.startsWith(`${mod}/`)) || path.split("/").some(part => part === ".." || part === "."))) {
+    if (path !== layoutPath && (!modPaths.some(mod => path.startsWith(`${mod}/`)) || path.includes("\\") ||
+        path.split("/").some(part => part === ".." || part === "."))) {
       throw new Error(`Invalid managed path: ${path}`);
     }
     // Do not follow links, including links introduced in an installed subfolder.

@@ -9,7 +9,7 @@ mock.module("gpui-base", () => ({ Button: {}, Popover: {}, TextView: {}, h_flex:
 mock.module("herdr", () => ({
   checking: unused, closeOverlay: unused, focused: unused, knownAgents: unused, layout: unused, nextCommand: unused,
   openOverlay: unused, panes: unused, props: unused, run: unused, settings: unused, spaces: unused, terminals: unused,
-  theme: unused, watchFolder: unused,
+  theme: unused, watchFolder: unused, window: () => ({ platform: "macos" }),
   exec(_program: string, _args: string[], { on }: { on: string | null }) {
     machines.push(on);
     return new Promise(resolve => respond.push(rows => resolve({ code: 0, stdout: JSON.stringify(rows), stderr: "" })));

@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type { Project, RoleCard, TaskCard } from "../shared/types.ts";
+import { outsideRoot } from "../shared/paths.ts";
 import { featureWorkspace, isTaskInactive, workspaceKey, worktreeBranch } from "../shared/types.ts";
 import { acceptanceFor, reviewFor, taskEnvironment, taskRepo, taskScoped, verifyCheckout } from "../tasks/verification.ts";
 import { deliveryFor, type Delivery } from "../dispatch/delivery.ts";
 import { DeliveryRejected, type DeliveryTarget, type TaskRuntime } from "../dispatch/runtime.ts";
 import type { CleanupResult } from "../dispatch/cleanup.ts";
-import { DesktopError, desktopAgentProgram, desktopLaunchArgv, desktopTaskSpaces, ensureDesktopTaskSpace, registeredDesktopBinding, roleArgv, savedDesktopBinding, showDesktopBinding, terminalMatchesWorkspace, type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
+import { DesktopError, desktopAgentProgram, desktopLaunchArgv, desktopProgramMatches, desktopTaskSpaces, ensureDesktopTaskSpace, registeredDesktopBinding, roleArgv, savedDesktopBinding, showDesktopBinding, terminalMatchesWorkspace, type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
 import { callerSpace } from "./context.ts";
 import { withTeamLock } from "./state.ts";
 import { findTask } from "../tasks/cards.ts";
@@ -73,7 +74,7 @@ export function closeFinishedDesktopTaskAgents(project: Project, client: Desktop
           typeof terminal.turn !== "number" || (task.status === "done" && terminal.turn < 1) ||
           !terminal.pid || terminal.foreground?.pid !== terminal.pid) return;
       const offset = relative(space.checkout, terminal.foreground.cwd);
-      if (offset === ".." || offset.startsWith("../") || isAbsolute(offset)) return;
+      if (outsideRoot(offset)) return;
       return task;
     };
 
@@ -139,8 +140,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
       labels: { "team.project": binding.root, "team.owner_space": binding.space },
     }).terminals.filter(belongs);
   };
-  const programMatches = (terminal: DesktopTerminal, role: RoleCard) =>
-    basename(terminal.argv[0] ?? "") === basename(roleArgv(role, client)[0]!);
+  const programMatches = (terminal: DesktopTerminal, role: RoleCard) => desktopProgramMatches(terminal, roleArgv(role, client));
   const runtime: DesktopTaskRuntime = {
     scope: { runtime: "desktop", space: binding.space },
     envOk: () => true,
@@ -193,7 +193,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
       if (resident && !existing) return;
       const repo = taskRepo(fresh, task);
       const offset = role.cwd ? relative(repo, resolve(fresh.root, role.cwd)) : "";
-      if (offset === ".." || offset.startsWith("../") || isAbsolute(offset)) throw new DesktopError("Role cwd is outside the task repository");
+      if (outsideRoot(offset)) throw new DesktopError("Role cwd is outside the task repository");
       const taskCheckout = !resident || featureWorkspace(task) ? checkoutFor(fresh, binding, task) : undefined;
       const checkout = resident ? binding.root : taskCheckout!;
       const workspace = workspaceKey(task);
@@ -209,7 +209,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
         const current = existing.foreground?.cwd;
         if (current) {
           const offset = relative(checkout, realpathSync(current));
-          if (offset === ".." || offset.startsWith("../") || isAbsolute(offset)) throw new DesktopError("Task receiver is outside its checkout");
+          if (outsideRoot(offset)) throw new DesktopError("Task receiver is outside its checkout");
         }
         if (!resident && taskSpace && existing.labels["herdr.space"] !== taskSpace.space) {
           attachTaskTerminal(client, existing, taskSpace.space, binding.space);
@@ -301,8 +301,8 @@ export function syncDesktopTaskSpaces(project: Project, client: DesktopClient, i
         const role = project.roles.find(role => role.name === terminal.labels["team.role"]);
         const actualSpace = terminal.labels["herdr.space"];
         const offset = relative(checkout, realpathSync(terminal.cwd));
-        if (!role || basename(terminal.argv[0] ?? "") !== basename(roleArgv(role, client)[0]!) ||
-            offset === ".." || offset.startsWith("../") || isAbsolute(offset) ||
+        if (!role || !desktopProgramMatches(terminal, roleArgv(role, client)) ||
+            outsideRoot(offset) ||
             actualSpace !== binding.space && !known.some(space => space.space === actualSpace && terminalMatchesWorkspace(space, terminal))) {
           throw new DesktopError(`Terminal ${terminal.address} has conflicting task ownership; no labels changed`);
         }

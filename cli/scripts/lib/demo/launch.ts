@@ -102,9 +102,15 @@ export function acquireRunLock(path: string): () => void {
   }
 }
 
-async function refreshNativeRepository(): Promise<void> {
-  let fd: number | undefined;
-  try { fd = openSync("/dev/tty", "w"); } catch { return; }
+async function refreshNativeRepository(quiet: boolean): Promise<void> {
+  let fd: number;
+  if (process.platform === "win32") {
+    if (process.stderr.isTTY) fd = process.stderr.fd;
+    else if (!quiet && process.stdout.isTTY) fd = process.stdout.fd;
+    else return;
+  } else {
+    try { fd = openSync("/dev/tty", "w"); } catch { return; }
+  }
   try {
     // Spaces rechecks Git when the first pane quits working. This also handles
     // a Space that had already probed the folder before init created .git.
@@ -112,7 +118,7 @@ async function refreshNativeRepository(): Promise<void> {
     await Bun.sleep(500);
     writeFileSync(fd, "\x1b]7501;state=clear\x1b\\");
     await Bun.sleep(500);
-  } finally { closeSync(fd); }
+  } finally { if (process.platform !== "win32") closeSync(fd); }
 }
 
 export async function runDesktopDemo(root: string, fast: boolean, quiet: boolean) {
@@ -157,7 +163,7 @@ export async function runDesktopDemo(root: string, fast: boolean, quiet: boolean
     const version = `v1.2.${patch}`;
     if (!quiet) console.log(`Launching ${showcaseLanes.length} demo tasks in this Space. Follow the Team Board and Agents.`);
     process.chdir(area);
-    await refreshNativeRepository();
+    await refreshNativeRepository(quiet);
     const result = await runRelease(root, { area, version, fast, lanes: showcaseLanes, verifyGuards: true, startTeam: true });
     team(root, "down");
     return { ...result, root, space };

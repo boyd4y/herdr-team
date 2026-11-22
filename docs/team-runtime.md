@@ -37,6 +37,10 @@ caller; they do not choose a runtime by space names, window focus, project paths
 or copied runtime IDs. Missing or ambiguous contexts fail before execution.
 Runtime-specific behavior belongs in the CLI, never in the shared Skill.
 
+On Windows, use `--body-file` and `--summary-file` to pass multiline text from
+the shell. Desktop starts agents with native argument arrays and passes the full
+assignment text directly.
+
 Local Desktop execution supports native Codex/Claude task launches, claim,
 handoff and inbox recovery. It uses the same delivery IDs, task records,
 locks, dependency checks and exact-commit review gates as TUI execution. Each

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentInfo, AgentSessionInfo, Herdr } from "./herdr.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
 import { canonicalKind, worktreeBranch, type Project, type RoleCard } from "../shared/types.ts";
+import { outsideRoot } from "../shared/paths.ts";
 
 interface SavedSession {
   version: 1;
@@ -24,7 +25,7 @@ export function scopeForTaskSession(project: Project, herdr: Herdr, role: RoleCa
   if (!task) throw new Error(`Cannot find task ${taskId} for session recovery`);
   const repo = resolve(project.root, task.repo);
   const offset = role.cwd === undefined ? "" : relative(repo, resolve(project.root, role.cwd));
-  if (offset === ".." || offset.startsWith("../") || isAbsolute(offset)) throw new Error("Role cwd is outside the task repository");
+  if (outsideRoot(offset)) throw new Error("Role cwd is outside the task repository");
   const trees = herdr.worktreeList(repo).filter((tree) => tree.branch === worktreeBranch(task));
   if (trees.length !== 1) throw new Error("Cannot identify this task checkout for session recovery");
   return { taskId, cwd: join(trees[0]!.path, offset) };

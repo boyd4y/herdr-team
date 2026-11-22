@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { isAbsolute, relative } from "node:path";
+import { relative } from "node:path";
 import { findRoot } from "../team/project.ts";
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
+import { outsideRoot } from "../shared/paths.ts";
 import { isolatedAgentName, type Project, type RoleCard } from "../shared/types.ts";
 
 export class TeamScopeError extends Error {}
@@ -29,10 +30,7 @@ export function resolveProjectWorkspace(project: Project, herdr: Herdr): string 
   const root = realpathSync(project.root);
   const workspaces = herdr.workspaceList();
   const canonical = (path: string) => { try { return realpathSync(path); } catch { return path; } };
-  const contains = (parent: string, child: string) => {
-    const offset = relative(parent, child);
-    return offset !== ".." && !offset.startsWith("../") && !isAbsolute(offset);
-  };
+  const contains = (parent: string, child: string) => !outsideRoot(relative(parent, child));
   const candidates = workspaces.filter((workspace) => {
     const tokens = workspace.tokens, checkout = workspace.worktree?.checkout_path;
     const boundRoot = tokens?.team_project === key && tokens.team_root === "1";

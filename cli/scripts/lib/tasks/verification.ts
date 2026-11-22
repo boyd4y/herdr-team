@@ -39,7 +39,7 @@ export function integrationFor(task: TaskCard): Integration | undefined {
   return i;
 }
 export function git(cwd: string, ...args: string[]): string {
-  const p = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+  const p = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
   if (p.error || p.status !== 0) throw new Error(`Git failed: ${p.error?.message ?? (p.stderr || p.stdout).trim()}`);
   return p.stdout.trim();
 }

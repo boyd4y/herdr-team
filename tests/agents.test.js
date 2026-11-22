@@ -16,6 +16,8 @@ test("agent ownership uses terminal labels and actual space IDs, including machi
   assert.equal(remote.machine, "box");
   assert.notEqual(remote.key, agentTeam(agent, terminal).key);
   assert.equal(agentTeam({ ...agent, address: "box/t1" }, { ...terminal, address: "box/t1" }), null);
+  const windows = { ...terminal, labels: { ...terminal.labels, "team.project": "C:\\Projects\\team" } };
+  assert.equal(agentTeam(agent, windows).root, windows.labels["team.project"]);
 });
 
 test("role descriptions prefer user metadata and skip startup boilerplate without inventing duties", () => {

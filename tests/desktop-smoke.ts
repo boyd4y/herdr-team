@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { closeSync, mkdirSync, openSync, realpathSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 import { callerSpace, managedContext } from "../cli/scripts/lib/runtime/context.ts";
 import { realDesktop, savedDesktopBinding } from "../cli/scripts/lib/runtime/desktop.ts";
@@ -31,7 +31,7 @@ if (values.plan && scenario && fixture) {
 if (!version) throw new Error(usage);
 const root = realpathSync(process.cwd());
 const context = managedContext();
-if (root.split("/").at(-1) !== "herdr-team-test" || context.kind !== "desktop" ||
+if (basename(root) !== "herdr-team-test" || context.kind !== "desktop" ||
     savedDesktopBinding({ root })?.space !== callerSpace(context.caller, realDesktop())) {
   throw new Error("Run from the main Desktop Space of the registered herdr-team-test project");
 }

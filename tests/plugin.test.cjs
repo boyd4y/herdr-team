@@ -91,7 +91,32 @@ test('config paths follow Herdr override, XDG and the home directory', () => {
   assert.deepEqual(locations({ XDG_CONFIG_HOME: '/c', HERDR_CONFIG_PATH: '/custom.toml' }, 'linux', '/h'), { herdr: '/custom.toml' });
   assert.deepEqual(locations({ XDG_CONFIG_HOME: '/c' }, 'linux', '/h'), { herdr: '/c/herdr/config.toml' });
   assert.deepEqual(locations({}, 'darwin', '/h'), { herdr: '/h/.config/herdr/config.toml' });
-  assert.throws(() => locations({}, 'win32', '/h'), /Supported platforms/);
+  assert.deepEqual(locations({ APPDATA: 'D:\\Roaming Profile' }, 'win32', 'C:\\User'),
+    { herdr: 'D:\\Roaming Profile\\herdr\\config.toml' });
+  assert.deepEqual(locations({ XDG_CONFIG_HOME: 'D:\\Config', APPDATA: 'D:\\Roaming' }, 'win32', 'C:\\User'),
+    { herdr: 'D:\\Config\\herdr\\config.toml' });
+  assert.deepEqual(locations({}, 'win32', 'C:\\User'), { herdr: 'C:\\User\\AppData\\Roaming\\herdr\\config.toml' });
+  assert.deepEqual(locations({ HERDR_CONFIG_PATH: 'D:\\custom.toml' }, 'win32', 'C:\\User'), { herdr: 'D:\\custom.toml' });
+});
+
+test('Console manifest launches the installed entry from the project directory', (t) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'herdr Console 项目-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const bin = path.join(cwd, 'bin');
+  fs.mkdirSync(bin);
+  const entry = process.platform === 'win32' ? 'herdr-team.mjs' : 'herdr-team';
+  fs.writeFileSync(path.join(bin, entry),
+    '#!/usr/bin/env bun\nconsole.log(JSON.stringify({cwd:process.cwd(), view:process.env.HERDR_TEAM_TUI_VIEW}));\n', { mode: 0o755 });
+  const manifest = fs.readFileSync(path.join(root, 'tui', 'herdr-plugin.toml'), 'utf8');
+  const pane = JSON.parse(manifest.match(/\[\[panes\]\][\s\S]*?command = (\[[^\n]+\])/)[1]);
+  const result = spawnSync(pane[0], pane.slice(1), {
+    cwd, env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, HERDR_PLUGIN_ROOT: path.join(root, 'tui') },
+    encoding: 'utf8', timeout: 10000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const launched = JSON.parse(result.stdout);
+  assert.equal(fs.realpathSync(launched.cwd), fs.realpathSync(cwd));
+  assert.equal(launched.view, '1');
 });
 
 test('configure/unconfigure are idempotent, reload and restore exact files', (t) => {

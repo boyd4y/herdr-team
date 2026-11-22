@@ -175,8 +175,9 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
       }
       const sending: Delivery = { ...d, ...runtime.scope, ...receiver.target, state: "sending", sent_at: now.toISOString(), reason: "" };
       save(fresh, task, sending);
-      const claim = `herdr-team task claim ${task.id} --delivery ${d.id} --root ${shellQuote(fresh.root)}`;
-      const handoff = `herdr-team task handoff ${task.id} --delivery ${d.id} --root ${shellQuote(fresh.root)}`;
+      const args = `${task.id} --delivery ${d.id} --root ${teamCliPath(fresh.root)}`;
+      const claim = `herdr-team task claim ${args}`;
+      const handoff = `herdr-team task handoff ${args}`;
       const prompt = `${assignmentPrompt(team, role.body, task, fresh.root)}\nTeam root: ${fresh.root}\nTask file: ${join(fresh.herdrDir, task.dir, TASK_BODY)}\nDelivery ID: ${d.id}\nClaim command: ${claim}\nHandoff base command: ${handoff}\nThese commands identify this delivery; use the skill to choose the result options and next action.`;
       try {
         Object.assign(sending, receiver.submit(prompt));
@@ -205,6 +206,11 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
 }
 
 export function shellQuote(value: string): string { return `'${value.replace(/'/g, "'\\''")}'`; }
+
+/** Team command templates target PowerShell on Windows and the project shell on Unix. */
+export function teamCliPath(value: string, platform = process.platform): string {
+  return platform === "win32" ? `'${value.replaceAll("'", "''")}'` : shellQuote(value);
+}
 
 export function claimTask(project: Project, id: string, deliveryId: string, authorize?: (task: TaskCard, delivery: Delivery) => void): { id: string; delivery: string; duplicate: boolean } {
   return withTeamLock(project, "queue", () => {

@@ -5,8 +5,12 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, checking, exec, watchFolder } from "herdr";
 import { agentGroup, agentTeam, groupAgents, roleDescription, spaceColor } from "./model.js";
+import { absolutePath, childPath, teamArgv } from "./platform.js";
 
-const teamCommand = (args, options) => exec("sh", ["-c", 'PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH" exec herdr-team "$@"', "herdr-team", ...args], options);
+const teamCommand = (args, options) => {
+  const [command, ...argv] = teamArgv(args, window()?.platform, options);
+  return exec(command, argv, options);
+};
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -48,8 +52,9 @@ function leadPanes(all) {
 function title(tab, l) {
   const prog = l?.program?.name;
   const live = clean(l?.title);
-  // clean() would strip a path's leading ~ or /: test the title with only its status glyph gone.
-  const path = /^[~/]|^[A-Za-z]:\\/.test((l?.title ?? "").replace(/^[^\p{L}\p{N}~/]+/u, ""));
+  // Preserve path prefixes while dropping the status glyph.
+  const title = (l?.title ?? "").replace(/^[^\p{L}\p{N}~/\\]+/u, "");
+  const path = title.startsWith("~") || absolutePath(title);
   const telling = live && live !== (l?.terminal ?? l?.address) && live !== prog && !path && !live.includes("@") && live.toLowerCase() !== l?.program?.key;
   return (tab.name === prog || !tab.named) && telling ? live : tab.name;
 }
@@ -153,7 +158,7 @@ export default class Agents extends View {
     cx.spawn(async cx => {
       try {
         while (!this.closed && this.teams.get(state.key) === state) {
-          state.watch = watchFolder(`${state.root}/.herdr/roles`);
+          state.watch = watchFolder(childPath(state.root, ".herdr/roles"));
           const paths = await state.watch;
           state.watch = null;
           if (!this.closed && this.teams.get(state.key) === state && paths.length) this.loadTeam(state, cx);

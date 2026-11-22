@@ -37,6 +37,8 @@ Herdr Team 支持 **Herdr 桌面版**和 **Herdr 终端版**。桌面版的终�
 npm run setup:desktop
 ```
 
+Windows x64 使用 Git for Windows，并将原生 `bun.exe` 和 agent CLI 加入用户 PATH。安装器把 `herdr-team.cmd` 放在 Bun 的 `bin` 目录（默认 `%USERPROFILE%\.bun\bin`）。设置了 `XDG_BIN_HOME` 时使用指定目录，该目录须已在 PATH 中。PowerShell 可用 `npm.cmd run setup:desktop` 安装。
+
 在 Herdr 里选择 `herdr-team` 布局。随后在项目终端中运行 `herdr-team team up` 建立 Space 绑定并启动常驻角色。隔离角色在接到任务时启动。
 
 需要 Node.js 22 或更新版本。在仓库目录运行：
@@ -101,7 +103,7 @@ herdr plugin link ./tui
 npm run setup:tui
 ```
 
-在 Herdr TUI 会话内也可运行 `herdr plugin action invoke herdr-team.install` 应用配置并重载。GitHub 安装使用 `herdr plugin install boyd4y/herdr-team/tui --ref main`。已有从仓库根路径安装的插件仍可沿用原来源更新。
+在 Herdr TUI 会话内也可运行 `herdr plugin action invoke herdr-team.install` 应用配置并重载。GitHub 安装使用 `herdr plugin install boyd4y/herdr-team/tui --ref main`。Windows 的本地安装和 GitHub 安装均使用 `tui` 目录。macOS 和 Linux 上已有从仓库根路径安装的插件可以沿用原来源更新。
 
 ## 接下来如何迁移
 

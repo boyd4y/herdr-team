@@ -3,6 +3,7 @@ import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { releaseTaskResources, type CleanupResult } from "../dispatch/cleanup.ts";
 import { deliveryFor } from "../dispatch/delivery.ts";
 import { featureWorkspace, isTaskInactive, workspaceKey, worktreeBranch, type Project, type TaskCard } from "../shared/types.ts";
+import { outsideRoot } from "../shared/paths.ts";
 import { confirmedFeatures, deliveredTask } from "../team/features.ts";
 import { loadProject } from "../team/project.ts";
 import { findTask } from "../tasks/cards.ts";
@@ -16,8 +17,7 @@ function within(root: string, path: string | null | undefined): boolean {
   if (!path || !isAbsolute(path)) return false;
   let normalized = path;
   try { normalized = realpathSync(path); } catch { /* A finished terminal may report the old path. */ }
-  const offset = relative(root, normalized);
-  return offset !== ".." && !offset.startsWith("../") && !isAbsolute(offset);
+  return !outsideRoot(relative(root, normalized));
 }
 
 function settledAgent(terminal: DesktopTerminal): boolean {

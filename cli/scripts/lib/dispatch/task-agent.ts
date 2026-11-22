@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { acceptanceFor, reviewFor, taskEnvironment, taskScoped, verifyCheckout } from "../tasks/verification.ts";
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
 import { assertProjectWorkspace, availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents } from "./team-scope.ts";
@@ -8,12 +8,13 @@ import { reportRoleSidebar } from "../ui/sidebar.ts";
 import { featureWorkspace, workspaceKey, worktreeBranch, type Project, type RoleCard, type TaskCard } from "../shared/types.ts";
 import { dispatchFeature } from "../team/features.ts";
 import { runtimePath } from "../runtime/state.ts";
+import { outsideRoot } from "../shared/paths.ts";
 
 /** Each new task owns its sessions; resident tabs are for conversation only. */
 export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: TaskCard): AgentInfo | undefined {
   const repoPath = join(project.root, task.repo);
   const offset = role.cwd === undefined ? "" : relative(repoPath, resolve(project.root, role.cwd));
-  if (offset === ".." || offset.startsWith("../") || isAbsolute(offset)) throw new Error("Role cwd is outside the task repository");
+  if (outsideRoot(offset)) throw new Error("Role cwd is outside the task repository");
   const scoped = taskScoped(task, role);
   const feature = dispatchFeature(project, task, role);
   const shared = featureWorkspace(task);

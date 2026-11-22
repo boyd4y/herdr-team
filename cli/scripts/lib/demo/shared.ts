@@ -61,7 +61,7 @@ export function checkArtifact(run: MockRun, task: MockTask, cwd: string): boolea
     `;
     return command([process.execPath, "-e", check, pathToFileURL(join(cwd, task.artifact)).href], cwd, true).code === 0;
   }
-  const raw = readFileSync(join(cwd, task.artifact), "utf8");
+  const raw = readFileSync(join(cwd, task.artifact), "utf8").replaceAll("\r\n", "\n");
   const expected = `export const result = { lane: ${task.ordinal}, accepted: true } as const;`;
   return raw.split("\n").includes(expected) && raw.includes(`// ${task.artifact}\n`) && Boolean(run.tasks.find(item => item.id === task.id));
 }

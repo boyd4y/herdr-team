@@ -1,7 +1,40 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { childPath, pathKey, teamArgv } from "../desktop/mods/herdr-team/platform.js";
+import { teamArgv as agentsArgv } from "../desktop/mods/herdr-team-agents/platform.js";
 import { boardColumns, consoleBinding, filterInbox, flowNodes, groupIssues, groupTasks, iterationGroups, iterationOptions, listFilters, listTasks,
   requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/herdr-team/model.js";
+
+test("Windows Team bindings and file watches accept drive and UNC paths", () => {
+  const space = { id: "worktree", machine: null };
+  const root = "C:\\Dev Space\\项目";
+  const binding = { space: "main", view_space: "worktree", task: "0001", machine: null, root, checkout: "\\\\server\\share\\worktree" };
+  assert.deepEqual(consoleBinding(binding, space), { root, space: "main", machine: null });
+  assert.throws(() => consoleBinding({ ...binding, checkout: "D:worktree" }, space), /Invalid project space binding/);
+  assert.equal(pathKey(childPath("C:/Dev Space/项目", ".herdr/desktop.json")), `${pathKey(root)}/.herdr/desktop.json`);
+  assert.equal(pathKey("\\\\?\\UNC\\server\\share\\worktree"), pathKey(binding.checkout));
+});
+
+test("Desktop Windows launchers pass arguments literally to the installed CLI", t => {
+  const bin = mkdtempSync(join(tmpdir(), "Team Launcher 测试 "));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "herdr-team.cmd"), "This batch file must never run.");
+  writeFileSync(join(bin, "herdr-team.mjs"), "console.log(JSON.stringify(process.argv.slice(2)));\n");
+  const args = ["task", "create", "--body", '文字 & %PATH% \"quote\"\n--status done', ""];
+  const argv = teamArgv(args, "windows");
+  assert.deepEqual(agentsArgv(args, "windows"), argv);
+  assert.deepEqual(teamArgv(args, "macos", { on: "windows", onFolder: "C:/repo" }), argv);
+  assert.equal(teamArgv(args, "windows", { on: "linux", cwd: "/repo" })[0], "sh");
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (key.toUpperCase() === "PATH") delete env[key];
+  const result = spawnSync(process.execPath, ["--input-type=module", ...argv.slice(1)], { env: { ...env, PATH: `"${bin}"` }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), args);
+});
 
 test("task assignee uses native agent and launch model only for the recorded live delivery", () => {
   const binding = { root: "/repo", space: "main", machine: null };

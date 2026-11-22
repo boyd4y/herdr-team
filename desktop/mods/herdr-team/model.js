@@ -1,3 +1,5 @@
+import { absolutePath } from "./platform.js";
+
 /** Presentation only. These functions never mutate task/delivery records. */
 export const sortTasks = tasks => [...tasks].sort((a, b) => b.id.localeCompare(a.id, "en", { numeric: true }));
 
@@ -83,10 +85,10 @@ export function consoleBinding(binding, space) {
   const prefix = space.machine ? `${space.machine}/` : "";
   const id = space.id.slice(prefix.length);
   if (!space.id.startsWith(prefix) || !id || id.includes("/") || (binding.view_space ?? binding.space) !== id ||
-      binding.machine !== null || typeof binding.root !== "string" || !binding.root.startsWith("/") ||
+      binding.machine !== null || !absolutePath(binding.root) ||
       typeof binding.space !== "string" || !binding.space || binding.space.includes("/") ||
       binding.view_space && (!/^\d{4}$/.test(binding.task ?? "") && !/^[a-z0-9]+(?:-[a-z0-9]+)*@v?\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(binding.feature ?? "") ||
-        typeof binding.checkout !== "string" || !binding.checkout.startsWith("/"))) {
+        !absolutePath(binding.checkout))) {
     throw new Error("Invalid project space binding returned by the CLI");
   }
   return { root: binding.root, space: `${prefix}${binding.space}`, machine: space.machine ?? null };

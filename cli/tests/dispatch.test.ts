@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { loadProject } from "../scripts/lib/team/project.ts";
 import { deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
@@ -131,8 +131,9 @@ function waitForDelivery(root: string, id: string, verify: (delivery: ReturnType
 
 describe("CLI up / dispatch", () => {
   test("daemon lifecycle records start, status, and stop even with no registered projects", () => {
-    withCLI(cli => {
-      expect(JSON.parse(cli("daemon", "status", "--json").stdout)).toMatchObject({ state: "stopped", teams: [] });
+    withCLI((cli, root) => {
+      const stopped = JSON.parse(cli("daemon", "status", "--json").stdout);
+      expect(stopped).toMatchObject({ state: "stopped", teams: [], directory: realpathSync(join(root, "daemon-home")) });
       expect(JSON.parse(cli("daemon", "start", "--json").stdout)).toMatchObject({ state: "running", teams: [] });
       expect(JSON.parse(cli("daemon", "status", "--json").stdout)).toMatchObject({ state: "running", teams: [] });
       expect(JSON.parse(cli("daemon", "stop", "--json").stdout)).toMatchObject({ state: "stopped" });

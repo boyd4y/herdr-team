@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { needsQueuePass, nextQueueDeadline, pumpQueue, queueRows } from "../dispatch/queue.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
 import { loadProject } from "../team/project.ts";
-import { closeRegisteredDesktopTaskAgents, daemonDirectory, daemonEnv, daemonTeamKeys, daemonTeams, listRegisteredProjects, readDaemonTeam, registeredRuntime, withRegistration, type DaemonTeam } from "./daemon-binding.ts";
+import { closeRegisteredDesktopTaskAgents, daemonDirectory, daemonEnv, daemonTeamKeys, daemonTeams, listRegisteredProjects, readDaemonTeam, registeredRuntime, tuiSubscriptionPath, withRegistration, type DaemonTeam } from "./daemon-binding.ts";
 import { processAlive, withStateLock, withTeamLock } from "./state.ts";
 import { daemonLogPath, deliveryLogReason, logDaemon } from "./daemon-log.ts";
 import { startAgentMail, type AgentMailStatus } from "./agentmail.ts";
@@ -22,6 +22,7 @@ import { closeDeliveredTuiAgents } from "./tui-feature-sessions.ts";
 import { cleanupAll, cleanupIfDone, type CleanupResult } from "../dispatch/cleanup.ts";
 import { findTask } from "../tasks/cards.ts";
 import { hasFeaturePreviews } from "./feature-preview.ts";
+import { spawnWindowsDaemon } from "./windows-daemon.ts";
 
 const cli = fileURLToPath(new URL("../../cli.ts", import.meta.url));
 const infoFile = (directory = daemonDirectory()) => join(directory, "daemon.json");
@@ -101,11 +102,17 @@ export async function startDaemon(): Promise<DaemonStatus & { action: "started" 
     const current = info();
     if (current && processAlive(current.pid)) return false;
     const token = randomUUID();
+    const env = { ...daemonEnv(), HERDR_TEAM_DAEMON_TOKEN: token };
+    if (process.platform === "win32") {
+      const pid = spawnWindowsDaemon([process.execPath, cli, "daemon", "_serve"], daemonDirectory(), env, daemonLogPath());
+      publish({ pid, token });
+      return true;
+    }
     const log = openSync(daemonLogPath(), "a", 0o600);
     try {
       const child = spawn(process.execPath, [cli, "daemon", "_serve"], {
         detached: true, cwd: daemonDirectory(), stdio: ["ignore", log, log],
-        env: { ...daemonEnv(), HERDR_TEAM_DAEMON_TOKEN: token },
+        env,
       });
       child.on("error", error => console.error(error.message));
       if (!child.pid) throw new Error("Cannot start team daemon");
@@ -160,7 +167,7 @@ function subscribe(team: DaemonTeam, panes: string[], wake: () => void, closed: 
   };
   let close: () => void;
   if (team.kind === "desktop") {
-    const child = spawn("hc", ["connect"], { env: { ...daemonEnv(), ...team.env }, stdio: ["pipe", "pipe", "ignore"] });
+    const child = spawn("hc", ["connect"], { env: { ...daemonEnv(), ...team.env }, stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
     const lines = createInterface({ input: child.stdout });
     close = () => { lines.close(); child.kill(); };
     child.on("error", closed).on("close", closed);
@@ -174,7 +181,7 @@ function subscribe(team: DaemonTeam, panes: string[], wake: () => void, closed: 
           !["size", "title", "keep"].includes(message.params?.type ?? message.params?.kind)) onLine(line);
     });
   } else {
-    const socket = createConnection(team.endpoint);
+    const socket = createConnection(tuiSubscriptionPath(team.endpoint));
     const lines = createInterface({ input: socket });
     close = () => { lines.close(); socket.destroy(); };
     socket.on("error", closed).on("close", closed);
@@ -274,7 +281,7 @@ interface ActiveTeam {
 function runWorker(key: string, team: DaemonTeam, token: string, cleanup?: { ids?: string[] }) {
   const child = Bun.spawn([process.execPath, cli, "daemon", "_pass", key, ...(cleanup ? [JSON.stringify(cleanup)] : [])], {
     cwd: daemonDirectory(), env: { ...daemonEnv(), ...team.env, HERDR_TEAM_DAEMON_TOKEN: token },
-    stdin: "ignore", stdout: "pipe", stderr: "pipe",
+    stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsHide: true,
   });
   return Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
 }
