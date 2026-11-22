@@ -2,9 +2,11 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { acquireRunLock, isDesktopDemo } from "../demo/launch.ts";
-import { deliveryState } from "../dispatch/delivery.ts";
+import { deliveryFor, deliveryState } from "../dispatch/delivery.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
 import { daemonDirectory, readDaemonTeam, withRegistration } from "../runtime/daemon-binding.ts";
+import { realDesktop, savedDesktopBinding } from "../runtime/desktop.ts";
+import { cleanDesktopTasksForPurge } from "../runtime/desktop-cleanup.ts";
 import { desktopWorktrees } from "../runtime/desktop-worktrees.ts";
 import { processAlive, runtimePath, withTeamLock } from "../runtime/state.ts";
 import { worktreeBranch, type Project } from "../shared/types.ts";
@@ -23,15 +25,16 @@ function ensurePath(path: string, kind: "directory" | "file"): boolean {
   return true;
 }
 
-function checkoutBlockers(project: Project): string[] {
+function checkoutBlockers(project: Project, reclaim?: ReadonlySet<string>): string[] {
   const previews = runtimePath(project, "desktop/previews");
   if (ensurePath(previews, "directory") && readdirSync(previews).length) {
     return ["Managed feature previews remain. Finish and clean the feature before purging."];
   }
   for (const directory of ["desktop/tasks", "desktop/features", "desktop/checkouts", "tui/features"]) {
     const path = runtimePath(project, directory);
-    if (ensurePath(path, "directory") && readdirSync(path).length) {
-      return ["Managed worktrees remain. Run herdr-team task clean."];
+    if (ensurePath(path, "directory") && readdirSync(path).some(entry => !reclaim?.has(join(path, entry)))) {
+      return [reclaim ? `Unverified managed worktree records remain in ${path}. Inspect their ownership before purging.`
+        : "Managed worktrees remain. Run herdr-team task clean or use --force to reclaim verified Desktop worktrees."];
     }
   }
   const branchesByRepo = new Map<string, Set<string>>();
@@ -52,13 +55,13 @@ function checkoutBlockers(project: Project): string[] {
       continue;
     }
     for (const tree of desktopWorktrees(repo)) {
-      if (branches.has(tree.branch)) blockers.push(`Task checkout remains at ${tree.path}. Run herdr-team task clean or reclaim that Git worktree before purging.`);
+      if (branches.has(tree.branch) && !reclaim?.has(tree.path)) blockers.push(`Task checkout remains at ${tree.path}. Run herdr-team task clean or reclaim that Git worktree before purging.`);
     }
   }
   return blockers;
 }
 
-function purgePlan(root: string, demo: string | undefined, dryRun: boolean) {
+function purgePlan(root: string, demo: string | undefined, dryRun: boolean, force: boolean, desktopClient: typeof realDesktop) {
   const dir = join(root, ".herdr");
   const interrupted = readdirSync(dir).find(entry => entry.startsWith(".purging-"));
   if (interrupted) throw new Error(`An earlier purge left staged data at ${join(dir, interrupted)}. Inspect that directory before retrying.`);
@@ -89,20 +92,39 @@ function purgePlan(root: string, demo: string | undefined, dryRun: boolean) {
       continue;
     }
     const delivery = deliveryState(task);
-    if ((delivery && delivery !== "queued") || integrationFor(task)?.state === "running" || task.meta.pending_history) {
+    if (!force && ((delivery && delivery !== "queued") || integrationFor(task)?.state === "running" || task.meta.pending_history)) {
       unfinished.push(`#${task.id}`);
     }
     paths.push(task.dir);
   }
-  if (unfinished.length) blockers.push(`Tasks with unfinished delivery or integration: ${unfinished.join(", ")}. Finish or cancel them.`);
-  if (hasTaskDirectory) blockers.push(...checkoutBlockers(project));
+  if (unfinished.length) blockers.push(`Tasks with unfinished delivery or integration: ${unfinished.join(", ")}. Use --force to discard them after stopping the team.`);
+  const reclaim = new Set<string>();
+  const binding = force && !blockers.length && project.tasks.length ? savedDesktopBinding(project) : null;
+  let desktop: ReturnType<typeof realDesktop> | undefined;
+  if (force && !blockers.length) {
+    const unverified = project.tasks.filter(task => {
+      const delivery = deliveryFor(task);
+      return delivery?.pane_id || delivery?.runtime === "desktop" && delivery.space !== binding?.space;
+    });
+    if (unverified.length) blockers.push(`Cannot verify the assignment runtime for ${unverified.map(task => `#${task.id}`).join(", ")}. Reconcile these deliveries in their original workspace.`);
+    if (binding && !blockers.length) {
+      try {
+        desktop = desktopClient();
+        for (const item of cleanDesktopTasksForPurge(project, desktop, binding, true)) {
+          if (item.action !== "removed" && item.action !== "absent") blockers.push(`#${item.id} ${item.note}`);
+          for (const path of item.paths ?? []) reclaim.add(path);
+        }
+      } catch (error) { blockers.push(String(error instanceof Error ? error.message : error)); }
+    }
+  }
+  if (hasTaskDirectory && (!force || !blockers.length)) blockers.push(...checkoutBlockers(project, force ? reclaim : undefined));
   const records = {
     tasks: project.tasks.map(task => task.id).sort(),
     issues: listIssueMetadata(project).map(issue => issue.id).sort(),
     iterations: iterationRows(project, true).map(iteration => iteration.version),
     featureDeliveries: [...confirmedFeatures(project).keys()].sort(),
   };
-  return { project, paths, result: { root, dryRun, blockers, records, tasks: records.tasks.length, issues: records.issues.length,
+  return { project, paths, desktop, binding, result: { root, dryRun, blockers, records, tasks: records.tasks.length, issues: records.issues.length,
     iterations: records.iterations.length, featureDeliveries: records.featureDeliveries.length, files: paths.filter(path => files.includes(path)) } };
 }
 
@@ -135,15 +157,24 @@ function removeRecords(project: Project, paths: string[]) {
   rmSync(stage, { recursive: true });
 }
 
-export function purgeProject(root: string, dryRun: boolean) {
+export function purgeProject(root: string, dryRun: boolean, force = false, desktopClient = realDesktop) {
   const dir = join(root, ".herdr");
   if (!ensurePath(dir, "directory")) throw new Error(`No team project configuration under ${root}`);
   const demo = isDesktopDemo(root) ? join(dir, "demo") : undefined;
   if (demo && !ensurePath(demo, "directory")) throw new Error("The demo project is missing its .herdr/demo directory.");
-  if (dryRun) return purgePlan(root, demo, true).result;
+  if (dryRun) return purgePlan(root, demo, true, force, desktopClient).result;
   const key = projectKey({ root });
   const purge = () => withTeamLock({ root }, "integration", () => withTeamLock({ root }, "queue", () => {
-    const { project, paths, result } = purgePlan(root, demo, false);
+    const { project, paths, result, desktop, binding } = purgePlan(root, demo, false, force, desktopClient);
+    if (result.blockers.length) return result;
+    if (desktop && binding) {
+      try {
+        for (const item of cleanDesktopTasksForPurge(project, desktop, binding, false)) {
+          if (item.action !== "removed" && item.action !== "absent") result.blockers.push(`#${item.id} ${item.note}`);
+        }
+      } catch (error) { result.blockers.push(String(error instanceof Error ? error.message : error)); }
+      if (!result.blockers.length) result.blockers.push(...checkoutBlockers(project, new Set()));
+    }
     if (!result.blockers.length) removeRecords(project, paths);
     return result;
   }));

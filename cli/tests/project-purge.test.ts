@@ -67,6 +67,7 @@ test("project purge fails safely while delivery or a Git worktree remains", () =
   writeFileSync(registration, JSON.stringify(team));
   expect(call("project", "purge", "--all", "--dry-run").blockers[0]).toContain("Automatic delivery is enabled");
   expect(run("project", "purge", "--all").exitCode).toBe(2);
+  expect(run("project", "purge", "--all", "--force").exitCode).toBe(2);
   expect(call("task", "list", "--all")).toHaveLength(1);
   writeFileSync(registration, JSON.stringify({ ...team, enabled: false }));
   const git = (...args: string[]) => {
@@ -80,6 +81,7 @@ test("project purge fails safely while delivery or a Git worktree remains", () =
   git("worktree", "add", "-q", "-b", "feat/0001-example-task", checkout);
   expect(call("project", "purge", "--all", "--dry-run").blockers[0]).toContain("Task checkout remains");
   expect(run("project", "purge", "--all").exitCode).toBe(2);
+  expect(run("project", "purge", "--all", "--force").exitCode).toBe(2);
   expect(existsSync(checkout)).toBe(true);
   expect(call("task", "list", "--all")).toHaveLength(1);
   git("worktree", "remove", checkout);
@@ -88,7 +90,8 @@ test("project purge fails safely while delivery or a Git worktree remains", () =
   writeTaskMeta(project, task, { status: "doing", delivery: { ...newDelivery(task.role, "dispatch"), state: "claimed" } });
   expect(call("project", "purge", "--all", "--dry-run").blockers[0]).toContain("unfinished delivery");
   expect(run("project", "purge", "--all").exitCode).toBe(2);
-  writeTaskMeta(project, task, { status: "cancelled", delivery: null });
-  expect(call("project", "purge", "--all").tasks).toBe(1);
+  expect(call("project", "purge", "--all", "--force", "--dry-run")).toMatchObject({ tasks: 1, blockers: [] });
+  expect(call("task", "list", "--all")).toHaveLength(1);
+  expect(call("project", "purge", "--all", "--force").tasks).toBe(1);
   git("show-ref", "--verify", "refs/heads/feat/0001-example-task");
-}));
+}), 15_000);

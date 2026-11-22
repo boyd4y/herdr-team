@@ -22,6 +22,7 @@ import { makeDaemonTeam, pauseDaemonTeam, readDaemonTeam, registerDaemonTeam } f
 import { readProxyEnv } from "../scripts/lib/runtime/agent-env.ts";
 import { finishFeature } from "../scripts/lib/team/features.ts";
 import { addRequirement, editRequirements } from "../scripts/lib/team/requirements.ts";
+import { purgeProject } from "../scripts/lib/team/purge.ts";
 
 function fixture() {
   const f = makeProject("project with spaces 中文");
@@ -499,6 +500,33 @@ test("Desktop clean preserves ignored files, foreign panes and unconfirmed featu
     expect(f.calls.some(call => call.method === "terminal.kill")).toBe(false);
     finishFeature(f.load(), "search", "v1.2");
     expect(f.runtime().clean("0001")[0]).toMatchObject({ action: "removed" });
+  } finally { f.cleanup(); }
+});
+
+test("forced project purge discards claimed assignments and reclaims their verified Desktop checkout", () => {
+  const f = fixture();
+  try {
+    addRequirement(f.load(), { title: "Improve search", type: "requirement", priority: "P2", iteration: "v1.2", body: "", acceptance: "" });
+    dispatch(f.load(), f.runtime(), "0001");
+    f.claim();
+    const worker = f.terminals[1]!;
+    const purge = (dryRun: boolean) => purgeProject(f.load().root, dryRun, true, () => f.client);
+    expect(purge(false).blockers).toEqual([expect.stringContaining("still running")]);
+    worker.state = "finished";
+    const local = join(worker.cwd, "untracked.txt");
+    writeFileSync(local, "local data");
+    expect(purge(false).blockers).toEqual([expect.stringContaining("modified, untracked or ignored files")]);
+    expect(readFileSync(local, "utf8")).toBe("local data");
+    unlinkSync(local);
+    expect(purge(true)).toMatchObject({ tasks: 2, issues: 1, blockers: [] });
+    expect(f.task().meta.delivery).toMatchObject({ state: "claimed" });
+    expect(existsSync(worker.cwd)).toBe(true);
+    expect(purge(false)).toMatchObject({ tasks: 2, issues: 1, blockers: [] });
+    expect(existsSync(worker.cwd)).toBe(false);
+    expect(f.terminals).toEqual([f.caller]);
+    expect(f.appSpaces.map(space => space.id)).toEqual(["s1"]);
+    expect(git(f.root, "branch", "--list", "feat/0001-feature")).toContain("feat/0001-feature");
+    expect(purge(true)).toMatchObject({ tasks: 0, issues: 0, blockers: [] });
   } finally { f.cleanup(); }
 });
 

@@ -168,7 +168,7 @@ Desktop 启动 Codex 时，通过本次进程的配置参数信任已绑定项�
 如果没有匹配项目，或有多个匹配项目，用 `--root DIR` 或 `--project ID`。
 `herdr-team project show` 分别显示项目注册和 daemon 状态。`herdr-team project create [--name NAME]` 只登记当前项目，普通终端也能运行。`herdr-team project list` 列出全局注册及对应 ID。`herdr-team team down` 暂停该项目的自动投递并结束团队 agent。Desktop 在团队 Space 的普通终端执行，保留 Space、worktree、任务记录和其他终端。再次 `up` 恢复自动投递。
 
-`herdr-team project purge --all --dry-run` 预览一个项目的工作流数据和清理阻碍。去掉 `--dry-run` 后永久删除任务及投递历史、Issue、迭代可见性、功能交付记录和该项目的 demo 运行结果。自动投递启用或任务 worktree 未收回时，先停止该团队并清理 worktree。团队角色和注册、AgentMail、Git 和已使用的任务编号保留。
+`herdr-team project purge --all --dry-run` 预览一个项目的工作流数据和清理阻碍。去掉 `--dry-run` 后永久删除任务及投递历史、Issue、迭代可见性、功能交付记录和该项目的 demo 运行结果。先停止该项目的团队。`herdr-team project purge --all --force` 可以丢弃残留的投递和合并记录，并回收归属已核实、没有本地改动的 Herdr Desktop worktree。团队角色和注册、AgentMail、Git 分支和已使用的任务编号保留。
 
 `herdr-team inbox list` 列出当前项目所有角色的待处理记录。`herdr-team inbox list lead@ccremote` 按角色和项目查找，`--all` 同时显示已确认的邮件。也可以写成 `herdr-team inbox list lead@ccremote --all`。正常列表和 `inbox trash` 都按收件时间倒序显示邮件，默认以本地时间呈现。回收站列表和邮件详情显示路由时记录的原因，旧记录显示当时没有找到可投递的项目。
 项目名可用当前或已登记项目的目录名，也可在 `~/.herdr-team/projects.toml` 给本地项目配置唯一别名：

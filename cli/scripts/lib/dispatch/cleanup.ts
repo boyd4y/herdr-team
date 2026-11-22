@@ -36,8 +36,8 @@ export interface CleanupResult {
  * **不 force。** Git 有未提交的东西时会拒绝，这时只报出来让人决定 ——
  * 悄悄丢掉别人没提交的工作是最不该发生的事。
  */
-export function releaseTaskResources(project: Project, card: TaskCard): void {
-  if (!isTaskInactive(card)) return;
+export function releaseTaskResources(project: Project, card: TaskCard, purge = false): void {
+  if (!purge && !isTaskInactive(card)) return;
   const path = runtimePath(project, "resources");
   if (!existsSync(path)) return;
   for (const name of readdirSync(path)) {

@@ -122,17 +122,18 @@ const PROJECT_USAGE = `Usage: herdr-team project <list|show|create|update|delete
   create [--name NAME]    Register an initialized project
   update --name NAME      Set the registered project's alias
   delete                  Unregister the project and retain its files
-  purge --all [--dry-run] Clear the project's task, issue, iteration and feature records
+  purge --all [--force] [--dry-run] Clear the project's task, issue, iteration and feature records
 
 Project actions use the current directory or --root DIR / --project ID.
 All actions support --json. Use team init to initialize a new project.
 `;
 
-const PURGE_USAGE = `Usage: herdr-team project purge --all [--dry-run] [--root DIR | --project ID] [--json]
+const PURGE_USAGE = `Usage: herdr-team project purge --all [--force] [--dry-run] [--root DIR | --project ID] [--json]
 
 Removes workflow records from one project. Delivery history and demo results are included.
 Team setup, registration, AgentMail Inbox, retired task IDs, and Git are retained.
-Stop delivery and reclaim task worktrees first. --dry-run shows counts and blockers without removing records.
+Stop the team first. --force discards unfinished records and reclaims verified clean Desktop worktrees.
+--dry-run shows counts and blockers without making changes.
 `;
 
 const TEAM_USAGE = `Usage: herdr-team team <init|validate|up|down|status> [options]
@@ -278,9 +279,9 @@ function cmdProject(args: string[]): number {
     throw new UsageError("Choose a project subcommand: list, show, create, update, delete, or purge.");
   }
   if (operation === "purge") {
-    checkOptions(parsed, ["root"], ["all", "dry-run"]);
+    checkOptions(parsed, ["root"], ["all", "force", "dry-run"]);
     if (!parsed.flags.has("all")) throw new UsageError("Use --all to select all project workflow records. Add --dry-run to preview.");
-    const result = purgeProject(resolveRoot(parsed.values.get("root")), parsed.flags.has("dry-run"));
+    const result = purgeProject(resolveRoot(parsed.values.get("root")), parsed.flags.has("dry-run"), parsed.flags.has("force"));
     const { records } = result;
     const runs = result.files.filter(path => path.startsWith("demo/"));
     const inventory = [
