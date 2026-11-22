@@ -108,8 +108,10 @@ linked issue's iteration.
 
 New Feature assignments share one worktree and Space per project, feature and
 iteration. The daemon advances one task at a time in each Feature, and separate
-Features can run concurrently. Final task review confirms the exact commit in
-the Feature branch. After validating the integrated Feature and approving its
+Features can run concurrently. When local review is required, the reviewer uses
+Changes in that Feature Space before the developer commits. See the
+[handoff guide](../skill/references/handoff.md#本地-review-与交付) for review and delivery.
+After validating the integrated Feature and approving its
 merge, run `herdr-team feature merge NAME --iteration VERSION --base BRANCH --commit SHA`
 from the base checkout. The daemon reclaims the merged Feature's clean workspace
 and stops its managed previews and temporary agents. Existing task-scoped

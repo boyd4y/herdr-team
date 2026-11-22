@@ -5,7 +5,7 @@
 
 ## PR：Skill 请求、CLI 记录
 
-只在用户已授权 PR 交付时执行；复用已有授权，无需每张卡重新确认。
+只在用户已授权 PR 交付时执行；复用已有授权，无需每张卡重新确认。任务另需[本地 Review](handoff.md#本地-review-与交付)时，取得本地评审结论后再提交，随后执行以下 PR 验证步骤。
 
 1. test 按 [handoff.md](handoff.md) 核对干净 checkout 和指派 SHA，使用隔离资源完成验收；失败直接 reject。
 2. Skill 在任务 checkout 核对 origin 和目标仓库，将该 SHA 推送到任务分支。

@@ -21,10 +21,10 @@ lead 创建或调整任务、管理角色和会话、派活、核对 inbox 投�
 
 派给 `lifecycle: temporary` 的角色前，用 `add` 或 `edit` 给任务设置 `--feature NAME --iteration VERSION`。任务可以继承关联 Issue 的迭代。同一批交付的多个 Issue 和 Task 共用同一个 Feature 与迭代。
 
-Skill 根据用户目标、TEAM.md 的角色步骤和现有角色，为每张任务确定负责人及必要验收角色。建卡时用 `--body` 或 `--body-file` 记录执行范围和完成条件。已知信息直接写入卡片，只有确实影响执行的缺口才向用户确认。
+Skill 根据用户目标、TEAM.md 的角色步骤和现有角色，为每张任务确定负责人及必要验收角色。建卡时用 `--body` 或 `--body-file` 记录执行范围和完成条件。代码任务需要本地 Review 时，在同一张卡写明评审人和评审范围，按[本地 Review 与交付](#本地-review-与交付)安排交接。已知信息直接写入卡片，只有确实影响执行的缺口才向用户确认。
 
 ```sh
-herdr-team task create "Implement login" --role dev --handoff test,review --body-file login-task.md
+herdr-team task create "Implement login" --role dev --body-file login-task.md
 herdr-team task dispatch <id>
 ```
 
@@ -48,10 +48,19 @@ PR 发布、批准后合并必须有用户授权；没有既有决定且当前�
 1. 只有收到投递的执行会话领取，每个 delivery ID 领取一次。使用消息中的 `herdr-team task claim <id> --delivery ID --root <team-root>`。收到成功回执就开始工作；收到 `duplicate` 就停止这次重复执行。领取结果不明时查一次原投递，确认未领取才重试。
 2. 首次接棒需要完整描述或交付记录时，用 `herdr-team task show <id> --json --root <team-root>` 读取卡片、交付摘要及其引用的产物。
    列表 tasks/status/role list 默认不含 body，tasks <id> 返回含正文的单个对象。
-3. 按本棒职责工作，完成后使用同一个 delivery ID 交棒。下游明确时直接交接，不额外增加 lead 中转。
+3. 按本棒职责工作，完成后使用同一个 delivery ID 交棒。代码任务按[本地 Review 与交付](#本地-review-与交付)决定何时提交。下游明确时直接交接，不额外增加 lead 中转。
    需要改链或归属不明确时通知 lead；不要猜角色、跳验收或让用户人工转述。
 
-## 交付
+## 本地 Review 与交付
+
+- **无需 Review**：开发者在 Feature worktree 完成实现和自测，直接 commit，再用 `task handoff --summary` 记录 SHA、验证结果及交付范围。没有下一位时，由这次交棒完成任务。
+- **需要 Review**：开发者自测后将改动留在原 Feature worktree，提供任务号、Feature Space、验证结果和评审重点。评审人切到该 Space，在 Herdr Desktop 的 **Changes** 中查看相对 `HEAD` 的本地改动。等待或评审期间保留 worktree 并暂停写入。通过后，开发者只提交评审通过的改动，再用 `task handoff --summary` 正式交付。需要修改时在同一 worktree 返工，更新后的改动重新评审。
+
+人工评审由开发者在原会话通知用户，说明打开哪个 Feature Space，并等待用户回复。继续使用当前任务和已领取的 delivery；等待结论属于正常评审。
+
+由团队角色评审时，建卡将评审和返回开发者写入同一任务的交棒链，例如 `--role dev --handoff review,dev`。开发者用普通 `task handoff --summary` 发出本地评审请求，daemon 从 Inbox 投递给评审角色。评审人只读同一个 worktree，用普通交棒将结论或需修改项通过 Inbox 返回。收到退回的开发者先返工；lead 通过 `task update <id> --handoff review,dev --force` 补回待走的评审链，保留当前负责人和 delivery。已有后续阶段时保留在链尾。开发者用当前 delivery 再发出评审请求。
+
+## 交付命令
 
 普通交付保持简短，CLI 会把摘要追加到 `task.md`。
 
@@ -63,9 +72,9 @@ herdr-team task handoff <id> --delivery ID --summary-file <file> --root <team-ro
 摘要应足够让下一位继续；报告按需要提供，研究结论附来源。摘要虽非强制字段，也不能把状态推进当成结果完整。
 交付以卡片和实际产物为准，不默认读取终端历史；agent read 仅用于诊断或补查旧任务缺失交付。
 
-任务卡的 `handoff` 为空时，当前角色是最后一棒。普通结果用 `--summary` 完成任务。已有指定提交的评审继续按下文的验收方式处理。需要提交评审且任务没有下一位时，先由 lead 明确评审人。
+任务卡的 `handoff` 为空时，当前角色是最后一棒。普通结果用 `--summary` 完成任务。以下 SHA 验收命令用于已指派的提交或明确约定的提交级验收，例如 PR。任务需要另做本地 Review 时，先取得本地评审结论，再提交并进入 SHA 验收。
 
-需要逐棒验收代码时，开发者提交干净版本，下一位针对同一 SHA 接受或拒绝：
+提交级验收中，开发者交付干净版本，下一位针对同一 SHA 接受或拒绝：
 
 ```sh
 herdr-team task handoff <id> --delivery ID --commit SHA --summary "Implemented; ready for validation" --root <team-root>

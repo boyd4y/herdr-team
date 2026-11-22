@@ -97,7 +97,7 @@ TEAM.md 只按实际角色写简短中文步骤。交棒、协作和交付由 Sk
 
 仅在用户授权 PR 交付时，由 Skill 按任务需要执行；CLI 不强制三个阶段或固定角色名。
 
-1. dev 自测并提交，用 `handoff <id> --delivery ID --commit SHA --summary TEXT` 交给下一位。
+1. dev 自测，任务需要[本地 Review](../skill/references/handoff.md#本地-review-与交付)时先取得评审结论。提交后用 `handoff <id> --delivery ID --commit SHA --summary TEXT` 交给下一位。
 2. test 在同一任务 worktree 验证该 SHA。通过后由 Skill 推送任务分支，用 `gh pr list/create` 复用或创建 PR，
    再用 `handoff <id> --delivery ID --accept SHA --pr URL --summary TEXT` 保存测试与 PR 记录并交接。
    `--pr` 不会创建或推送 PR；错误仓库、分支、SHA、draft 或关闭状态都会被拒绝。
@@ -347,7 +347,9 @@ herdr-team inbox retry <id>
 取消、改派角色或强制退回 todo 会清除旧 delivery。尚未入队的旧任务保持原行为；一旦进入新队列，就必须领取并携带 ID 交棒。
 任务变更通过项目排他锁串行，历史写入可在重启后补齐。队列避免盲目重复发送，并不保证底层终端消息恰好执行一次。
 
-### 按任务开发、验收与合并
+### 指定 SHA 的验收与合并
+
+普通代码交付和提交前人工 Review 见[本地 Review 与交付](../skill/references/handoff.md#本地-review-与交付)。本节是显式提交 SHA 的验收链。
 
 本地 `dev-test` 方案和未选择 PR 工作流的旧任务使用 `dev ⇄ test → merge queue`。
 推荐的 PR 方案见上方“推荐的 PR 流程”；其测试通过只进入 PR 审查，不能直接合并。

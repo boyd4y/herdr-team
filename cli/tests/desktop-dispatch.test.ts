@@ -12,6 +12,7 @@ import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, pumpQueue, queueRows } from "../scripts/lib/dispatch/queue.ts";
 import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
 import { CORE_START_UNCONFIRMED, deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
+import { readInboxDelivery } from "../scripts/lib/dispatch/inbox.ts";
 import { handoff } from "../scripts/lib/tasks/handoff.ts";
 import { git } from "../scripts/lib/tasks/verification.ts";
 import { runtimePath } from "../scripts/lib/runtime/state.ts";
@@ -717,21 +718,39 @@ test("interrupted checkout creation is preserved and cannot be silently adopted"
   } finally { f.cleanup(); }
 });
 
-test("a repeated role gets a new delivery conversation when the earlier program reports done", () => {
+test("local review sends uncommitted Feature changes and returns to a new developer conversation", () => {
   const f = fixture();
   try {
-    writeTaskMeta(f.load(), f.task(), { handoff: ["qa", "dev"] });
+    writeTaskMeta(f.load(), f.task(), { feature: "search", iteration: "v1.2", handoff: ["qa", "dev"] });
     dispatch(f.load(), f.runtime(), "0001");
     const first = deliveryFor(f.task())!; f.claim();
-    f.terminals[1]!.status = { state: "done" };
-    handoff(f.load(), f.runtime(f.terminals[1]!), "0001", new Date(), { delivery: first.id });
+    const developer = f.terminals[1]!;
+    const checkout = developer.cwd;
+    const base = git(checkout, "rev-parse", "HEAD");
+    writeFileSync(join(checkout, "search.txt"), "search\n");
+    developer.status = { state: "done" };
+    const request = "Review the local changes in the search Feature Space.";
+    handoff(f.load(), f.runtime(developer), "0001", new Date(), { delivery: first.id, summary: request });
     const second = deliveryFor(f.task())!; f.claim();
-    const result = handoff(f.load(), f.runtime(f.terminals[2]!), "0001", new Date(), { delivery: second.id });
+    const reviewer = f.terminals[2]!;
+    expect(readInboxDelivery(f.load(), second.id)).toMatchObject({ sender: "dev", recipient: "qa", body: request });
+    expect(reviewer.cwd).toBe(checkout);
+    expect(git(reviewer.cwd, "rev-parse", "HEAD")).toBe(base);
+    expect(readFileSync(join(reviewer.cwd, "search.txt"), "utf8")).toBe("search\n");
+    const result = handoff(f.load(), f.runtime(reviewer), "0001", new Date(), { delivery: second.id, summary: "Local changes approved." });
     expect(result.prompted).toBe(true);
-    expect(f.terminals[3]!.cwd).toBe(f.terminals[1]!.cwd);
-    expect(f.terminals[3]!.address).not.toBe(first.terminal);
-    expect(f.terminals[1]!.labels["team.delivery"]).toBe(first.id);
+    const returningDeveloper = f.terminals[3]!;
+    expect(returningDeveloper.cwd).toBe(checkout);
+    expect(returningDeveloper.address).not.toBe(first.terminal);
+    expect(developer.labels["team.delivery"]).toBe(first.id);
     expect(f.calls.some(call => call.method === "terminal.send")).toBe(false);
+    const third = deliveryFor(f.task())!; f.claim();
+    const finish = () => handoff(f.load(), f.runtime(returningDeveloper), "0001", new Date(),
+      { delivery: third.id, summary: "Committed the approved changes." });
+    expect(readInboxDelivery(f.load(), third.id)).toMatchObject({ sender: "qa", recipient: "dev", body: "Local changes approved." });
+    expect(finish).toThrow("Commit feature work before completing this task");
+    git(checkout, "add", "search.txt"); git(checkout, "commit", "-qm", "Implement search");
+    expect(finish().status).toBe("done");
   } finally { f.cleanup(); }
 });
 
