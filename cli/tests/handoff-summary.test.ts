@@ -97,24 +97,21 @@ test("真实 CLI 支持 summary / summary-file，校验输入后才流转，并�
   expect(cli("handoff", "0001", "--summary", " ").code).not.toBe(0);
   expect(loadProject(root).tasks).toEqual(before);
   herdrForSummary(root);
-  const first = cli("handoff", "0001", "--summary", "完成实现；文件 src/a.ts；验证通过。");
+  writeFileSync(join(root, "summary.md"), "完成实现；文件 src/a.ts；验证通过。\n\n风险：无。\n");
+  const first = cli("handoff", "0001", "--summary-file", "summary.md");
   expect(first.code).toBe(0);
-  expect(JSON.parse(first.stdout)).toMatchObject({ summarySaved: true, prompted: true });
-  writeFileSync(join(root, "summary.md"), "复核通过。\n\n风险：无。\n");
+  expect(JSON.parse(first.stdout)).toMatchObject({ summarySaved: true, prompted: false, queueState: "queued" });
   const delivery = loadProject(root).tasks[0]!.meta.delivery as { id: string };
   expect(JSON.parse(cli("inbox", "list", "--role", "docs").stdout)).toMatchObject([
-    { id: "0001", role: "docs", state: "submitted", delivery: delivery.id },
+    { id: "0001", role: "docs", state: "queued", delivery: delivery.id },
   ]);
   expect(JSON.parse(cli("inbox", "list", "--role", "dev").stdout)).toEqual([]);
   expect(cli("queue").code).toBe(2);
-  expect(cli("claim", "0001", "--delivery", delivery.id).code).toBe(0);
-  expect(cli("handoff", "0001", "--delivery", delivery.id, "--summary-file", "summary.md").code).toBe(0);
   const task = JSON.parse(cli("tasks", "0001").stdout);
-  expect(task.status).toBe("done");
+  expect(task.status).toBe("review");
   expect(task.body).toContain("完成实现；文件 src/a.ts；验证通过。");
-  expect(task.body).toContain("复核通过。\n\n风险：无。");
+  expect(task.body).toContain("风险：无。");
   const log = readFileSync(join(root, "daemon-home", "daemon.log"), "utf8");
-  expect(log).toContain('"event":"task.claimed"');
   expect(log).toContain('"event":"task.handoff"');
   expect(log).not.toContain("完成实现");
   expect(log).not.toContain("风险：无");

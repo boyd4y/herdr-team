@@ -231,6 +231,9 @@ function handoffLocked(
     if (shared) return { id, from, to: null, status, previousStatus, prompted: false, ...summaryReceipt,
       note: `${id} completed in ${worktreeBranch(card)}. The feature workspace is ready for the next assignment.${deliveryNote}` };
 
+    if (options.deferDelivery) return { id, from, to: null, status, previousStatus, prompted: false, ...summaryReceipt,
+      note: `${id} completed (${from} was the final owner).${deliveryNote}` };
+
     // 收尾就该把 worktree 收掉，否则每做一个任务就多留一个 checkout。
     const cleanup = herdr.cleanup(project, { ...card, status });
     const tail =

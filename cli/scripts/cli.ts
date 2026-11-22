@@ -3,7 +3,7 @@ import { projectKey, resolveProjectWorkspace, TeamScopeError } from "./lib/dispa
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { join, resolve } from "node:path";
-import { cleanupAll, cleanupIfDone, type CleanupResult } from "./lib/dispatch/cleanup.ts";
+import type { CleanupResult } from "./lib/dispatch/cleanup.ts";
 import { findRoot, findTeamRoots, loadProject, type ProjectReadOptions } from "./lib/team/project.ts";
 import { aliasesForProject, assignProjectAlias, ProjectAliasError, removeProjectAliases, rootForInboxProject } from "./lib/team/project-aliases.ts";
 import { mergeRows, mergeTask, retryMerge } from "./lib/integration/merge.ts";
@@ -27,8 +27,8 @@ import { acceptRequirement, addRequirement, editRequirements, indexRequirementTa
   setIterationState, setRequirementDisposition, taskIteration, validateIteration } from "./lib/team/requirements.ts";
 import { listIssueMetadata, migrateIssueStore, readIssue, RequirementError, type Requirement } from "./lib/team/issue-store.ts";
 import { formatProblems, validateProject } from "./lib/team/validate.ts";
-import { canonicalKind, CARD_DISPOSITIONS, featureWorkspace, isRoleLifecycle, isTerminal, NAME_RE, STATUSES, taskDisposition, type Project } from "./lib/shared/types.ts";
-import { confirmedFeatures, FeatureError, featureKey, finishFeature, scopeFor, validateFeature, type FeatureScope } from "./lib/team/features.ts";
+import { canonicalKind, CARD_DISPOSITIONS, isRoleLifecycle, isTerminal, NAME_RE, STATUSES, taskDisposition, type Project } from "./lib/shared/types.ts";
+import { confirmedFeatures, FeatureError, featureKey, finishFeature, scopeFor, validateFeature } from "./lib/team/features.ts";
 import { callerSpace, managedContext } from "./lib/runtime/context.ts";
 import { readProxyEnv } from "./lib/runtime/agent-env.ts";
 import { bindDesktop, desktopDown, desktopUp, DesktopError, realDesktop, registeredDesktopBinding, savedDesktopBinding, showDesktopBinding, unbindDesktop, type DesktopTerminal } from "./lib/runtime/desktop.ts";
@@ -36,7 +36,7 @@ import { withTeamLock } from "./lib/runtime/state.ts";
 import { desktopTaskRuntime, syncDesktopTaskSpaces, type DesktopTaskRuntime } from "./lib/runtime/desktop-dispatch.ts";
 import { taskRuntime } from "./lib/dispatch/runtime.ts";
 import { assertDaemonOwner, daemonDirectory, daemonEndpoint, inboxProjectStates, listRegisteredProjects, makeDaemonTeam, pauseDaemonTeam, readDaemonTeam, registerDaemonTeam, registerProjectRoot, unregisterProjectRoot } from "./lib/runtime/daemon-binding.ts";
-import { daemonPass, daemonStatus, serveDaemon, startDaemon, stopDaemon, wakeDaemon } from "./lib/runtime/daemon.ts";
+import { daemonPass, daemonStatus, requestDaemonCleanup, serveDaemon, startDaemon, stopDaemon, wakeDaemon } from "./lib/runtime/daemon.ts";
 import { featurePreviewStatus, queueFeaturePreview } from "./lib/runtime/feature-preview.ts";
 import { daemonLogPath, deliveryLogReason, followDaemonLog, formatDaemonLog, logDaemon, readDaemonLog } from "./lib/runtime/daemon-log.ts";
 import { addAgentMailRoute, AgentMailError, checkAgentMail, readAgentMailRoutes } from "./lib/runtime/agentmail.ts";
@@ -626,7 +626,7 @@ async function cmdFeature(args: string[]): Promise<number> {
     const key = featureKey(scope);
     const confirmation = confirmedFeatures(project).get(key);
     if (!confirmation) throw new FeatureError(`Confirm delivery of ${key} before cleaning it`);
-    return printCleanup(parsed, project, cleanTasks(project, confirmation.tasks), scope);
+    return printCleanup(parsed, await cleanTasks(project, confirmation.tasks));
   }
   const result = finishFeature(project, name, version, op === "merge" ? { commit: commit!, base: base! } : undefined);
   logDaemon("feature.delivered", { project: root, feature: result.feature, iteration: result.iteration, count: result.tasks.length });
@@ -823,8 +823,7 @@ async function cmdHandoff(args: string[], name = "handoff"): Promise<number> {
 
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
-  const deferDelivery = Boolean(featureWorkspace(findTask(project, id))) || daemonDirectory() === join(project.root, ".herdr", "demo", "service") && isDesktopDemo(project.root);
-  const result = handoff(project, executionRuntime(project), id, new Date(), { summary, delivery: parsed.values.get("delivery"), commit: parsed.values.get("commit"), accept: parsed.values.get("accept"), reject: parsed.flags.has("reject"), pr: parsed.values.get("pr"), deferDelivery });
+  const result = handoff(project, executionRuntime(project), id, new Date(), { summary, delivery: parsed.values.get("delivery"), commit: parsed.values.get("commit"), accept: parsed.values.get("accept"), reject: parsed.flags.has("reject"), pr: parsed.values.get("pr"), deferDelivery: true });
   logDaemon("task.handoff", { project: root, task: result.id, from: result.from, to: result.to,
     state: result.status, delivery: result.delivery, deliveryState: result.queueState, duplicate: result.duplicate ?? false });
   await wakeDaemon(root);
@@ -917,7 +916,10 @@ async function cmdAgentMail(args: string[]): Promise<number> {
 }
 
 async function cmdDaemon(args: string[]): Promise<number> {
-  if (args[0] === "_pass" && args.length === 2) { daemonPass(args[1]!); return 0; }
+  if (args[0] === "_pass" && (args.length === 2 || args.length === 3)) {
+    daemonPass(args[1]!, args[2] === undefined ? undefined : JSON.parse(args[2]));
+    return 0;
+  }
   if (args[0] === "_serve" && args.length === 1) { await serveDaemon(); return 0; }
   const parsed = parseArgs(args.map(arg => arg === "-f" ? "--follow" : arg), ["lines"]);
   if (parsed.flags.has("help")) {
@@ -1143,14 +1145,16 @@ async function cmdDispatch(args: string[], name = "dispatch"): Promise<number> {
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
   const task = findTask(project, id);
-  const shared = Boolean(scopeFor(project, task) && (task.meta.feature_dispatched !== true || featureWorkspace(task)));
-  if (shared) {
+  if (task.status === "todo" && !readDaemonTeam(projectKey(project))) {
+    throw new TaskError("Start the team with herdr-team team up before dispatching tasks");
+  }
+  if (task.status === "todo" && scopeFor(project, task)) {
     const daemon = await daemonStatus();
     if (daemon.state === "running" && !daemon.featureWorkspaces) {
       throw new FeatureError("Restart the team daemon to enable shared feature workspaces");
     }
   }
-  const result = dispatch(project, executionRuntime(project), id, shared);
+  const result = dispatch(project, executionRuntime(project), id, true);
   logDaemon("dispatch.completed", { project: root, task: id, count: result.length });
   for (const delivery of result) logDaemon("dispatch.result", { project: root, task: delivery.id,
     role: delivery.role, state: delivery.action, reason: deliveryLogReason(delivery.reason) });
@@ -1444,16 +1448,18 @@ async function cmdTaskDisposition(args: string[], action: "archive" | "delete" |
   return out(parsed, task, `${action === "archive" ? "Archived" : action === "delete" ? "Moved to Trash:" : "Restored"} task #${id}.`);
 }
 
-function cleanTasks(project: Project, ids?: readonly string[]): CleanupResult[] {
-  const runtime = executionRuntime(project);
-  if ("clean" in runtime) return runtime.clean(...(ids ?? []));
-  if (!ids) return cleanupAll(project, runtime);
-  return ids.map(id => cleanupIfDone(project, runtime, findTask(project, id)));
+async function cleanTasks(project: Project, ids?: readonly string[]): Promise<CleanupResult[]> {
+  executionRuntime(project);
+  const team = readDaemonTeam(projectKey(project));
+  if (!team) throw new TaskError("Start the team with herdr-team team up before cleaning worktrees");
+  const context = managedContext();
+  if (context.kind === "desktop" ? context.caller.labels["herdr.space"] !== team.space : !context.pane.startsWith(team.space + ":")) {
+    throw new TaskError("Request cleanup from the project's main team workspace");
+  }
+  return requestDaemonCleanup(project.root, ids);
 }
 
-function printCleanup(parsed: ReturnType<typeof parseArgs>, project: Project, results: CleanupResult[], scope?: FeatureScope): number {
-  for (const result of results) logDaemon("task.cleaned", { project: project.root, task: result.id, state: result.action,
-    ...(scope ?? {}) });
+function printCleanup(parsed: ReturnType<typeof parseArgs>, results: CleanupResult[]): number {
   const failures = results.filter(r => r.action !== "removed" && r.action !== "absent");
   const removed = results.filter(r => r.action === "removed").length;
   const absent = results.length - removed - failures.length;
@@ -1464,16 +1470,16 @@ function printCleanup(parsed: ReturnType<typeof parseArgs>, project: Project, re
   return failures.length ? 1 : 0;
 }
 
-function cmdClean(args: string[], name = "clean"): number {
+async function cmdClean(args: string[], name = "clean"): Promise<number> {
   const parsed = parseArgs(args, ["root"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write(`Usage: herdr-team ${name} [ID] [--root DIR | --project ID] [--json]\nReclaim worktrees, terminals and Spaces for finished tasks. Task cards and Git branches are retained.\n`);
+    process.stdout.write(`Usage: herdr-team ${name} [ID] [--root DIR | --project ID] [--json]\nAsk the daemon to reclaim worktrees, terminals and Spaces for finished tasks. Task cards and Git branches are retained.\n`);
     return 0;
   }
   checkOptions(parsed, ["root"]);
   if (parsed.pos.length > 1) throw new UsageError("clean accepts at most one task ID");
   const project = loadValidated(resolveRoot(parsed.values.get("root")));
-  return printCleanup(parsed, project, cleanTasks(project, parsed.pos.length ? parsed.pos : undefined));
+  return printCleanup(parsed, await cleanTasks(project, parsed.pos.length ? parsed.pos : undefined));
 }
 
 /** `K=V,K=V` → 映射。 */

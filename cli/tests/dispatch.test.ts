@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { loadProject } from "../scripts/lib/team/project.ts";
+import { deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
 import { projectKey } from "../scripts/lib/dispatch/team-scope.ts";
 import { rememberRoleSession } from "../scripts/lib/runtime/sessions.ts";
 import { makeProject, twoRoles, writeTask, taskMeta } from "./helpers.ts";
@@ -22,7 +23,7 @@ function withCLI(run: (cli: (...args: string[]) => { code: number; stdout: strin
     const executable = join(bin, "herdr");
     writeFileSync(executable, `#!/usr/bin/env bun
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-const path = process.env.HERDR_TEST_STATE;
+const path = ${JSON.stringify(stateFile)};
 const state = JSON.parse(readFileSync(path, "utf8"));
 const args = process.argv.slice(2);
 if (args[0] === "pane" && args[1] === "current") {
@@ -56,7 +57,7 @@ if (command === "workspace" && sub === "list") {
   state.tabs.push(tab); state.panes.push(pane);
   result = { tab, root_pane: pane };
 } else if (command === "pane" && sub === "list") {
-  result = { panes: [{ workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", cwd: process.env.HERDR_TEST_ROOT }, ...state.panes] };
+  result = { panes: [{ workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", cwd: ${JSON.stringify(root)} }, ...state.panes] };
 } else if (command === "agent" && sub === "list") {
   result = { agents: state.agents };
 } else if (command === "worktree" && sub === "list") {
@@ -91,8 +92,8 @@ if (command === "workspace" && sub === "list") {
   throw new Error("Unexpected Herdr call: " + args.join(" "));
 }
 writeFileSync(path, JSON.stringify(state));
-if (command === "agent" && sub === "prompt" && process.env.HERDR_TEST_PROMPT_ERROR) {
-  process.stderr.write(JSON.stringify({ error: { code: process.env.HERDR_TEST_PROMPT_ERROR } }));
+if (command === "agent" && sub === "prompt" && ${JSON.stringify(promptError)}) {
+  process.stderr.write(JSON.stringify({ error: { code: ${JSON.stringify(promptError)} } }));
   process.exit(1);
 }
 process.stdout.write(JSON.stringify({ result }));
@@ -115,6 +116,17 @@ process.stdout.write(JSON.stringify({ result }));
   } finally {
     cleanup();
   }
+}
+
+function waitForDelivery(root: string, id: string, verify: (delivery: ReturnType<typeof deliveryFor>) => boolean) {
+  const deadline = Date.now() + 3000;
+  let last: ReturnType<typeof deliveryFor>;
+  do {
+    last = deliveryFor(loadProject(root).tasks.find(task => task.id === id)!);
+    if (verify(last)) return last;
+    Bun.sleepSync(30);
+  } while (Date.now() < deadline);
+  throw new Error(`Timed out waiting for the daemon to update task ${id} (${last?.state}: ${last?.reason})`);
 }
 
 describe("CLI up / dispatch", () => {
@@ -184,6 +196,7 @@ describe("CLI up / dispatch", () => {
 
   test("clean targets one terminal task and reports incomplete cleanup as failure in JSON too", () => {
     withCLI((cli, root, calls) => {
+      expect(cli("team", "up").code).toBe(0);
       writeTask(root, "0001-a", taskMeta({ status: "done" }));
       writeTask(root, "0002-b", taskMeta({ status: "done" }));
       const statePath = join(root, "herdr-state.json");
@@ -192,7 +205,12 @@ describe("CLI up / dispatch", () => {
       state.workspaces = ["w2", "w3"].map(workspace_id => ({ workspace_id, tokens: { team_project: owner } }));
       state.trees = ["0001-a", "0002-b"].map((id, i) => ({ branch: `feat/${id}`, path: `/unused/${id}`, open_workspace_id: `w${i + 2}` }));
       writeFileSync(statePath, JSON.stringify(state));
+      expect(cli("daemon", "stop").code).toBe(0);
+      expect(cli("clean", "0001", "--json").stderr).toContain("Start the team daemon");
+      expect(calls().some(args => args[0] === "worktree" && args[1] === "remove")).toBe(false);
+      expect(cli("daemon", "start").code).toBe(0);
       const cleaned = cli("clean", "0001", "--json");
+      expect(cleaned.stderr).toBe("");
       expect(cleaned.code).toBe(0);
       expect(JSON.parse(cleaned.stdout)).toMatchObject([{ id: "0001", action: "removed" }]);
       expect(JSON.parse(cleaned.stdout)).toHaveLength(1);
@@ -236,19 +254,15 @@ describe("CLI up / dispatch", () => {
   });
 
   for (const code of ["agent_prompt_stalled", "timeout"]) {
-    test.each([false, true])(`dispatch ${code} 成功并在输出中注明未确认（json=%s）`, (json) => {
+    test(`daemon records an uncertain ${code} without re-sending`, () => {
       withCLI((cli, root, calls) => {
-        const result = cli("dispatch", "0001", ...(json ? ["--json"] : []));
+        expect(cli("team", "up").code).toBe(0);
+        const result = cli("dispatch", "0001");
+        expect(result.stderr).toBe("");
         expect(result.code).toBe(0);
         expect(result.stderr).toBe("");
-        if (json) {
-          expect(JSON.parse(result.stdout)).toMatchObject([{
-            id: "0001", action: "uncertain", reason: expect.stringContaining(code),
-          }]);
-        } else {
-          expect(result.stdout).toContain("0001  dev  uncertain");
-          expect(result.stdout).toContain(code);
-        }
+        const delivery = waitForDelivery(root, "0001", d => d?.state === "uncertain");
+        expect(delivery?.reason).toContain(code);
         expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "todo"]);
         expect(calls().filter((c) => c[0] === "agent" && c[1] === "prompt")).toHaveLength(1);
       }, code);
@@ -257,11 +271,12 @@ describe("CLI up / dispatch", () => {
 
   test.each(["agent_blocked", "agent_not_found"])("dispatch %s 仍报错并保留 todo", (code) => {
     withCLI((cli, root) => {
+      expect(cli("team", "up").code).toBe(0);
       const result = cli("dispatch", "0001");
       expect(result.code).toBe(0);
       expect(result.stderr).toBe("");
       expect(result.stdout).toContain("queued");
-      expect(result.stdout).toContain(code);
+      waitForDelivery(root, "0001", d => d?.state === "queued" && Boolean(d.reason?.includes(code)));
       expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "todo"]);
       expect(readFileSync(join(root, ".herdr/tasks/0001-a/task.md"), "utf8")).not.toContain("(todo → doing)");
     }, code);
@@ -280,8 +295,12 @@ describe("CLI up / dispatch", () => {
       const assigned = cli("dispatch", "0002", "--json");
       expect(assigned.code).toBe(0);
       expect(JSON.parse(assigned.stdout).map((d: { id: string; action: string }) => [d.id, d.action])).toEqual([
-        ["0002", "dispatched"],
+        ["0002", "queued"],
       ]);
+      expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "todo"]);
+      expect(calls().some((c) => c[0] === "worktree")).toBe(false);
+      expect(cli("daemon", "start").code).toBe(0);
+      waitForDelivery(root, "0002", d => d?.state === "submitted");
       expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["todo", "doing"]);
       expect(loadProject(root).tasks[0]?.meta.delivery).toBeUndefined();
     });
@@ -304,10 +323,12 @@ describe("CLI up / dispatch", () => {
 
   test("dispatch <id> 只派一张，并输出人类可读结果", () => {
     withCLI((cli, root, calls) => {
+      expect(cli("team", "up").code).toBe(0);
       const result = cli("dispatch", "0001");
       expect(result.code).toBe(0);
-      expect(result.stdout).toContain("0001  dev  dispatched");
+      expect(result.stdout).toContain("0001  dev  queued");
       expect(result.stdout).not.toContain("0002");
+      waitForDelivery(root, "0001", d => d?.state === "submitted");
       expect(loadProject(root).tasks.map((t) => t.status)).toEqual(["doing", "todo"]);
       expect(calls().filter((c) => c[0] === "worktree" && c[1] === "create")).toHaveLength(1);
     });
@@ -330,11 +351,13 @@ describe("CLI up / dispatch", () => {
 
   test("handoff starts an isolated downstream agent without resetting the card", () => {
     withCLI((cli, root) => {
+      expect(cli("team", "up").code).toBe(0);
       writeTask(root, "0001-a", taskMeta({ role: "docs", status: "doing", handoff: ["dev"] }));
       const handed = cli("handoff", "0001", "--json");
       expect(handed.code).toBe(0);
       expect(JSON.parse(handed.stdout).status).toBe("review");
-      expect(JSON.parse(handed.stdout).prompted).toBe(true);
+      expect(JSON.parse(handed.stdout).prompted).toBe(false);
+      waitForDelivery(root, "0001", d => d?.state === "submitted");
       expect(loadProject(root).tasks[0]?.status).toBe("review");
       expect(loadProject(root).tasks[1]?.status).toBe("todo");
     });

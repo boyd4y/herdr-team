@@ -19,7 +19,8 @@ import { notifyMail } from "./mail-notifications.ts";
 import { featureWorkspace, isTerminal, workspaceKey } from "../shared/types.ts";
 import { confirmedFeatures } from "../team/features.ts";
 import { closeDeliveredTuiAgents } from "./tui-feature-sessions.ts";
-import { cleanupIfDone } from "../dispatch/cleanup.ts";
+import { cleanupAll, cleanupIfDone, type CleanupResult } from "../dispatch/cleanup.ts";
+import { findTask } from "../tasks/cards.ts";
 import { hasFeaturePreviews } from "./feature-preview.ts";
 
 const cli = fileURLToPath(new URL("../../cli.ts", import.meta.url));
@@ -53,13 +54,15 @@ function publish(value: DaemonInfo): void {
   renameSync(file, infoFile());
 }
 
-async function request(value: DaemonInfo, path: string): Promise<DaemonStatus> {
+async function request<T = DaemonStatus>(value: DaemonInfo, path: string, json?: unknown): Promise<T> {
+  const payload = json === undefined ? undefined : JSON.stringify(json);
   return new Promise((resolve, reject) => {
     const client = httpRequest({
       hostname: "127.0.0.1", port: value.port, path, agent: false,
-      headers: { Authorization: "Bearer " + value.token },
+      headers: { Authorization: "Bearer " + value.token,
+        ...(payload ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } : {}) },
       method: path === "/status" ? "GET" : "POST",
-      signal: AbortSignal.timeout(800),
+      signal: AbortSignal.timeout(payload ? 45_000 : 800),
     }, response => {
       if (response.statusCode !== 200) { response.resume(); reject(new Error("Team daemon rejected " + path)); return; }
       response.setEncoding("utf8");
@@ -69,8 +72,16 @@ async function request(value: DaemonInfo, path: string): Promise<DaemonStatus> {
       response.on("end", () => { try { resolve(JSON.parse(body)); } catch (error) { reject(error); } });
     });
     client.on("error", reject);
-    client.end();
+    client.end(payload);
   });
+}
+
+export async function requestDaemonCleanup(root: string, ids?: readonly string[]): Promise<CleanupResult[]> {
+  const value = info();
+  if (!value?.port || !processAlive(value.pid)) throw new Error("Start the team daemon before cleaning worktrees");
+  const result = await request<{ results?: CleanupResult[]; error?: string }>(value, "/clean/" + projectKey({ root }), { ids });
+  if (!result.results) throw new Error(result.error ?? "The team daemon did not return a cleanup result");
+  return result.results;
 }
 
 export async function daemonStatus(): Promise<DaemonStatus> {
@@ -179,13 +190,26 @@ function subscribe(team: DaemonTeam, panes: string[], wake: () => void, closed: 
   return close;
 }
 
-export function daemonPass(key: string): void {
+export function daemonPass(key: string, cleanup?: { ids?: string[] }): void {
   if (!/^[a-f0-9]{64}$/.test(key) || !process.env.HERDR_TEAM_DAEMON_TOKEN ||
       process.env.HERDR_TEAM_DAEMON_TOKEN !== info()?.token) throw new Error("Invalid daemon worker invocation");
   withRegistration(key, () => {
     const team = readDaemonTeam(key);
-    if (!team) return;
+    if (!team) {
+      if (cleanup) throw new Error("Start the team with herdr-team team up before cleaning worktrees");
+      return;
+    }
     const project = loadProject(team.root);
+    if (cleanup) {
+      const runtime = registeredRuntime(project, team);
+      const results = "clean" in runtime ? runtime.clean(...(cleanup.ids ?? [])) : withTeamLock(project, "queue", () => {
+        const fresh = loadProject(project.root);
+        return cleanup.ids ? cleanup.ids.map(id => cleanupIfDone(fresh, runtime, findTask(fresh, id))) : cleanupAll(fresh, runtime);
+      });
+      for (const result of results) logDaemon("task.cleaned", { project: project.root, task: result.id, state: result.action, reason: result.note });
+      process.stdout.write(JSON.stringify({ results }) + "\n");
+      return;
+    }
     let cleanupPanes: string[] = [];
     try {
       if (team.kind === "desktop" && hasFeaturePreviews(project) || project.tasks.some(task => isTerminal(task.status)) && confirmedFeatures(project).size) {
@@ -247,6 +271,14 @@ interface ActiveTeam {
   kick(): void;
 }
 
+function runWorker(key: string, team: DaemonTeam, token: string, cleanup?: { ids?: string[] }) {
+  const child = Bun.spawn([process.execPath, cli, "daemon", "_pass", key, ...(cleanup ? [JSON.stringify(cleanup)] : [])], {
+    cwd: daemonDirectory(), env: { ...daemonEnv(), ...team.env, HERDR_TEAM_DAEMON_TOKEN: token },
+    stdin: "ignore", stdout: "pipe", stderr: "pipe",
+  });
+  return Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+}
+
 function trackTeam(key: string, team: DaemonTeam, token: string): ActiveTeam {
   let stopped = false, dirty = false, connecting = false;
   let worker: Promise<unknown> | undefined;
@@ -270,11 +302,7 @@ function trackTeam(key: string, team: DaemonTeam, token: string): ActiveTeam {
     pending = undefined;
     if (stopped || worker || !dirty) return;
     dirty = false;
-    const child = Bun.spawn([process.execPath, cli, "daemon", "_pass", key], {
-      cwd: daemonDirectory(), env: { ...daemonEnv(), ...team.env, HERDR_TEAM_DAEMON_TOKEN: token },
-      stdin: "ignore", stdout: "pipe", stderr: "pipe",
-    });
-    worker = Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+    worker = runWorker(key, team, token)
       .then(([code, output, stderr]) => {
         if (deadline) clearTimeout(deadline);
         if (code) {
@@ -353,6 +381,7 @@ export async function serveDaemon(): Promise<void> {
   const value = daemonLock(info);
   if (value?.token !== token || value.pid !== process.pid) throw new Error("Use herdr-team daemon start");
   const active = new Map<string, ActiveTeam>();
+  const cleanups = new Set<Promise<Response>>();
   let stopping = false;
   let finish!: () => void;
   const stopped = new Promise<void>(resolve => { finish = resolve; });
@@ -396,7 +425,7 @@ export async function serveDaemon(): Promise<void> {
     logDaemon("daemon.stopping", { projects: active.size });
     registrationWatcher.close();
     for (const current of active.values()) current.close();
-    void Promise.allSettled([agentmail.stop(), ...[...active.values()].map(current => current.running())]).then(finish);
+    void Promise.allSettled([agentmail.stop(), ...cleanups, ...[...active.values()].map(current => current.running())]).then(finish);
   };
   const status = (): DaemonStatus => {
     const mail = agentmail.status();
@@ -404,11 +433,25 @@ export async function serveDaemon(): Promise<void> {
       teams: [...active.values()].map(current => current.status()), ...(mail ? { agentmail: mail } : {}) };
   };
   const server = Bun.serve({
-    hostname: "127.0.0.1", port: 0,
-    fetch(req) {
+    hostname: "127.0.0.1", port: 0, idleTimeout: 50,
+    async fetch(req) {
       if (req.headers.get("Authorization") !== "Bearer " + token) return new Response(null, { status: 401 });
       const path = new URL(req.url).pathname;
       if (req.method === "GET" && path === "/status") return Response.json(status());
+      if (req.method === "POST" && /^\/clean\/[a-f0-9]{64}$/.test(path)) {
+        const body = await req.json().catch(() => null);
+        if (!body || typeof body !== "object" || Array.isArray(body)) return new Response(null, { status: 400 });
+        const ids = "ids" in body ? body.ids : undefined;
+        if (ids !== undefined && (!Array.isArray(ids) || ids.length < 1 || ids.length > 9999 ||
+          ids.some(id => typeof id !== "string" || !/^\d{4}$/.test(id)))) return new Response(null, { status: 400 });
+        const key = path.slice(7), team = active.get(key)?.team;
+        if (stopping || !team) return Response.json({ error: "Start the team with herdr-team team up before cleaning worktrees" });
+        const result = runWorker(key, team, token, { ids })
+          .then(([code, output, stderr]) => code === 0 ? new Response(output, { headers: { "Content-Type": "application/json" } })
+            : Response.json({ error: stderr.trim().split("\n")[0] || "Team cleanup failed" }));
+        cleanups.add(result);
+        try { return await result; } finally { cleanups.delete(result); }
+      }
       if (req.method === "POST" && /^\/wake\/[a-f0-9]{64}$/.test(path)) {
         reload();
         active.get(path.slice(6))?.kick();

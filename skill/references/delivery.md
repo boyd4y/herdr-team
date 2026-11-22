@@ -51,15 +51,13 @@ herdr-team feature merge NAME --iteration VERSION --base develop --commit SHA
 1. 先保存交付摘要、SHA、验证结果及需要保留的产物。摘要通过 handoff 留在主检出的任务卡；
    持久证据放主检出的 `.herdr/reports/<id>/`，不能只留在即将删除的 worktree 或终端里。
 2. 用 `tasks <id> --json` 确认任务已 done，合并流程还需确认 integration 为 done。
-   普通最后一次 handoff 已尝试回收，检查返回的 cleanup 结果；未确认回收时执行：
+   在项目主工作区提交清理请求，由 daemon 回收资源：
 
    ```sh
    herdr-team task clean <id> --root <team-root> --json
    ```
 
-3. 从主 workspace 的 lead/协调会话执行清理，避免删除执行清理命令本身所在的工作区。
-   最后一棒在任务 workspace 内时，交付摘要明确注明待收尾任务号，由协调会话直接完成，不让用户手动关闭。
-   用 `removed` / `absent` 确认没有遗留 checkout。CLI 按任务归属回收对应的工作区与会话。
+3. 最后一棒在任务 workspace 内时，由协调会话请求清理。用 `removed` / `absent` 确认没有遗留 checkout。
 4. `dirty`、`closed`、`foreign`、`retained`、`failed` 或 `not-terminal` 表示尚未完成清理。说明 CLI 返回的原因，条件满足后重试；
    不使用 force，不关闭常驻 lead、主 workspace、Console 或其他任务。分支和任务历史保留。
 

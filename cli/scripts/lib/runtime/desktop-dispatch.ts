@@ -269,8 +269,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
     refresh() { /* Desktop mods react to Core facts and local task folder changes. */ },
     worktreeList: desktopWorktrees,
     clean(...ids) {
-      if (!caller) throw new DesktopError("A verified Desktop caller is required to clean up a task checkout");
-      return cleanDesktopTasks(project, client, binding, caller.address, ids.length ? ids : undefined);
+      return cleanDesktopTasks(project, client, binding, caller?.address, ids.length ? ids : undefined);
     },
     cleanup(fresh, task) {
       const branch = worktreeBranch(task), tree = desktopWorktrees(taskRepo(fresh, task)).find(tree => tree.branch === branch);

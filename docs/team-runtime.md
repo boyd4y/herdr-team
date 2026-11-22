@@ -75,9 +75,11 @@ CLI commands print readable text by default. Pass `--json` to commands that
 support structured output, including `daemon logs`. The raw log at
 `~/.herdr-team/daemon.log` stores a JSON record per line for tools that tail it.
 Task contents and handoff summaries stay in the task records.
-Tasks and delivery IDs remain in each project's `.herdr/`. The daemon wakes on
-Herdr events and on explicit CLI operations. It leaves uncertain deliveries for
-reconciliation. `daemon stop` preserves registrations for the next start.
+Tasks and delivery IDs remain in each project's `.herdr/`. Dispatch and handoff
+record the request. The daemon wakes on Herdr events and explicit CLI operations,
+prepares the owned checkout and starts or reuses the assigned session. It leaves
+uncertain deliveries for reconciliation. `daemon stop` preserves registrations
+and queued work for the next start.
 `herdr-team team down` pauses automatic delivery for the current project and keeps
 it in the global project list.
 
@@ -126,11 +128,12 @@ project or its Git worktree to select it by default. From elsewhere or when
 multiple projects match, use `--root DIR` or `--project ID`, with the ID from
 `project list`. The project list and daemon controls work from any directory.
 
-Desktop mods display team records. Use `herdr-team task clean <id>` from the team
-Space to reclaim an individually scoped worktree and its terminals after final
-handoff. For shared Feature workspaces, use `herdr-team feature clean` to retry
-daemon cleanup after integration. Cleanup keeps the branch and task history and
-reports any changes or other sessions that prevent safe removal.
+Desktop mods display team records. From the main team Space, use
+`herdr-team task clean <id>` to request daemon cleanup for an individually scoped
+worktree after final handoff. For shared Feature workspaces, use
+`herdr-team feature clean` to retry daemon cleanup after integration. Cleanup
+keeps the branch and task history and reports any changes or other sessions
+that prevent safe removal.
 
 ## Source ownership
 

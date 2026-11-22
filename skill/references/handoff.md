@@ -91,7 +91,7 @@ CLI 按会话是否可接收来决定投递，任务仍需要明确 handoff。
 
 up 建立或复用团队绑定与常驻会话，确保自动投递服务运行，不把未派发的 todo 自动入箱。
 CLI 管理已经入箱的 delivery；agent 用 status、tasks 或 inbox 查状态。
-自动投递由服务负责，和面板是否打开无关。服务状态可用 `herdr-team daemon status` 查询。
+daemon 准备或复用任务 worktree，再向对应的会话投递。接棒 agent 直接在指派目录内实现或审查。服务状态可用 `herdr-team daemon status` 查询。
 
 接收方忙、blocked 或 unknown 时保持排队，不绕过队列注入。发送结果不明或迟迟未 claim 会标 uncertain，停止自动重发。
 先查卡片、原 agent、实际产物和远端副作用，再由 lead 决定是否：
