@@ -11,7 +11,7 @@ import { featurePreviewStatus, queueFeaturePreview, reconcileFeaturePreviews } f
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, pumpQueue, queueRows } from "../scripts/lib/dispatch/queue.ts";
 import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
-import { deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
+import { CORE_START_UNCONFIRMED, deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
 import { handoff } from "../scripts/lib/tasks/handoff.ts";
 import { git } from "../scripts/lib/tasks/verification.ts";
 import { runtimePath } from "../scripts/lib/runtime/state.ts";
@@ -24,7 +24,7 @@ import { finishFeature } from "../scripts/lib/team/features.ts";
 import { addRequirement, editRequirements } from "../scripts/lib/team/requirements.ts";
 import { purgeProject } from "../scripts/lib/team/purge.ts";
 
-function fixture() {
+function fixture(core: { doneGuard?: boolean; started?: boolean } = {}) {
   const f = makeProject("project with spaces 中文");
   writeRole(f.root, "dev", { kind: "codex", worktree: true });
   writeRole(f.root, "qa", { kind: "claude", worktree: true });
@@ -61,6 +61,12 @@ function fixture() {
     },
     rpc<T>(method: string, params: Record<string, any>): T {
       calls.push({ method, params });
+      if (method === "rpc.discover") {
+        const type = core.doneGuard ? "SendIf" : "IdleOrWorking";
+        return { methods: [{ name: "terminal.send", params: [{ name: "if", schema: { anyOf: [
+          { $ref: `#/components/schemas/${type}` }, { type: "null" },
+        ] } }] }], components: { schemas: { [type]: { enum: ["idle", "working", ...(core.doneGuard ? ["done"] : [])] } } } } as T;
+      }
       if (method === "doc.get") return structuredClone({ value: document, version }) as T;
       if (method === "doc.set") {
         expect(params.version).toBe(version); document = structuredClone(params.value); version++;
@@ -89,8 +95,10 @@ function fixture() {
       }
       if (method === "terminal.send") {
         const terminal = terminals.find(terminal => terminal.address === params.terminal)!;
-        if (params.if !== "idle" || terminal.status?.state !== "idle") throw new DesktopError("Busy", "status_mismatch");
-        terminal.status = { state: "working" }; return { turn: 1 } as T;
+        if (params.if !== "idle" && !(core.doneGuard && params.if === "done")) throw new DesktopError("Unsupported guard", "invalid_params");
+        if (terminal.status?.state !== params.if) throw new DesktopError("Busy", "status_mismatch");
+        if (core.started !== false) terminal.status = { state: "working" };
+        return { turn: 1, started: core.started } as T;
       }
       if (method === "terminal.kill") {
         const terminal = terminals.find(terminal => terminal.address === params.terminal)!;
@@ -233,7 +241,7 @@ test("a feature assignment to the resident lead waits for Core idle and stays in
     const terminal = f.terminals.find(item => item.address === lead.terminal)!;
     terminal.status = { app: "codex", state: "done" };
     expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "queued" }]);
-    expect(deliveryFor(f.task())?.state).toBe("queued");
+    expect(deliveryFor(f.task())).toMatchObject({ state: "queued", reason: "Waiting for Core to report idle" });
     expect(f.calls.some(call => call.method === "terminal.send")).toBe(false);
     terminal.status = { app: "codex", state: "idle" };
     expect(pumpQueue(f.load(), f.runtime())).toMatchObject([{ state: "submitted" }]);
@@ -243,6 +251,39 @@ test("a feature assignment to the resident lead waits for Core idle and stays in
     expect(terminal.labels["herdr.space"]).toBe("s1");
     expect(desktopWorktrees(f.root).some(tree => tree.branch === "feature/v1.2/search")).toBe(true);
     f.claim("0001", terminal);
+  } finally { f.cleanup(); }
+});
+
+test("a resident reporting done uses the advertised atomic Core guard", () => {
+  const f = fixture({ doneGuard: true, started: true });
+  try {
+    writeRole(f.root, "lead", { kind: "codex", worktree: false });
+    writeTaskMeta(f.load(), f.task(), { role: "lead" });
+    const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
+    const terminal = f.terminals.find(item => item.address === lead.terminal)!;
+    terminal.status = { app: "codex", state: "done" };
+    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "dispatched" }]);
+    expect(deliveryFor(f.task())).toMatchObject({ state: "submitted", terminal: terminal.address });
+    expect(f.calls.filter(call => call.method === "terminal.send")).toMatchObject([{ params: { terminal: terminal.address, if: "done" } }]);
+    expect(f.claim("0001", terminal).duplicate).toBe(false);
+    expect(f.terminals.filter(item => item.labels["team.role"] === "lead")).toHaveLength(1);
+  } finally { f.cleanup(); }
+});
+
+test("an unconfirmed Core send holds later deliveries without resending the first", () => {
+  const f = fixture({ started: false });
+  try {
+    writeRole(f.root, "lead", { kind: "codex", worktree: false });
+    for (const id of ["0001", "0002"]) writeTaskMeta(f.load(), f.task(id), { role: "lead" });
+    const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
+    const terminal = f.terminals.find(item => item.address === lead.terminal)!;
+    terminal.status = { app: "codex", state: "idle" };
+    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "uncertain", reason: CORE_START_UNCONFIRMED }]);
+    const first = deliveryFor(f.task())!;
+    expect(first).toMatchObject({ state: "uncertain", terminal: terminal.address });
+    expect(dispatch(f.load(), f.runtime(), "0002")).toMatchObject([{ action: "queued", reason: "Waiting to reconcile delivery #0001" }]);
+    expect(f.calls.filter(call => call.method === "terminal.send")).toHaveLength(1);
+    expect(f.claim("0001", terminal)).toMatchObject({ delivery: first.id, duplicate: false });
   } finally { f.cleanup(); }
 });
 

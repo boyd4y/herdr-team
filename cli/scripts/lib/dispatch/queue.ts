@@ -162,7 +162,10 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
       if (receiver) {
         const occupied = fresh.tasks.find((other) => other.id !== task.id && !isTaskInactive(other) &&
           sameReceiver(deliveryFor(other) ?? {}, receiver!.target) && deliveryFor(other)?.state !== "queued");
-        if (occupied) { hold(`Session is processing #${occupied.id}`); continue; }
+        if (occupied) {
+          hold(deliveryFor(occupied)?.state === "uncertain" ? `Waiting to reconcile delivery #${occupied.id}` : `Session is processing #${occupied.id}`);
+          continue;
+        }
       }
       if (!receiver) { hold("Waiting for agent; run herdr-team up"); continue; }
       if (!receiver.canSubmit) {

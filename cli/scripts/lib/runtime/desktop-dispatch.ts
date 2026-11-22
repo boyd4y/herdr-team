@@ -5,8 +5,8 @@ import type { Project, RoleCard, TaskCard } from "../shared/types.ts";
 import { outsideRoot } from "../shared/paths.ts";
 import { featureWorkspace, isTaskInactive, workspaceKey, worktreeBranch } from "../shared/types.ts";
 import { acceptanceFor, reviewFor, taskEnvironment, taskRepo, taskScoped, verifyCheckout } from "../tasks/verification.ts";
-import { deliveryFor, type Delivery } from "../dispatch/delivery.ts";
-import { DeliveryRejected, type DeliveryTarget, type TaskRuntime } from "../dispatch/runtime.ts";
+import { CORE_START_UNCONFIRMED, deliveryFor, type Delivery } from "../dispatch/delivery.ts";
+import { DeliveryRejected, type DeliveryTarget, type Receiver, type TaskRuntime } from "../dispatch/runtime.ts";
 import type { CleanupResult } from "../dispatch/cleanup.ts";
 import { DesktopError, desktopAgentProgram, desktopLaunchArgv, desktopProgramMatches, desktopTaskSpaces, ensureDesktopTaskSpace, registeredDesktopBinding, roleArgv, savedDesktopBinding, showDesktopBinding, terminalMatchesWorkspace, type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
 import { callerSpace } from "./context.ts";
@@ -21,6 +21,25 @@ import { cleanDesktopTasks } from "./desktop-cleanup.ts";
 
 export interface DesktopTaskRuntime extends TaskRuntime {
   clean(...ids: string[]): CleanupResult[];
+}
+
+type CoreSchema = { enum?: unknown[]; $ref?: string; anyOf?: CoreSchema[]; oneOf?: CoreSchema[] };
+
+function coreCanSendWhenDone(client: DesktopClient): boolean {
+  try {
+    const api = client.rpc<{
+      methods?: { name: string; params?: { name: string; schema?: CoreSchema }[] }[];
+      components?: { schemas?: Record<string, CoreSchema> };
+    }>("rpc.discover", {});
+    const condition = api.methods?.find(method => method.name === "terminal.send")?.params?.find(param => param.name === "if")?.schema;
+    if (!condition) return false;
+    const prefix = "#/components/schemas/";
+    const variants = [condition, ...(condition.anyOf ?? []), ...(condition.oneOf ?? [])];
+    return variants.some(schema => {
+      const resolved = schema.$ref?.startsWith(prefix) ? api.components?.schemas?.[schema.$ref.slice(prefix.length)] : schema;
+      return resolved?.enum?.includes("done") === true;
+    });
+  } catch { return false; }
 }
 
 function target(terminal: DesktopTerminal, space: string): DeliveryTarget {
@@ -141,6 +160,27 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
     }).terminals.filter(belongs);
   };
   const programMatches = (terminal: DesktopTerminal, role: RoleCard) => desktopProgramMatches(terminal, roleArgv(role, client));
+  let canSendWhenDone: boolean | undefined;
+  const existingReceiver = (terminal: DesktopTerminal, labels?: Record<string, string>): Receiver => {
+    const destination = target(terminal, binding.space);
+    const status = terminal.status?.state;
+    const canSubmit = status === "idle" || (status === "done" && (canSendWhenDone ??= coreCanSendWhenDone(client)));
+    return { target: destination, status, canSubmit, submit(prompt: string) {
+      if (!canSubmit) throw new DeliveryRejected("Core does not allow sending in the current terminal state");
+      let receipt: { started?: boolean | null } | null;
+      try {
+        if (labels) client.rpc("terminal.label", { terminal: terminal.address, labels });
+        receipt = client.rpc("terminal.send", { terminal: terminal.address, text: prompt, if: status, ...callerOptions });
+      } catch (error) {
+        if (error instanceof DesktopError && ["blocked", "status_mismatch", "finished", "not_found", "invalid_params"].includes(error.kind ?? "")) {
+          throw new DeliveryRejected(error.message);
+        }
+        throw error;
+      }
+      if (receipt?.started === false) throw new Error(CORE_START_UNCONFIRMED);
+      return destination;
+    } };
+  };
   const runtime: DesktopTaskRuntime = {
     scope: { runtime: "desktop", space: binding.space },
     envOk: () => true,
@@ -160,18 +200,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
       const receiver = residents[0];
       if (residents.length !== 1 || !receiver || !programMatches(receiver, role) ||
         realpathSync(receiver.foreground?.cwd ?? receiver.cwd) !== realpathSync(role.cwd ? resolve(binding.root, role.cwd) : binding.root)) return;
-      const destination = target(receiver, binding.space);
-      const status = receiver.status?.state;
-      return { target: destination, status, canSubmit: status === "idle", submit(prompt) {
-        try { client.rpc("terminal.send", { terminal: receiver.address, text: prompt, if: "idle", ...callerOptions }); }
-        catch (error) {
-          if (error instanceof DesktopError && ["blocked", "status_mismatch", "finished", "not_found", "invalid_params"].includes(error.kind ?? "")) {
-            throw new DeliveryRejected(error.message);
-          }
-          throw error;
-        }
-        return destination;
-      } };
+      return existingReceiver(receiver);
     },
     receiver(fresh, role, task, delivery) {
       const argv = roleArgv(role, client);
@@ -187,8 +216,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
       const current = matches.filter(terminal => terminal.labels["team.delivery"] === delivery.id);
       const active = matches.filter(terminal => terminal.status?.state !== "done");
       if (current.length > 1 || active.length > 1 || resident && matches.length > 1) throw new DesktopError(`Multiple task receivers for ${role.name}/${task.id}; inspect before retrying`);
-      // Core's guarded send accepts idle only. A finished task turn can remain done;
-      // give a later delivery its own native conversation instead of injecting unguarded input.
+      // A later delivery to a temporary role gets its own native conversation.
       const existing = resident ? matches[0] : current[0] ?? active[0];
       if (resident && !existing) return;
       const repo = taskRepo(fresh, task);
@@ -214,17 +242,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
         if (!resident && taskSpace && existing.labels["herdr.space"] !== taskSpace.space) {
           attachTaskTerminal(client, existing, taskSpace.space, binding.space);
         }
-        const status = existing.status?.state;
-        return { target: target(existing, binding.space), status, canSubmit: status === "idle", submit(prompt) {
-          try {
-            client.rpc("terminal.label", { terminal: existing.address, labels: { "team.task": task.id, "team.delivery": delivery.id } });
-            client.rpc("terminal.send", { terminal: existing.address, text: prompt, if: "idle", ...callerOptions });
-          } catch (error) {
-            if (error instanceof DesktopError && ["blocked", "status_mismatch", "finished", "not_found", "invalid_params"].includes(error.kind ?? "")) throw new DeliveryRejected(error.message);
-            throw error;
-          }
-          return target(existing, binding.space);
-        } };
+        return existingReceiver(existing, { "team.task": task.id, "team.delivery": delivery.id });
       }
       // First assignment travels in native argv. No initialization turn or readiness polling is needed.
       const key = createHash("sha256").update(`${binding.root}\0${binding.space}\0${task.id}\0${role.name}\0${delivery.id}`).digest("hex").slice(0, 20);

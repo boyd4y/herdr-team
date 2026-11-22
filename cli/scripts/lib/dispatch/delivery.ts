@@ -22,6 +22,7 @@ export interface Delivery {
 }
 
 export const AGENT_AWAITING_INPUT = "Agent is waiting for input";
+export const CORE_START_UNCONFIRMED = "Core did not confirm a new turn; inspect the receiving agent before retrying";
 
 export function deliveryReasonLabel(reason: string): string {
   return reason === "Agent is blocked" ? AGENT_AWAITING_INPUT : reason;
