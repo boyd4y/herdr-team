@@ -42,9 +42,11 @@ handoff and inbox recovery. It uses the same delivery IDs, task records,
 locks, dependency checks and exact-commit review gates as TUI execution. Each
 task owns a Git checkout; Core addresses are stored as `terminal`, never
 `pane_id`. New native processes receive their assignment in argv. Existing
-sessions accept messages only through Core's atomic idle guard; a later
-delivery after a completed task turn can start a new conversation in the same
-checkout. Unknown sends become uncertain and are not resent automatically.
+sessions accept messages only through Core's atomic `idle` guard. Herdr Team
+keeps Core's reported terminal status verbatim. A resident Lead reporting
+`done` keeps the delivery queued until Core reports `idle`. A later delivery
+for a temporary role can start a new native conversation in the same checkout.
+Unknown sends become uncertain and are not resent automatically.
 
 Each task checkout also owns one native Desktop space. All of that task's role
 sessions use the same space; the shipped Spaces mod groups it under the main

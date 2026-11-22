@@ -165,8 +165,13 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
         if (occupied) { hold(`Session is processing #${occupied.id}`); continue; }
       }
       if (!receiver) { hold("Waiting for agent; run herdr-team up"); continue; }
-      if (!["idle", "done", "new"].includes(receiver.status)) {
-        hold(receiver.status === "blocked" ? AGENT_AWAITING_INPUT : `Agent is ${receiver.status}`); continue;
+      if (!receiver.canSubmit) {
+        const status = receiver.status;
+        const reason = status === "blocked" ? AGENT_AWAITING_INPUT
+          : status === "done" ? "Waiting for Core to report idle"
+          : `Agent is ${status ?? "unknown"}`;
+        hold(reason);
+        continue;
       }
       const sending: Delivery = { ...d, ...runtime.scope, ...receiver.target, state: "sending", sent_at: now.toISOString(), reason: "" };
       save(fresh, task, sending);

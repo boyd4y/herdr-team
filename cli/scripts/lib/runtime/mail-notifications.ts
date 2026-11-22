@@ -16,7 +16,8 @@ function resident(project: Project, runtime: Herdr | TaskRuntime, space: string,
   const agent = agents[0], pane = agent?.pane_id;
   if (agents.length !== 1 || !pane) return;
   const target = { pane_id: pane };
-  return { target, status: agent.agent_status ?? "unknown", submit(prompt) {
+  const status = agent.agent_status;
+  return { target, status, canSubmit: status === "idle" || status === "done", submit(prompt) {
     runtime.agentPrompt(pane, prompt);
     return target;
   } };
@@ -41,7 +42,7 @@ export function notifyMail(project: Project, runtime: Herdr | TaskRuntime, space
     const receiver = resident(project, runtime, space, role);
     if (!receiver) continue;
     if (receiver.target.pane_id) panes.add(receiver.target.pane_id);
-    if (receiver.status !== "idle" && !(receiver.status === "done" && receiver.target.pane_id)) continue;
+    if (!receiver.canSubmit) continue;
     const busy = project.tasks.some(task => {
       const delivery = deliveryFor(task);
       return !isTaskInactive(task) && delivery && delivery.state !== "queued" && sameReceiver(delivery, receiver.target);

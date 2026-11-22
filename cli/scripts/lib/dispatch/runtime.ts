@@ -12,7 +12,9 @@ export type DeliveryTarget = Pick<Delivery, "runtime" | "space" | "pane_id" | "t
 export class DeliveryRejected extends Error {}
 export interface Receiver {
   target: DeliveryTarget;
-  status: string;
+  /** Runtime-reported terminal status, present only if a session reported one. */
+  status?: string;
+  canSubmit: boolean;
   submit(prompt: string): DeliveryTarget;
 }
 export interface TaskRuntime {
@@ -50,7 +52,8 @@ export function taskRuntime(runtime: Herdr | TaskRuntime): TaskRuntime {
       const agent = taskAgent(project, runtime, role, task);
       if (!agent?.pane_id) return;
       const target = { pane_id: agent.pane_id, ...(agent.agent_session?.value ? { session_id: agent.agent_session.value } : {}) };
-      return { target, status: agent.agent_status ?? "unknown", submit(prompt) {
+      const status = agent.agent_status;
+      return { target, status, canSubmit: status === "idle" || status === "done", submit(prompt) {
         if (agent.tokens?.team_feature && agent.tokens.team_session === "task") {
           runtime.reportMetadata(agent.pane_id!, "herdr-team", roleAgentLabel(role.name, task.id), { team_delivery: delivery.id });
         }

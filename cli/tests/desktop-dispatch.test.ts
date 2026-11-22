@@ -224,15 +224,21 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
   } finally { f.cleanup(); }
 });
 
-test("a feature assignment keeps the resident lead in the project Space", () => {
+test("a feature assignment to the resident lead waits for Core idle and stays in the project Space", () => {
   const f = fixture();
   try {
     writeRole(f.root, "lead", { kind: "codex", worktree: false });
     writeTaskMeta(f.load(), f.task(), { role: "lead", feature: "search", iteration: "v1.2" });
     const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
     const terminal = f.terminals.find(item => item.address === lead.terminal)!;
+    terminal.status = { app: "codex", state: "done" };
+    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "queued" }]);
+    expect(deliveryFor(f.task())?.state).toBe("queued");
+    expect(f.calls.some(call => call.method === "terminal.send")).toBe(false);
     terminal.status = { app: "codex", state: "idle" };
-    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "dispatched" }]);
+    expect(pumpQueue(f.load(), f.runtime())).toMatchObject([{ state: "submitted" }]);
+    expect(f.calls.filter(call => call.method === "terminal.send")).toMatchObject([{ params: { terminal: terminal.address, if: "idle" } }]);
+    expect(f.terminals.filter(item => item.labels["team.role"] === "lead")).toHaveLength(1);
     expect(deliveryFor(f.task())?.terminal).toBe(terminal.address);
     expect(terminal.labels["herdr.space"]).toBe("s1");
     expect(desktopWorktrees(f.root).some(tree => tree.branch === "feature/v1.2/search")).toBe(true);

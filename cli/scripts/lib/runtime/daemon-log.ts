@@ -210,11 +210,11 @@ export function formatDaemonLog(record: unknown): string {
 export function deliveryLogReason(reason?: string): string | undefined {
   if (!reason) return;
   reason = deliveryReasonLabel(reason);
-  if (/^Agent is (?:working|waiting for input|error|unknown|done(?: \(Core requires idle\))?)$/.test(reason) ||
+  if (/^Agent is (?:working|waiting for input|error|unknown)$/.test(reason) ||
       /^Waiting for \d{4}(?:, \d{4})*$/.test(reason) ||
       /^Session is processing #\d{4}$/.test(reason) ||
       /^Herdr submission failed \([a-z_]+\); inspect the receiving agent before retrying$/.test(reason) ||
-      ["Waiting for agent; run herdr-team up", "Assignment changed; cancel or requeue this delivery",
+      ["Waiting for agent; run herdr-team up", "Waiting for Core to report idle", "Assignment changed; cancel or requeue this delivery",
         "Delivery needs reconciliation; no automatic resend",
         "Claimed agent disappeared or changed session; verify before retrying"].includes(reason)) return reason;
   if (reason.startsWith("Agent startup failed:")) return "Agent startup failed; see inbox for details";

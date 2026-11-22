@@ -161,7 +161,8 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
       if (residents.length !== 1 || !receiver || !programMatches(receiver, role) ||
         realpathSync(receiver.foreground?.cwd ?? receiver.cwd) !== realpathSync(role.cwd ? resolve(binding.root, role.cwd) : binding.root)) return;
       const destination = target(receiver, binding.space);
-      return { target: destination, status: receiver.status?.state ?? "unknown", submit(prompt) {
+      const status = receiver.status?.state;
+      return { target: destination, status, canSubmit: status === "idle", submit(prompt) {
         try { client.rpc("terminal.send", { terminal: receiver.address, text: prompt, if: "idle", ...callerOptions }); }
         catch (error) {
           if (error instanceof DesktopError && ["blocked", "status_mismatch", "finished", "not_found", "invalid_params"].includes(error.kind ?? "")) {
@@ -213,8 +214,8 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
         if (!resident && taskSpace && existing.labels["herdr.space"] !== taskSpace.space) {
           attachTaskTerminal(client, existing, taskSpace.space, binding.space);
         }
-        const status = existing.status?.state ?? "unknown";
-        return { target: target(existing, binding.space), status: status === "done" ? "done (Core requires idle)" : status, submit(prompt) {
+        const status = existing.status?.state;
+        return { target: target(existing, binding.space), status, canSubmit: status === "idle", submit(prompt) {
           try {
             client.rpc("terminal.label", { terminal: existing.address, labels: { "team.task": task.id, "team.delivery": delivery.id } });
             client.rpc("terminal.send", { terminal: existing.address, text: prompt, if: "idle", ...callerOptions });
@@ -229,7 +230,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
       const key = createHash("sha256").update(`${binding.root}\0${binding.space}\0${task.id}\0${role.name}\0${delivery.id}`).digest("hex").slice(0, 20);
       const env = { ...desktopLaunchEnv(proxyEnv, role.env), ...taskEnvironment(fresh, task, role.name) };
       const mock = Boolean(role.env?.HERDR_SMOKE_MANIFEST);
-      return { target: runtime.scope, status: "new", submit(prompt) {
+      return { target: runtime.scope, canSubmit: true, submit(prompt) {
         let terminal: DesktopTerminal;
         try {
           terminal = client.rpc("terminal.run", { argv: [...desktopLaunchArgv(role, argv, checkout, cwd), prompt], cwd, env,
