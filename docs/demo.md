@@ -5,11 +5,11 @@ Demo 由本地隐藏设置启用，不出现在普通 `up --help` 中。只在�
 在空目录初始化：
 
 ```sh
-HERDR_TEAM_DEMO=1 herdr-team init
-herdr-team up
+HERDR_TEAM_DEMO=1 herdr-team team init
+herdr-team team up
 ```
 
-初始化会在忽略的 `.herdr/demo.json` 中保存设置。已初始化的旧 demo 项目，在现有 JSON 中加入 `enabled: true` 即可使用普通 `herdr-team up`，保留 `kind` 字段。
+初始化会在忽略的 `.herdr/demo.json` 中保存设置。已有 `"kind": "herdr-team-demo"` 的项目默认启用，可用 `"enabled": false` 暂停自动启动。正常启动使用 `herdr-team team up`，角色显示为 `dev`、`test` 和 `review`。
 
 ```json
 {
@@ -21,7 +21,7 @@ herdr-team up
 }
 ```
 
-也可以先创建 `.herdr/demo.json`，写入 `{"enabled":true,"speed":0.5}`，再运行普通 `herdr-team init`。初始化保留已有节奏设置。
+也可以先创建 `.herdr/demo.json`，写入 `{"enabled":true,"speed":0.5}`，再运行普通 `herdr-team team init`。初始化保留已有节奏设置。
 
 - `speed`：默认 1；0.5 为半速，2 为双速，范围 0.1–100。
 - `concurrency`：默认 3，范围 1–9；调低后等待已有任务结束再补充任务。

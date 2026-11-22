@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { demoDelay, demoSettings } from "../scripts/lib/demo/config.ts";
@@ -19,6 +19,10 @@ test("local demo controls are opt-in, validated and overridden by environment", 
   const f = fixture();
   try {
     expect(demoSettings(f.root, {})).toEqual({ enabled: false, speed: 1, concurrency: 3, paused: false });
+    f.save({ kind: "herdr-team-demo" });
+    expect(demoSettings(f.root, {}).enabled).toBe(true);
+    f.save({ kind: "herdr-team-demo", enabled: false });
+    expect(demoSettings(f.root, {}).enabled).toBe(false);
     f.save({ enabled: true, speed: 0.5, concurrency: 2, paused: true });
     expect(demoSettings(f.root, { HERDR_TEAM_DEMO: "0", HERDR_TEAM_DEMO_SPEED: "4" })).toEqual({ enabled: false, speed: 4, concurrency: 2, paused: true });
     for (const value of [{ speed: 0 }, { speed: "" }, { concurrency: 1.5 }, { paused: "maybe" }, null]) {
@@ -70,15 +74,28 @@ test.each(["env", "file"])("ordinary init accepts hidden %s configuration withou
     if (mode === "file") { delete (env as NodeJS.ProcessEnv).HERDR_TEAM_DEMO; f.save({ enabled: true, speed: 0.5 }); }
     const cli = join(import.meta.dir, "../scripts/cli.ts");
     const call = (...args: string[]) => Bun.spawnSync([process.execPath, cli, ...args], { cwd: f.root, env });
-    const init = call("init", "--json");
+    const init = call("team", "init", "--json");
     expect(init.stderr.toString()).toBe("");
     expect(init.exitCode).toBe(0);
     const config = JSON.parse(readFileSync(join(f.root, ".herdr/demo.json"), "utf8"));
     expect(config.kind).toBe("herdr-team-demo");
     expect(config.speed).toBe(mode === "file" ? 0.5 : 1);
-    expect(call("up", "--help").stdout.toString()).not.toContain("--demo");
-    const up = call("up", "--json");
+    expect(call("team", "up", "--help").stdout.toString()).not.toContain("--demo");
+    const up = call("team", "up", "--fast", "--json");
     expect(up.exitCode).not.toBe(0);
     expect(up.stderr.toString()).toContain("Herdr terminal");
+
+    if (mode === "file") {
+      const roles = join(f.root, ".herdr", "roles");
+      expect(readdirSync(roles).sort()).toEqual(["dev", "review", "test"]);
+      writeFileSync(join(roles, "dev", "prompt.md"), "Custom instructions.\n");
+      for (const role of ["dev", "review", "test"]) renameSync(join(roles, role), join(roles, `demo-${role}`));
+      f.save({ kind: "herdr-team-demo", speed: 0.75 });
+      expect(call("team", "up", "--fast", "--json").stderr.toString()).toContain("Herdr terminal");
+      expect(call("team", "init", "--json").exitCode).toBe(0);
+      expect(readdirSync(roles).sort()).toEqual(["dev", "review", "test"]);
+      expect(readFileSync(join(roles, "dev", "prompt.md"), "utf8")).toBe("Custom instructions.\n");
+      expect(JSON.parse(readFileSync(join(f.root, ".herdr/demo.json"), "utf8"))).toMatchObject({ enabled: true, speed: 0.75 });
+    }
   } finally { f.clean(); }
 });

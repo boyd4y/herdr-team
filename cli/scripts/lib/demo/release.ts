@@ -1,20 +1,22 @@
 import { demoContent } from "./content.ts";
 import { demoDelay, demoSettings } from "./config.ts";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { completedDeliveries, deliveryFor } from "../dispatch/delivery.ts";
 import { enqueueTask, shellQuote } from "../dispatch/queue.ts";
 import { loadProject } from "../team/project.ts";
+import { tasksUsingRole } from "../team/roles.ts";
 import { integrationFor, verifyCheckout } from "../tasks/verification.ts";
 import { findTask, writeTaskMeta } from "../tasks/cards.ts";
-import type { RoleCard, TaskCard } from "../shared/types.ts";
+import type { TaskCard } from "../shared/types.ts";
 import { realDesktop, savedDesktopBinding, type DesktopTerminal } from "../runtime/desktop.ts";
 import { managedContext } from "../runtime/context.ts";
 import { wakeDaemon } from "../runtime/daemon.ts";
 import { logDaemon } from "../runtime/daemon-log.ts";
 import { desktopTaskRuntime } from "../runtime/desktop-dispatch.ts";
 import { checkoutFor } from "../runtime/desktop-worktrees.ts";
+import { withTeamLock } from "../runtime/state.ts";
 import { smokeFixtures, type SmokeScenario } from "./scenario.ts";
 import { checkArtifact, command, demoPath, handoffGate, team, teamCommand, type MockRun, type MockTask } from "./shared.ts";
 
@@ -61,14 +63,32 @@ export function installMockRoles(root: string, area: string, serviceHome = proce
   mkdirSync(bin, { recursive: true, mode: 0o700 });
   const entry = fileURLToPath(new URL("task-agent.ts", import.meta.url));
   const shell = `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(entry)} "$@"\n`;
-  const existing = team<RoleCard[]>(root, "role", "list", "--details");
-  return roles.map(({ harness, stage, responsibility }) => {
-    const legacy = existing.find(item => item.name === `demo-${stage}` && item.env?.HERDR_SMOKE_MANIFEST === join(area, "run.json"));
-    const role = existing.some(item => item.name === stage) ? stage : legacy?.name ?? stage;
-    const old = existing.find(item => item.name === role);
-    if (old && old.env?.HERDR_SMOKE_MANIFEST !== join(area, "run.json")) {
-      throw new Error(`Role ${role} already belongs to another workflow`);
+  const manifest = join(area, "run.json");
+  const existing = withTeamLock({ root }, "queue", () => {
+    const project = loadProject(root);
+    const current = new Map(project.roles.map(role => [role.name, role]));
+    const migrations = roles.flatMap(({ stage }) => {
+      const configured = current.get(stage);
+      if (configured) {
+        if (configured.env?.HERDR_SMOKE_MANIFEST !== manifest) throw new Error(`Role ${stage} already belongs to another workflow`);
+        return [];
+      }
+      const legacy = current.get(`demo-${stage}`);
+      if (legacy?.env?.HERDR_SMOKE_MANIFEST !== manifest || legacy.lifecycle !== "temporary") return [];
+      const used = tasksUsingRole(project, legacy.name);
+      if (used.length) throw new Error(`Finish or archive tasks using role ${legacy.name} before renaming it (${used.map(id => "#" + id).join(", ")})`);
+      const from = join(project.herdrDir, legacy.dir), to = join(project.herdrDir, "roles", stage);
+      if (!lstatSync(from).isDirectory() || lstatSync(to, { throwIfNoEntry: false })) throw new Error(`Cannot safely rename role ${legacy.name} to ${stage}`);
+      return [{ from, to, stage, legacy }];
+    });
+    for (const { from, to, stage, legacy } of migrations) {
+      renameSync(from, to);
+      current.set(stage, legacy);
     }
+    return current;
+  });
+  return roles.map(({ harness, stage, responsibility }) => {
+    const old = existing.get(stage);
     const program = join(bin, harness);
     const stat = lstatSync(program, { throwIfNoEntry: false });
     if (stat && !stat.isFile()) throw new Error(`The demo launcher is not a regular file: ${program}`);
@@ -76,14 +96,13 @@ export function installMockRoles(root: string, area: string, serviceHome = proce
       if (!old) throw new Error(`The demo launcher path is already in use: ${program}`);
       writeFileSync(program, shell, { mode: 0o700 });
     } else if (!stat) writeFileSync(program, shell, { flag: "wx", mode: 0o700 });
-    const environment = [`PATH=${demoPath(bin)}`, `HERDR_SMOKE_MANIFEST=${join(area, "run.json")}`,
+    const environment = [`PATH=${demoPath(bin)}`, `HERDR_SMOKE_MANIFEST=${manifest}`,
       `HERDR_SMOKE_STEP=${stage}`, `HERDR_SMOKE_HARNESS=${harness}`];
     if (serviceHome) environment.push(`HERDR_TEAM_HOME=${serviceHome}`);
-    team(root, "role", "add", role, "--kind", harness, "--lifecycle", "temporary",
+    team(root, "role", "add", stage, "--kind", harness, "--lifecycle", "temporary",
       "--env", environment.join(","),
-      "--body", responsibility,
-      ...(old ? ["--force"] : []));
-    return role;
+      ...(old ? ["--force"] : ["--body", responsibility]));
+    return stage;
   });
 }
 

@@ -157,10 +157,11 @@ Enter prompts one at a time, or pass a first prompt on the command line.
 In the prepared demo project's first shell in Herdr Desktop, run:
 
 ```sh
-herdr-team team up --demo
+herdr-team team up
 ```
 
-`up -demo` is an alias. The demo uses the current Space and a local mock team.
+The demo project enables its local mock team in `.herdr/demo.json` and uses the
+current Space. See [demo configuration](demo.md) for setup and controls.
 The right-hand Team Board and native Agents list show the workflow. Eighteen tasks
 cover seven issues, with up to nine task flows in flight across mock Codex, Claude
 and Grok. The mock terminals show checkout, patch, and validation output. The

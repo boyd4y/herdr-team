@@ -6,7 +6,7 @@ Herdr Team 支持 **Herdr 桌面版**和 **Herdr 终端版**。桌面版的终�
 
 `desktop/` 放桌面版原生模块、布局与热加载脚本，`tui/` 放终端版 Herdr 插件与侧栏配置。两端共用 `cli/` 的 `herdr-team` 和 `skill/` 的 Agent Skill。CLI 操作和独立安装见[团队运行指南](docs/team-runtime.md)。
 
-在准备好的演示项目对应的 Desktop Space 中运行 `herdr-team up -demo`。右侧任务看板和 Agents 列表会随模拟 Codex、Claude、Grok 的任务和状态更新。加 `--fast` 可快速验证。
+在准备好的演示项目对应的 Desktop Space 中运行 `herdr-team team up`。右侧任务看板和 Agents 列表会随模拟 Codex、Claude、Grok 的任务和状态更新。加 `--fast` 可快速验证。
 
 未初始化项目的本地 Space 显示居中的设置页。点 **Initialize now** 使用当前终端目录初始化并注册项目，取不到时使用 Space 的目录。也可以直接选择本机已安装的 agent，用共享 Skill 配置团队。点击 **View demo** 可查看示例数据。初始化成功后，项目视图中央显示 **Up**，用于启动当前 Space 的团队。面板通过 daemon 状态判断团队是否已运行。
 本地 Core 的 dispatch、claim、handoff 和 inbox 重试复用共享投递逻辑，任务会话使用隔离 Git checkout。用 `herdr-team task clean` 回收已结束任务的工作树和 Desktop 资源。

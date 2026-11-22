@@ -3,10 +3,11 @@ import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, 
 import { join, resolve } from "node:path";
 import { callerSpace, managedContext } from "../runtime/context.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
-import { readDaemonTeam } from "../runtime/daemon-binding.ts";
+import { daemonDirectory, daemonEndpoint, pauseDaemonTeam, readDaemonTeam } from "../runtime/daemon-binding.ts";
 import { realDesktop, registeredDesktopBinding } from "../runtime/desktop.ts";
-import { stopDaemon } from "../runtime/daemon.ts";
+import { stopDaemon, wakeDaemon } from "../runtime/daemon.ts";
 import { processAlive } from "../runtime/state.ts";
+import { replaceFile } from "../shared/atomic-file.ts";
 import { loadProject } from "../team/project.ts";
 import { listIssueMetadata } from "../team/issue-store.ts";
 import { installMockRoles, runRelease, showcaseLanes } from "./release.ts";
@@ -28,15 +29,26 @@ export function initDesktopDemo(path: string) {
   command(["git", "--version"], process.cwd());
   mkdirSync(target, { recursive: true });
   const root = realpathSync(target);
-  if (isDesktopDemo(root)) return { root, created: false };
   const configPath = join(root, ".herdr", "demo.json");
+  const area = demoArea(root);
+  if (isDesktopDemo(root)) {
+    demoSettings(root);
+    mkdirSync(area, { recursive: true, mode: 0o700 });
+    const unlock = acquireRunLock(join(area, "run.lock"));
+    try {
+      installMockRoles(root, area, join(area, "service"));
+      const config = JSON.parse(readFileSync(configPath, "utf8"));
+      if (config.enabled === undefined) replaceFile(configPath, JSON.stringify({ ...config, enabled: true }, null, 2) + "\n", 0o600);
+    } finally { unlock(); }
+    return { root, created: false };
+  }
   const hasLocalConfig = existsSync(configPath);
   if (hasLocalConfig) demoSettings(root); // Validate before touching Git.
   const localConfigOnly = hasLocalConfig && readdirSync(join(root, ".herdr")).every(file => file === "demo.json");
   const gitRoot = command(["git", "rev-parse", "--show-toplevel"], root, true);
   const hasCommit = command(["git", "rev-parse", "--verify", "HEAD"], root, true).code === 0;
   if (gitRoot.code === 0 && realpathSync(gitRoot.stdout) !== root) {
-    throw new Error("Choose a standalone demo folder for init --demo");
+    throw new Error("Choose a standalone folder for the demo project");
   }
   if (hasCommit) {
     const files = readdirSync(root);
@@ -48,11 +60,11 @@ export function initDesktopDemo(path: string) {
       command(["git", "show", "HEAD:.gitignore"], root, true).stdout === demoIgnore.trim() &&
       command(["git", "diff", "--cached", "--quiet"], root, true).code === 0 &&
       (changes === "" || changes === "D TEAM.md");
-    if (!originalDemo) throw new Error("Choose an empty folder or the original demo checkout for init --demo");
+    if (!originalDemo) throw new Error("Choose an empty folder or the original demo checkout");
     if (!files.includes("TEAM.md")) writeFileSync(join(root, "TEAM.md"), demoAgreement, { flag: "wx" });
   } else {
     if (readdirSync(root).some(entry => entry !== ".git" && !(entry === ".herdr" && localConfigOnly))) {
-      throw new Error("Choose an empty folder outside existing repositories for init --demo");
+      throw new Error("Choose an empty folder outside existing repositories for the demo project");
     }
     for (const args of [["init", "-q", "-b", "main"], ["symbolic-ref", "HEAD", "refs/heads/main"],
                        ["config", "user.name", "Herdr Team Demo"], ["config", "user.email", "herdr-demo@example.invalid"]]) {
@@ -63,7 +75,6 @@ export function initDesktopDemo(path: string) {
     command(["git", "add", ".gitignore", "TEAM.md"], root);
     command(["git", "commit", "-qm", "Initialize the demo project"], root);
   }
-  const area = demoArea(root);
   mkdirSync(area, { recursive: true, mode: 0o700 });
   writeFileSync(join(root, ".herdr", "demo.json"), JSON.stringify({ enabled: true, speed: 1, concurrency: 3, paused: false,
     ...(hasLocalConfig ? JSON.parse(readFileSync(configPath, "utf8")) : {}), kind: "herdr-team-demo" }, null, 2) + "\n",
@@ -105,9 +116,9 @@ async function refreshNativeRepository(): Promise<void> {
 }
 
 export async function runDesktopDemo(root: string, fast: boolean, quiet: boolean) {
-  if (!isDesktopDemo(root)) throw new Error("Initialize a standalone demo folder with HERDR_TEAM_DEMO=1 herdr-team init, then run herdr-team up in Herdr Desktop");
+  if (!isDesktopDemo(root)) throw new Error("Initialize a standalone demo folder with HERDR_TEAM_DEMO=1 herdr-team team init, then run herdr-team team up in Herdr Desktop");
   const context = managedContext();
-  if (context.kind !== "desktop") throw new Error("Run up --demo inside a Herdr Desktop terminal");
+  if (context.kind !== "desktop") throw new Error("Run herdr-team team up inside a Herdr Desktop terminal");
   const client = realDesktop();
   const space = callerSpace(context.caller, client);
   const binding = registeredDesktopBinding(client, space);
@@ -116,7 +127,7 @@ export async function runDesktopDemo(root: string, fast: boolean, quiet: boolean
   }
   const first = client.spaces().find(item => item.id === space)?.tabs.flatMap(tab => tab.terminals)[0]?.terminal;
   if (first && first !== context.caller.address) {
-    throw new Error("Run up --demo in the first terminal of this Space so native Spaces can group its worktrees");
+    throw new Error("Run herdr-team team up in the first terminal of this Space so native Spaces can group its worktrees");
   }
   if (command(["git", "branch", "--show-current"], root).stdout !== "main" ||
       command(["git", "status", "--porcelain"], root).stdout) {
@@ -126,12 +137,19 @@ export async function runDesktopDemo(root: string, fast: boolean, quiet: boolean
   mkdirSync(area, { recursive: true, mode: 0o700 });
   const unlock = acquireRunLock(join(area, "run.lock"));
   const previousService = process.env.HERDR_TEAM_HOME;
+  const previousDirectory = daemonDirectory();
   const previousCwd = process.cwd();
   process.env.HERDR_TEAM_HOME = join(area, "service");
   try {
     const project = loadProject(root);
     if (project.roles.some(role => role.env?.HERDR_SMOKE_MANIFEST !== join(area, "run.json") || role.lifecycle !== "temporary")) {
       throw new Error("This demo project contains a role outside the local mock team");
+    }
+    const key = projectKey(project);
+    const previous = previousDirectory === daemonDirectory() ? undefined : readDaemonTeam(key, false, previousDirectory);
+    if (previous?.kind === "desktop" && previous.space === space) {
+      pauseDaemonTeam(project, "desktop", daemonEndpoint("desktop"), space, () => {}, previousDirectory);
+      await wakeDaemon(root, previousDirectory);
     }
     const iterations = new Set(listIssueMetadata(project).map(issue => issue.iteration));
     let patch = 0;

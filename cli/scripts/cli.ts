@@ -723,7 +723,7 @@ function cmdInit(args: string[], name = "init"): number {
   if (parsed.flags.has("demo") || demoSettings(resolve(parsed.values.get("root") ?? process.cwd())).enabled) {
     if (parsed.pos.length || [...parsed.values.keys()].some(key => key !== "root") ||
         [...parsed.flags].some(flag => flag !== "demo" && flag !== "json")) {
-      throw new UsageError("Use init --demo [--root DIR] [--json]");
+      throw new UsageError("For a configured demo, use herdr-team team init [--root DIR] [--json]");
     }
     const demo = initDesktopDemo(parsed.values.get("root") ?? process.cwd());
     registerProjectRoot(loadValidated(demo.root));

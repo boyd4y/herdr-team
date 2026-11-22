@@ -32,7 +32,7 @@ export function demoSettings(root: string, env = process.env): DemoSettings {
   const concurrency = number(env.HERDR_TEAM_DEMO_CONCURRENCY ?? record.concurrency, 3, "demo concurrency", 1, 9);
   if (!Number.isInteger(concurrency)) throw new Error("Demo concurrency must be an integer");
   return {
-    enabled: flag(env.HERDR_TEAM_DEMO ?? record.enabled, false, "demo enabled"),
+    enabled: flag(env.HERDR_TEAM_DEMO ?? record.enabled, record.kind === "herdr-team-demo", "demo enabled"),
     speed: number(env.HERDR_TEAM_DEMO_SPEED ?? record.speed, 1, "demo speed", 0.1, 100),
     paused: flag(record.paused, false, "demo paused"),
     concurrency,
