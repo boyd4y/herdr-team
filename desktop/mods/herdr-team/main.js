@@ -1,7 +1,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { Button, Popover, TextView, h_flex, v_flex } from "gpui-base";
 import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder } from "herdr";
-import { boardColumns, consoleBinding, flowNodes, issueFolder, iterationOptions, iterationVersion, listFilters, listTasks, requirementsForIteration,
+import { boardColumns, consoleBinding, flowNodes, groupIssues, issueStatus, issueStatusLabel, iterationGroups, iterationVersion, listFilters, listTasks,
   roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
 import { sample } from "./sample.js";
 
@@ -10,7 +10,6 @@ const LABEL = { blocked: "Blocked", "needs input": "Needs input", error: "Error"
   next: "Next", ready: "Ready", assigned: "Assigned", "awaiting handoff": "Awaiting handoff", archive: "Archived", trash: "In Trash",
   doing: "In progress", todo: "Todo", review: "Review" };
 const label = status => LABEL[status] ?? status;
-const REQUIREMENT_STATUS = { backlog: "Backlog", planned: "Planned", "in-progress": "Active", ready: "Ready", accepted: "Accepted" };
 const REQUIREMENT_TYPES = [[null, "All"], ["requirement", "Requirement"], ["defect", "Defect"]];
 const WIDE = 520;
 
@@ -62,8 +61,8 @@ export default class TeamConsole extends View {
     this.popout = Boolean(props()?.task);
     this.tasks = []; this.roles = []; this.selected = props()?.task ?? null; this.error = null; this.loading = false;
     this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
-    this.issueFolder = "all"; this.issueAction = null;
-    this.section = "tasks"; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
+    this.issueGroupExpansion = new Map(); this.issueAction = null;
+    this.section = "tasks"; this.iterations = null; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
     this.inboxFolder = "active"; this.inboxRows = []; this.inboxRequest = 0; this.mail = null;
     this.bodies = new Map();
     this.taskFolder = "current"; this.taskAction = null;
@@ -175,8 +174,8 @@ export default class TeamConsole extends View {
     this.resetInbox();
     this.binding = null; this.tasks = []; this.roles = []; this.selected = null; this.error = null; this.watchError = null; this.viewBinding = null;
     this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
-    this.issueFolder = "all"; this.issueAction = null;
-    this.iteration = null; this.iterationMenu = false; this.requirementType = null;
+    this.issueGroupExpansion = new Map(); this.issueAction = null;
+    this.iterations = null; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
     this.taskFolder = "current"; this.taskAction = null;
     this.bodies = new Map();
   }
@@ -314,20 +313,36 @@ export default class TeamConsole extends View {
           team(["task", "list", "--all", "--root", binding.root, "--json"], options),
           team(["role", "list", "--root", binding.root, "--json"], options),
         ]);
-        const backlog = this.popout ? Promise.resolve(null) : team(["issue", "list", "--all", "--root", binding.root, "--json"], options).then(result => {
+        const readIssues = (filter = []) => team(["issue", "list", "--all", ...filter, "--root", binding.root, "--json"], options).then(result => {
           const cards = teamJson(result, "issue list", "array");
           return { cards };
         }).catch(error => ({ error: errorMessage(error) }));
-        const [results, planning] = await Promise.all([records, backlog]);
+        const catalog = this.popout ? null : team(["iteration", "list", "--all", "--root", binding.root, "--json"], options)
+          .then(result => teamJson(result, "iteration list", "array")).catch(() => this.iterations);
+        const [results, planning, iterations] = await Promise.all([records, this.popout ? null : readIssues(), catalog]);
         if (this.closed || this.preview || this.binding !== binding) return;
-        const tasks = teamJson(results[0], "task list", "array");
+        let tasks = teamJson(results[0], "task list", "array");
         const roles = teamJson(results[1], "role list", "array");
+        let issues = planning?.cards ?? [], issueError = planning?.error ?? null;
+        const selected = this.iteration;
+        if (selected !== null && iterations?.some(row => row.version === selected && row.state === "archived")) {
+          const filter = ["--iteration", selected];
+          const [taskList, issueList] = await Promise.all([
+            team(["task", "list", "--all", ...filter, "--root", binding.root, "--json"], options), readIssues(filter),
+          ]);
+          if (this.closed || this.preview || this.binding !== binding) return;
+          tasks = [...tasks.filter(card => card.iteration !== selected), ...teamJson(taskList, "task list", "array")];
+          issues = [...issues.filter(card => card.iteration !== selected), ...(issueList.cards ?? [])];
+          issueError ??= issueList.error;
+        }
         this.tasks = sortTasks(tasks); this.roles = roles; this.error = null;
         if (planning) {
-          this.requirements = planning.cards ?? [];
-          this.requirementError = planning.error ?? null;
+          this.iterations = iterations;
+          this.requirements = issues;
+          this.requirementError = issueError;
           this.requirementDetails = new Map();
-          if (this.iteration !== null && !iterationOptions([...tasksWithIterations(this.tasks, this.requirements), ...this.requirements]).includes(this.iteration)) {
+          const groups = iterationGroups(iterations, [...tasksWithIterations(this.tasks, issues), ...issues]);
+          if (this.iteration !== null && !groups.some(group => group.versions.includes(this.iteration))) {
             this.iteration = null;
           }
           if (this.selectedRequirement && !this.requirements.some(card => card.id === this.selectedRequirement)) this.selectedRequirement = null;
@@ -608,7 +623,7 @@ export default class TeamConsole extends View {
     this.preview = preview;
     this.selected = null;
     this.selectedRequirement = null; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
-    this.issueFolder = "all"; this.issueAction = null;
+    this.issueGroupExpansion = new Map(); this.issueAction = null;
     this.resetInbox();
     if (this.preview) { this.pendingWatch?.cancel(); this.watchFor = null; }
     else this.load(cx);
@@ -751,7 +766,10 @@ export default class TeamConsole extends View {
     const setup = !this.binding && !this.resolving ? this.setup : null;
     const requirements = (demo?.requirements ?? this.requirements).filter(card => card.disposition !== "deleted");
     const tasks = sortTasks(tasksWithIterations(demo?.tasks ?? this.tasks, requirements));
-    const folderTasks = tasksForIteration(tasks, this.iteration);
+    const versionGroups = iterationGroups(this.preview ? null : this.iterations, [...tasks, ...requirements]);
+    const archivedVersions = new Set(versionGroups.find(group => group.state === "archived")?.versions);
+    const selectedArchive = archivedVersions.has(this.iteration);
+    const folderTasks = tasksForIteration(this.iteration === null ? tasks.filter(task => !archivedVersions.has(task.iteration)) : tasks, this.iteration);
     const iterationTasks = folderTasks.filter(task => taskFolder(task) === "current");
     const inbox = demo?.inbox?.[this.inboxFolder] ?? this.inboxRows;
     const live = scopedTerminals(demo?.terminals ?? terminals(), binding);
@@ -1013,61 +1031,79 @@ export default class TeamConsole extends View {
     const folderTabs = (kind, selected, onSelect) => h_flex().self_start().flex_none().flex_wrap().gap(2).p(2).rounded(7).bg(t.raised)
       .children([["current", "Current"], ["archive", "Archive"], ["trash", "Trash"]].map(([folder, name]) =>
         segment(`${kind}-folder-${folder}`, name, selected === folder, cx => onSelect(folder, cx))));
-    const requirementLabel = card => issueFolder(card) === "current" ? REQUIREMENT_STATUS[card.status] ?? card.status : label(issueFolder(card));
     const issueIteration = card => iterationTag(`issue-iteration-${card.id}`, iterationVersion(card.iteration));
+    const issueColor = status => status === "ready" ? t.accent : status === "in-progress" ? t.working : status === "accepted" ? t.done : t.muted;
     const requirementStatus = card => {
-      const current = issueFolder(card) === "current";
-      const color = !current ? t.muted : card.status === "accepted" ? t.done
-        : card.status === "ready" ? t.accent : card.status === "in-progress" ? t.working : t.muted;
-      return pill(requirementLabel(card), color).id(`issue-status-${card.id}`)
-        .when(current && card.status === "in-progress", el => el.tooltip("In progress"))
-        .when(current && card.status === "ready", el => el.tooltip("Ready for acceptance"));
+      const status = issueStatus(card);
+      return pill(issueStatusLabel(status), issueColor(status)).id(`issue-status-${card.id}`)
+        .when(status === "ready", el => el.tooltip("Ready for acceptance"));
     };
     const requirementRow = card => v_flex().id(`requirement-${card.id}`).gap(4).min_w(0).px(6).py(8).rounded(6)
-      .tooltip(`${card.id} · ${card.title}\n${requirementLabel(card)} · ${card.progress.done}/${card.progress.total} tasks complete`)
+      .tooltip(`${card.id} · ${card.title}\n${card.progress.done}/${card.progress.total} tasks complete`)
       .hover(s => s.bg(t.hover)).on_click((_e, cx) => this.showRequirements(card.id, cx))
       .child(h_flex().gap(7).items_center().min_w(0)
         .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(card.title))
         .child(issueIteration(card)))
       .child(h_flex().gap(6).items_center().flex_wrap().min_w(0)
         .child(div().flex_none().font_family(mono).text_size(11).text_color(t.dim).child(card.id))
-        .child(requirementStatus(card))
         .child(typePill(card.type))
         .child(div().flex_none().font_family(mono).text_size(11).text_color(t.muted).child(`${card.progress.done}/${card.progress.total}`)));
-    const options = [null, ...iterationOptions([...tasks, ...requirements])];
-    const iterationTitle = value => value ?? "All iterations";
-    const visibleRequirements = requirementsForIteration(requirements, this.iteration, this.requirementType, this.issueFolder);
+    const requirementGroups = groupIssues(this.iteration === null
+      ? requirements.filter(card => !archivedVersions.has(iterationVersion(card.iteration))) : requirements, this.iteration, this.requirementType);
+    const requirementGroup = ({ status, cards }) => {
+      const expanded = this.issueGroupExpansion.get(status) ?? (status !== "accepted" && status !== "archived");
+      const title = issueStatusLabel(status);
+      return v_flex().id(`issue-group-${status}`).min_w(0).gap(2)
+        .child(Button.new(`issue-toggle-${status}`).w_full().h(28).px(7).rounded(5).bg(t.raised)
+          .flex().items_center().gap(6).text_size(11.5).text_color(t.foreground)
+          .accessibility_label(`${expanded ? "Collapse" : "Expand"} ${title} issues (${cards.length})`)
+          .hover(s => s.bg(t.hover)).on_click((_e, cx) => { this.issueGroupExpansion.set(status, !expanded); cx.notify(); })
+          .child(div().size(6).flex_none().rounded(3).bg(issueColor(status)))
+          .child(div().flex_1().min_w(0).font_semibold().child(title))
+          .child(div().text_color(t.muted).child(String(cards.length)))
+          .child(svg(ICON(expanded ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(t.muted))
+          .when(status === "ready", el => el.tooltip("Ready for acceptance")))
+        .when(expanded, el => el.child(v_flex().gap(1).children(cards.map(requirementRow))));
+    };
+    const iterationTitle = this.iteration ?? "All iterations";
+    const iterationOption = (version, state) => Button.new(`iteration-option-${version ?? "all"}`).w_full().h(26).px(7).rounded(4)
+      .flex().items_center().gap(6).text_size(11.5).bg(version === this.iteration ? t.selected : t.surface)
+      .accessibility_label(version === null ? "All iterations" : `${version} · ${state === "archived" ? "Archived" : "Active"}`)
+      .hover(s => s.bg(t.hover)).on_click((_e, cx) => {
+        this.iteration = version; this.iterationMenu = false;
+        if (state === "archived") this.load(cx);
+        cx.notify();
+      })
+      .child(div().flex_1().min_w(0).truncate().child(version ?? "All iterations"))
+      .when(version === this.iteration, el => el.child(svg(ICON("check")).size(12).flex_none().text_color(t.accent)));
     const iterationFilter = Popover.new("iteration-filter").anchor("top_right").flex_none()
       .open(this.iterationMenu).on_open_change((open, cx) => { this.iterationMenu = open; cx.notify(); })
-      .trigger(h_flex().w(narrowHeader ? 56 : compactHeader ? 82 : 124).gap(5).items_center().px(narrowHeader ? 4 : 7).h(24).rounded(6)
+      .trigger(h_flex().w(narrowHeader ? 56 : compactHeader ? 82 : selectedArchive ? 153 : 124).gap(5).items_center().px(narrowHeader ? 4 : 7).h(24).rounded(6)
         .border(1).border_color(t.border).text_color(t.muted).hover(s => s.bg(t.hover))
-        .tooltip(`Filter by iteration · ${iterationTitle(this.iteration)}`)
+        .tooltip(`Filter by iteration · ${iterationTitle}${this.iteration === null ? "" : selectedArchive ? " · Archived" : " · Active"}`)
+        .when(selectedArchive, el => el.child(compactHeader
+          ? div().size(6).flex_none().rounded(3).bg(t.muted) : div().flex_none().text_size(9.5).child("Archived")))
         .child(div().flex_1().min_w(0).truncate().text_size(11.5)
-          .child(compactHeader && this.iteration === null ? "All" : iterationTitle(this.iteration)))
+          .child(compactHeader && this.iteration === null ? "All" : iterationTitle))
         .child(svg(ICON("chevron-down")).size(12).flex_none()))
-      .content(v_flex().id("iteration-options").w(172).max_h(180).overflow_y_scrollbar()
-        .p(3).rounded(6).bg(t.surface).border(1).border_color(t.border)
-        .children(options.map((value, index) => Button.new(`iteration-option-${index}`).w_full().h(26).px(7).rounded(4)
-          .flex().items_center().gap(6).text_size(11.5).bg(value === this.iteration ? t.selected : t.surface)
-          .tooltip(iterationTitle(value)).hover(s => s.bg(t.hover))
-          .on_click((_e, cx) => { this.iteration = value; this.iterationMenu = false; cx.notify(); })
-          .child(div().flex_1().min_w(0).truncate().child(iterationTitle(value)))
-          .when(value === this.iteration, el => el.child(svg(ICON("check")).size(12).flex_none().text_color(t.accent))))));
+      .content(v_flex().id("iteration-options").w(185).max_h(250).overflow_y_scrollbar()
+        .p(3).rounded(6).bg(t.surface).border(1).border_color(t.border).gap(4)
+        .child(iterationOption(null, null))
+        .children(versionGroups.map(({ state, versions }) => v_flex().id(`iteration-group-${state}`)
+          .pt(3).border_t(1).border_color(t.border)
+          .child(div().px(7).py(3).text_size(10.5).font_semibold().text_color(t.muted).child(state === "archived" ? "Archived" : "Active"))
+          .children(versions.map(version => iterationOption(version, state))))));
     const requirementList = v_flex().min_w(0).gap(8)
-      .child(h_flex().id("issue-filters").items_center().justify_between().flex_wrap().gap(6)
-        .child(h_flex().flex_none().gap(2).p(2).rounded(7).bg(t.raised)
-          .children([["all", "All"], ["active", "Active"], ["archive", "Archive"]].map(([filter, name]) =>
-            segment(`issue-folder-${filter}`, name, this.issueFolder === filter, cx => { this.issueFolder = filter; cx.notify(); }))))
-        .child(h_flex().flex_none().gap(2).p(2).rounded(7).bg(t.raised)
-          .children(REQUIREMENT_TYPES.map(([type, name], index) => segment(`requirement-type-${index}`, name,
-            type === this.requirementType, cx => { this.requirementType = type; cx.notify(); })))))
-      .child(v_flex().gap(1).children(visibleRequirements.map(requirementRow))
-        .when(!visibleRequirements.length, el => el.child(div().px(6).py(14).text_size(12).text_color(t.muted)
-          .child(this.issueFolder === "archive" ? "No archived issues match." : this.issueFolder === "active" ? "No active issues match."
-            : requirements.length ? "No items match these filters." : "No requirements or defects yet."))));
+      .child(h_flex().id("issue-filters").self_start().flex_wrap().gap(2).p(2).rounded(7).bg(t.raised)
+        .children(REQUIREMENT_TYPES.map(([type, name], index) => segment(`requirement-type-${index}`, name,
+          type === this.requirementType, cx => { this.requirementType = type; cx.notify(); }))))
+      .children(requirementGroups.map(requirementGroup))
+      .when(!requirementGroups.length, el => el.child(div().px(6).py(14).text_size(12).text_color(t.muted)
+        .child(this.loading ? "Loading issues…" : this.iteration !== null || this.requirementType || requirements.length
+          ? "No issues match these filters." : "No requirements or defects yet.")));
     const requirementPage = card => {
       const detail = this.preview ? card : this.requirementDetails.get(card.id);
-      const folder = issueFolder(card);
+      const archived = card.disposition === "archived";
       const action = this.issueAction?.id === card.id ? this.issueAction : null;
       const canEditIssue = !this.preview && Boolean(binding) && !binding.machine;
       const canAccept = card.status !== "accepted" && card.progress.done === card.progress.total;
@@ -1083,11 +1119,11 @@ export default class TeamConsole extends View {
             .on_click((_e, cx) => this.showRequirements(null, cx))
             .child(svg(ICON("chevron-left")).size(14).text_color(t.muted)).child("Issues"))
           .child(div().flex_1())
-          .when(canEditIssue && folder === "current" && canAccept, el => el.child(actionButton("issue-accept", "Accept",
+          .when(canEditIssue && !archived && canAccept, el => el.child(actionButton("issue-accept", "Accept",
             cx => this.changeIssue(card, "accept", cx), false, action?.busy)))
-          .when(canEditIssue && folder === "current", el => el.child(actionButton("issue-archive", "Archive",
+          .when(canEditIssue && !archived, el => el.child(actionButton("issue-archive", "Archive",
             cx => this.changeIssue(card, "archive", cx), false, action?.busy)))
-          .when(canEditIssue && folder !== "current", el => el.child(actionButton("issue-restore", "Restore",
+          .when(canEditIssue && archived, el => el.child(actionButton("issue-restore", "Restore",
             cx => this.changeIssue(card, "restore", cx), false, action?.busy)))
           .when(canEditIssue, el => el.child(actionButton("issue-delete", "Delete", cx => {
             this.issueAction = { id: card.id, action: "delete" }; cx.notify();
@@ -1268,7 +1304,7 @@ export default class TeamConsole extends View {
     const issues = this.requirementError && !this.preview ? emptyState("Issues unavailable", this.requirementError)
       : this.loading && !requirements.length && !this.preview ? emptyState("Loading issues…", "Reading requirements and defects.")
       : activeRequirement ? requirementPage(activeRequirement) : requirementList;
-    const runtimePrompt = this.section === "tasks" && !open && runtime && !runtime.error && !runtime.running
+    const runtimePrompt = this.section === "tasks" && !selectedArchive && !open && runtime && !runtime.error && !runtime.running
       ? runtime.running === null || runtime.starting
         ? emptyState("Checking team…", "Waiting for the team service.")
         : emptyState("Team is stopped", "Start the team in this Space.").child(Button.new("team-restart")

@@ -14,6 +14,12 @@ const iterationFilename = (project: Project) => join(project.herdrDir, "iteratio
 type HiddenIterationState = "archived" | "deleted";
 type IterationState = "active" | HiddenIterationState;
 
+export function matchesIteration(version: string, selected: string | undefined, hidden: ReadonlyMap<string, HiddenIterationState>): boolean {
+  if (selected !== undefined && version !== selected) return false;
+  const state = hidden.get(version);
+  return state === undefined || state === "archived" && selected === version;
+}
+
 export function iterationVersion(value: string): string {
   const version = value.trim();
   return versionPattern.test(version) ? version : "";

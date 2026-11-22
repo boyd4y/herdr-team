@@ -22,7 +22,7 @@ import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/dispat
 import { agentStatusLabel, buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
 import { createTask, editTask, findTask, linkRequirementTask, setTaskDisposition, TaskError } from "./lib/tasks/cards.ts";
 import { stamp } from "./lib/tasks/records.ts";
-import { acceptRequirement, addRequirement, editRequirements, indexRequirementTasks, iterationRows, iterationVersion,
+import { acceptRequirement, addRequirement, editRequirements, indexRequirementTasks, iterationRows, iterationVersion, matchesIteration,
   readHiddenIterations, REQUIREMENT_STATUSES, requirementDetail, requirementSummary, requirementType,
   setIterationState, setRequirementDisposition, taskIteration, validateIteration } from "./lib/team/requirements.ts";
 import { listIssueMetadata, migrateIssueStore, readIssue, RequirementError, type Requirement } from "./lib/team/issue-store.ts";
@@ -479,8 +479,8 @@ function cmdBacklog(args: string[], name = "backlog"): number {
     const rows = listIssueMetadata(project)
       .filter(card => {
         const version = iterationVersion(card.iteration);
-        return card.disposition !== "deleted" && !hidden.has(version) && (includeHidden || card.disposition === undefined) && (selectedType === undefined || card.type === selectedType) &&
-          (selectedVersion === undefined || version === selectedVersion);
+        return card.disposition !== "deleted" && matchesIteration(version, selectedVersion, hidden) &&
+          (includeHidden || card.disposition === undefined) && (selectedType === undefined || card.type === selectedType);
       })
       .sort((a, b) => a.priority.localeCompare(b.priority) || b.id.localeCompare(a.id))
       .map(card => requirementSummary(card, linkedTasks.get(card.id) ?? []))
@@ -563,7 +563,7 @@ function cmdIteration(args: string[]): number {
     process.stdout.write(
       "Usage: herdr-team iteration list [--all]\n" +
       "       herdr-team iteration <archive|delete|restore> <version>\n" +
-      "Archive and delete hide issues and tasks assigned to the iteration from lists. Restore makes them visible again.\n" +
+      "Archived iterations can be browsed with an explicit --iteration filter. Restore returns them to default lists.\n" +
       "Supports --root DIR, --project ID and --json. Use --all to include hidden iterations.\n",
     );
     return 0;
@@ -1406,10 +1406,7 @@ function cmdTasks(args: string[], mode?: "list" | "show"): number {
   const roleFilter = parsed.values.get("role");
   const hiddenIterations = readHiddenIterations(project);
   const tasks = scheduled
-    .filter((t) => {
-      const iteration = t.iteration ?? "";
-      return !hiddenIterations.has(iteration) && (version === undefined || iteration === version);
-    })
+    .filter(t => matchesIteration(t.iteration ?? "", version, hiddenIterations))
     .filter((t) => parsed.flags.has("all") || statusFilter !== undefined || !isTerminal(t.status))
     .filter((t) => roleFilter === undefined || t.role === roleFilter)
     .filter((t) => statusFilter === undefined || (taskDisposition(t) ?? t.status) === statusFilter)

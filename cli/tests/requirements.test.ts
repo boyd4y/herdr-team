@@ -55,12 +55,15 @@ test("requirements and defects share an optional iteration; old and independent 
     expect(json("iteration", "archive", "v0.2")).toEqual({ version: "v0.2", state: "archived" });
     expect(json("iteration", "list")).toEqual([]);
     expect(json("backlog", "list")).toMatchObject([{ id: "R0002" }]);
-    expect(json("backlog", "list", "--iteration", "v0.2")).toEqual([]);
+    expect(json("issue", "list", "--all", "--iteration", "v0.2")).toMatchObject([{ id: "R0001" }]);
+    expect(json("task", "list", "--all", "--iteration", "v0.2").map((task: { id: string }) => task.id)).toEqual(["0001", linked.id]);
     expect(json("tasks", "--all")).toMatchObject([{ id: standalone.id }]);
     expect(json("tasks", linked.id)).toMatchObject({ id: linked.id, status: "todo" });
     expect(json("iteration", "delete", "v0.2")).toEqual({ version: "v0.2", state: "deleted" });
     expect(json("iteration", "list", "--all")).toEqual([{ version: "v0.2", state: "deleted" }]);
     expect(json("tasks", "--all")).toMatchObject([{ id: standalone.id }]);
+    expect(json("issue", "list", "--all", "--iteration", "v0.2")).toEqual([]);
+    expect(json("task", "list", "--all", "--iteration", "v0.2")).toEqual([]);
     expect(json("backlog", "show", "R0001")).toMatchObject({ iteration: "v0.2", progress: { done: 1, total: 2 } });
     expect(json("iteration", "restore", "v0.2")).toEqual({ version: "v0.2", state: "active" });
     expect(json("backlog", "list", "--iteration", "v0.2")).toMatchObject([{ id: "R0001", iteration: "v0.2" }]);

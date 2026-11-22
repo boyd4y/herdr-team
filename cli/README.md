@@ -219,7 +219,7 @@ herdr-team task list --all --iteration v1.2
 
 清空任务迭代会恢复继承。列表用 `--iteration ''` 筛选未排期任务。已排期任务的 JSON 用 `iteration` 显示实际使用的版本，`meta.iteration` 保存任务单独设置的版本。
 
-`herdr-team iteration list` 列出需求、缺陷和任务使用的活跃版本。`iteration archive v0.2` 和 `iteration delete v0.2` 按各记录实际使用的版本从常规列表和看板隐藏记录，保留原始内容。`iteration list --all` 包含隐藏版本，`iteration restore v0.2` 可恢复显示。
+`herdr-team iteration list` 列出需求、缺陷和任务使用的活跃版本。归档迭代从常规列表隐藏，可用 Team 面板的 Archived 分组或 CLI 的 `--iteration v0.2` 查看。`iteration list --all` 包含隐藏版本，`iteration restore v0.2` 可恢复到常规列表。
 
 ### 按交付收尾
 

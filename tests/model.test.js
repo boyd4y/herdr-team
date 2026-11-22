@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boardColumns, consoleBinding, flowNodes, groupTasks, iterationOptions, listFilters, listTasks,
+import { boardColumns, consoleBinding, flowNodes, groupIssues, groupTasks, iterationGroups, iterationOptions, listFilters, listTasks,
   requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/herdr-team/model.js";
 
 test("task assignee uses native agent and launch model only for the recorded live delivery", () => {
@@ -65,16 +65,32 @@ test("the requirements filter offers only versions and keeps unscheduled cards u
   assert.deepEqual(requirementsForIteration(cards, null), cards);
 });
 
-test("issue folders compose with the type and iteration filters", () => {
+test("issues group by recorded workflow status after applying the type and iteration filters", () => {
   const cards = [
-    { id: "R0001", iteration: "v1.2", type: "requirement" },
-    { id: "R0002", iteration: "v1.2", type: "defect", disposition: "archived" },
-    { id: "R0003", iteration: "v1.2", type: "requirement", disposition: "deleted" },
-    { id: "R0004", iteration: "v1.3", type: "defect", disposition: "archived" },
+    { id: "R0001", iteration: "v1.2", type: "requirement", status: "in-progress" },
+    { id: "R0002", iteration: "v1.2", type: "defect", status: "accepted", disposition: "archived" },
+    { id: "R0003", iteration: "v1.2", type: "requirement", status: "ready", disposition: "deleted" },
+    { id: "R0004", iteration: "v1.3", type: "defect", status: "accepted" },
+    { id: "R0005", iteration: "v1.2", type: "defect", status: "ready" },
+    { id: "R0006", iteration: "v1.2", type: "requirement", status: "planned" },
+    { id: "R0007", iteration: "", type: "requirement", status: "backlog" },
   ];
-  assert.deepEqual(requirementsForIteration(cards, null), [cards[0], cards[1], cards[3]]);
-  assert.deepEqual(requirementsForIteration(cards, null, null, "active"), [cards[0]]);
-  assert.deepEqual(requirementsForIteration(cards, "v1.2", "defect", "archive"), [cards[1]]);
+  assert.deepEqual(groupIssues(cards, null).map(group => group.status), ["ready", "in-progress", "planned", "backlog", "accepted", "archived"]);
+  assert.deepEqual(groupIssues(cards, "v1.2", "defect"), [
+    { status: "ready", cards: [cards[4]] }, { status: "archived", cards: [cards[1]] },
+  ]);
+});
+
+test("iteration options show active versions first and omit deleted versions", () => {
+  const records = [
+    { version: "v0.1.35", state: "archived" }, { version: "v0.1.7", state: "active" },
+    { version: "v0.1.33", state: "deleted" }, { version: "v0.1.10", state: "active" },
+  ];
+  assert.deepEqual(iterationGroups(records, [{ iteration: "v0.1.33" }]), [
+    { state: "active", versions: ["v0.1.10", "v0.1.7"] },
+    { state: "archived", versions: ["v0.1.35"] },
+  ]);
+  assert.deepEqual(iterationGroups(null, [{ iteration: "v1.2" }]), [{ state: "active", versions: ["v1.2"] }]);
 });
 
 test("both task views use the shared iteration and retain task-only versions", () => {

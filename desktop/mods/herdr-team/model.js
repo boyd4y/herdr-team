@@ -13,6 +13,15 @@ export function iterationOptions(cards) {
   return [...versions].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
+export function iterationGroups(iterations, cards) {
+  const rows = iterations ?? iterationOptions(cards).map(version => ({ version, state: "active" }));
+  return ["active", "archived"].map(state => ({
+    state,
+    versions: rows.filter(row => row.state === state).map(row => row.version)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true })),
+  })).filter(group => group.versions.length);
+}
+
 export function tasksWithIterations(tasks, issues) {
   const issueVersions = new Map(issues.map(issue => [issue.id, issue.iteration]));
   return tasks.map(task => ({ ...task,
@@ -23,14 +32,27 @@ export function tasksForIteration(tasks, iteration) {
   return iteration === null ? tasks : tasks.filter(task => task.iteration === iteration);
 }
 
-export function issueFolder(card) {
-  return card.disposition === "archived" ? "archive" : "current";
+const ISSUE_STATUSES = {
+  ready: "Ready", "in-progress": "In progress", planned: "Planned",
+  backlog: "Backlog", accepted: "Accepted", archived: "Archived",
+};
+
+export const issueStatus = card => card.disposition === "archived" ? "archived" : card.status;
+export const issueStatusLabel = status => ISSUE_STATUSES[status] ?? status;
+
+export function requirementsForIteration(requirements, iteration, type = null) {
+  return requirements.filter(card => card.disposition !== "deleted" &&
+    (iteration === null || iterationVersion(card.iteration) === iteration) && (type === null || card.type === type));
 }
 
-export function requirementsForIteration(requirements, iteration, type = null, filter = "all") {
-  return requirements.filter(card => card.disposition !== "deleted" &&
-    (iteration === null || iterationVersion(card.iteration) === iteration) && (type === null || card.type === type) &&
-    (filter === "all" || (filter === "archive" ? card.disposition === "archived" : !card.disposition && card.status !== "accepted")));
+export function groupIssues(requirements, iteration, type) {
+  const groups = new Map(Object.keys(ISSUE_STATUSES).map(status => [status, []]));
+  for (const card of requirementsForIteration(requirements, iteration, type)) {
+    const status = issueStatus(card);
+    if (!groups.has(status)) groups.set(status, []);
+    groups.get(status).push(card);
+  }
+  return [...groups].filter(([, cards]) => cards.length).map(([status, cards]) => ({ status, cards }));
 }
 
 /** The shown space is a lookup key, never evidence of project ownership. */
