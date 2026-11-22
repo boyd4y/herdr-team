@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boardColumns, consoleBinding, flowNodes, groupIssues, groupTasks, iterationGroups, iterationOptions, listFilters, listTasks,
+import { boardColumns, consoleBinding, filterInbox, flowNodes, groupIssues, groupTasks, inboxStatusLabel, iterationGroups, iterationOptions, listFilters, listTasks,
   requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/herdr-team/model.js";
 
 test("task assignee uses native agent and launch model only for the recorded live delivery", () => {
@@ -312,4 +312,22 @@ test("empty sidebar filters stay available with zero counts", () => {
   assert.deepEqual(listFilters([]).map(filter => filter.status), ["all", "open", "blocked", "review", "doing", "todo", "done"]);
   assert.ok(listFilters([]).every(filter => filter.count === 0));
   assert.deepEqual(listTasks([], "review"), []);
+});
+
+test("Inbox status filters group deliveries and email while leaving Trash browseable", () => {
+  const rows = [
+    ...["queued", "sending", "submitted", "claimed", "uncertain"].map(state => ({ state })),
+    ...["pending", "notified", "conflict"].map(state => ({ state, source: "agentmail" })),
+  ];
+  assert.deepEqual(filterInbox(rows, "active", "all"), rows);
+  assert.deepEqual(filterInbox(rows, "active", "waiting").map(row => row.state),
+    ["queued", "sending", "submitted", "pending", "notified"]);
+  assert.deepEqual(filterInbox(rows, "active", "in-progress").map(row => row.state), ["claimed"]);
+  assert.deepEqual(filterInbox(rows, "active", "attention").map(row => row.state), ["uncertain", "conflict"]);
+  assert.equal(inboxStatusLabel(rows[2]), "Waiting");
+  assert.equal(inboxStatusLabel(rows[3]), "In progress");
+  assert.equal(inboxStatusLabel(rows[7]), "Needs attention");
+  const trash = [{ state: "trashed", source: "agentmail", label: "Project not registered" }];
+  assert.deepEqual(filterInbox(trash, "trash", "waiting"), trash);
+  assert.equal(inboxStatusLabel(trash[0]), trash[0].label);
 });

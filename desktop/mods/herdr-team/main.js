@@ -1,7 +1,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { Button, Popover, TextView, h_flex, v_flex } from "gpui-base";
 import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder } from "herdr";
-import { boardColumns, consoleBinding, flowNodes, groupIssues, issueStatusLabel, iterationGroups, iterationVersion, listFilters, listTasks,
+import { boardColumns, consoleBinding, filterInbox, flowNodes, groupIssues, INBOX_FILTERS, inboxStatusLabel, issueStatusLabel, iterationGroups, iterationVersion, listFilters, listTasks,
   roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
 import { sample } from "./sample.js";
 
@@ -63,7 +63,7 @@ export default class TeamConsole extends View {
     this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
     this.issueGroupExpansion = new Map(); this.issueAction = null;
     this.section = "tasks"; this.iterations = null; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
-    this.inboxFolder = "active"; this.inboxRows = []; this.inboxRequest = 0; this.mail = null;
+    this.inboxFolder = "active"; this.inboxFilter = "all"; this.inboxRows = []; this.inboxRequest = 0; this.mail = null;
     this.bodies = new Map();
     this.taskAction = null;
     this.view = localStorage.getItem("view") === "board" ? "board" : "list";
@@ -419,6 +419,7 @@ export default class TeamConsole extends View {
     this.stopInboxWatch();
     this.inboxRequest++;
     this.inboxFolder = "active";
+    this.inboxFilter = "all";
     this.inboxRows = []; this.inboxError = null; this.inboxLoading = false; this.mail = null;
   }
 
@@ -768,7 +769,8 @@ export default class TeamConsole extends View {
     const selectedArchive = archivedVersions.has(this.iteration);
     const iterationTasks = tasksForIteration(tasks, this.iteration)
       .filter(task => taskFolder(task) === "current" && (this.iteration !== null || !archivedVersions.has(task.iteration)));
-    const inbox = demo?.inbox?.[this.inboxFolder] ?? this.inboxRows;
+    const inboxRows = demo?.inbox?.[this.inboxFolder] ?? this.inboxRows;
+    const inbox = filterInbox(inboxRows, this.inboxFolder, this.inboxFilter);
     const live = scopedTerminals(demo?.terminals ?? terminals(), binding);
     const roles = roleRows(demo?.roles ?? this.roles, live);
     const inputColor = t.ansi3 ?? t.accent;
@@ -1169,11 +1171,12 @@ export default class TeamConsole extends View {
       const mail = row.source === "agentmail";
       const openable = mail || tasks.some(task => task.id === row.id);
       const title = mail ? row.subject || "(No subject)" : row.title || `Task #${row.id}`;
-      const metadata = (mail ? [row.sender, mailTime(row)] : [`Task #${row.id}`, visibleRole(row.role), row.label]).filter(Boolean).join(" · ");
+      const status = row.state === "trashed" ? null : inboxStatusLabel(row);
+      const metadata = (mail ? [row.sender, mailTime(row), status] : [`Task #${row.id}`, visibleRole(row.role), status]).filter(Boolean).join(" · ");
       return v_flex().id(`inbox-${row.id}`).min_w(0).gap(3).px(7).py(7).rounded(6)
         .when(openable, el => el.hover(s => s.bg(t.hover))
           .on_click((_e, cx) => mail ? this.openMail(row, cx) : this.select(row.id, cx)))
-        .tooltip([title, metadata, row.reason].filter(Boolean).join("\n"))
+        .tooltip([title, metadata, row.label !== status ? row.label : null, row.reason].filter(Boolean).join("\n"))
         .child(h_flex().items_center().gap(6)
           .child(div().flex_1().min_w(0).truncate().text_size(12.5).child(title))
           .when(openable, el => el.child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.dim))))
@@ -1183,20 +1186,32 @@ export default class TeamConsole extends View {
     };
     const email = inbox.filter(row => row.source === "agentmail");
     const deliveries = inbox.filter(row => row.source !== "agentmail");
+    const inboxSegment = (id, text, on, action) => Button.new(id).flex_none().px(narrowHeader ? 4 : 7).h(22).rounded(5)
+      .text_size(11.5).font_medium().text_color(on ? t.foreground : t.muted)
+      .accessibility_label(on ? `${text}, selected` : text)
+      .when(on, el => el.bg(t.background).border(1).border_color(t.border))
+      .when(!on, el => el.hover(s => s.text_color(t.foreground)).on_click((_e, cx) => action(cx)))
+      .child(text);
+    const inboxControls = h_flex().id("inbox-controls").w_full().flex_none().flex_wrap().items_center().gap(8)
+      .child(h_flex().id("inbox-folders").flex_none().gap(2).p(2).rounded(7).bg(t.raised)
+        .child(inboxSegment("inbox-active", "Active", this.inboxFolder === "active", cx => this.showInbox("active", cx)))
+        .child(inboxSegment("inbox-trash", "Trash", this.inboxFolder === "trash", cx => this.showInbox("trash", cx))))
+      .when(this.inboxFolder === "active", el => el.child(h_flex().id("inbox-status-filters").ml_auto().flex_none().max_w_full()
+        .flex_wrap().justify_end().gap(2).p(2).rounded(7).bg(t.raised)
+        .children(INBOX_FILTERS.map(([status, name]) => inboxSegment(`inbox-filter-${status}`, name, this.inboxFilter === status,
+          cx => { this.inboxFilter = status; cx.notify(); })))));
     const inboxList = v_flex().min_w(0).gap(12).when(!inbox.length, el => el.flex_1().min_h(0))
-      .child(h_flex().self_start().flex_none().gap(2).p(2).rounded(7).bg(t.raised)
-        .child(segment("inbox-active", "Active", this.inboxFolder === "active", cx => this.showInbox("active", cx)))
-        .child(segment("inbox-trash", "Trash", this.inboxFolder === "trash", cx => this.showInbox("trash", cx))))
-      .when(Boolean(inbox.length), el => el.child(v_flex().min_w(0).gap(4).child(heading("Email", email.length))
-        .children(email.map(inboxRow))
-        .when(!email.length, el => el.child(div().px(7).py(6).text_size(12).text_color(t.muted).child("No email in this Inbox.")))))
+      .child(inboxControls)
+      .when(Boolean(email.length), el => el.child(v_flex().min_w(0).gap(4).child(heading("Email", email.length))
+        .children(email.map(inboxRow))))
       .when(Boolean(deliveries.length), el => el.child(v_flex().min_w(0).gap(4)
         .child(heading("Task deliveries", deliveries.length)).children(deliveries.map(inboxRow))))
       .when(!inbox.length, el => el.child(this.inboxError && !this.preview
         ? emptyState("Inbox unavailable", this.inboxError)
-        : this.inboxLoading && !this.preview ? emptyState("Loading Inbox…", "Reading deliveries and mail.")
-        : emptyState(this.inboxFolder === "trash" ? "Trash is empty" : "Inbox is empty",
-          this.inboxFolder === "trash" ? "Mail that could not be routed appears here." : "Deliveries and AgentMail for this team appear here.")));
+        : this.inboxLoading && !inboxRows.length && !this.preview ? emptyState("Loading Inbox…", "Reading task deliveries and email.")
+        : this.inboxFolder === "trash" ? emptyState("Trash is empty", "Email that could not be routed appears here.")
+        : this.inboxFilter !== "all" ? emptyState("No matching items", "Choose another status to see more items.", ICON("search"))
+        : emptyState("Inbox is empty", "Task deliveries and email for this team appear here.")));
     const mailPage = selection => {
       const row = selection.row, detail = selection.content;
       const field = (title, value) => h_flex().min_w(0).gap(8).text_size(12)
