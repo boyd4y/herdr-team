@@ -109,6 +109,7 @@ test("issues can be restored from Archive and deleted permanently while linked t
     expect(json("issue", "archive", id)).toMatchObject({ id, disposition: "archived" });
     expect(json("issue", "list")).toEqual([]);
     expect(json("issue", "list", "--status", "archived", "--type", "defect", "--iteration", "v1.2")).toMatchObject([{ id }]);
+    expect(json("issue", "list", "--status", original.status, "--disposition", "archived")).toMatchObject([{ id, status: original.status }]);
     expect(json("issue", "list", "--all")).toMatchObject([{ id, disposition: "archived" }]);
     expect(json("issue", "show", id)).toEqual({ ...original, disposition: "archived" });
     expect(json("task", "show", task.id)).toEqual(linked);

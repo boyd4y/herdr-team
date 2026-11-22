@@ -3,7 +3,7 @@ import { checkPresetRole, readAgentPresets } from "./agents.ts";
 import { reviewFor } from "../tasks/verification.ts";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { canonicalKind, KINDS, NAME_RE, ROLE_BODY, ROLE_META, isTerminal, type Project, type RoleCard, type RoleLifecycle } from "../shared/types.ts";
+import { canonicalKind, KINDS, NAME_RE, ROLE_BODY, ROLE_META, isTaskInactive, type Project, type RoleCard, type RoleLifecycle } from "../shared/types.ts";
 import { emitYaml, parseYaml } from "../shared/yaml.ts";
 import { formatColumns } from "../shared/text.ts";
 
@@ -105,7 +105,7 @@ export function addRole(project: Project, opts: AddRoleOptions): AddRoleResult {
 /** 谁还在用这个角色？只算**没结束**的任务 —— 终态任务里的引用是历史。 */
 export function tasksUsingRole(project: Project, name: string): string[] {
   return project.tasks
-    .filter((t) => !isTerminal(t.status))
+    .filter((t) => !isTaskInactive(t))
     .filter((t) => t.role === name || t.handoff.includes(name) || reviewFor(t)?.developer === name || reviewFor(t)?.reviewers?.includes(name))
     .map((t) => t.id);
 }

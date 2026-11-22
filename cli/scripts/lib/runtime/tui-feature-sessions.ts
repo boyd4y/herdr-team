@@ -1,6 +1,6 @@
 import { deliveryFor } from "../dispatch/delivery.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
-import { isTerminal, type Project } from "../shared/types.ts";
+import { isTaskInactive, type Project } from "../shared/types.ts";
 import { confirmedFeatures, deliveredTask } from "../team/features.ts";
 import { loadProject } from "../team/project.ts";
 import { logDaemon } from "./daemon-log.ts";
@@ -18,7 +18,7 @@ export function closeDeliveredTuiAgents(project: Project, herdr: Herdr): string[
     const owned = projectKey(fresh);
     const spaces = new Set(herdr.workspaceList().filter(space => space.tokens?.team_project === owned &&
       space.tokens.team_root === "0" && space.worktree?.is_linked_worktree).map(space => space.workspace_id));
-    const activePanes = new Set(fresh.tasks.filter(task => !isTerminal(task.status)).map(task => deliveryFor(task)?.pane_id));
+    const activePanes = new Set(fresh.tasks.filter(task => !isTaskInactive(task)).map(task => deliveryFor(task)?.pane_id));
     const eligible = (agent: AgentInfo) => {
       const labels = agent.tokens, pane = agent.pane_id;
       if (!pane || !agent.agent || !agent.name || activePanes.has(pane) || !spaces.has(agent.workspace_id ?? "") ||

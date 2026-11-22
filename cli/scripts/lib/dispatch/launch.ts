@@ -12,7 +12,7 @@ import { availableAgentName, bindProjectWorkspace, findRoleAgent, projectAgents,
 import { findTask } from "../tasks/cards.ts";
 import { taskRuntime, type TaskRuntime } from "./runtime.ts";
 import {
-  isTerminal,
+  isTaskInactive,
   startsResident,
   worktreeBranch,
   type Project,
@@ -202,11 +202,12 @@ export function up(project: Project, herdr: Herdr, options: { fresh?: boolean } 
 export function dispatch(project: Project, herdr: Herdr | TaskRuntime, id: string, deferDelivery = false): DispatchOutcome[] {
   const selected = findTask(project, id);
   if (selected.status !== "todo") throw new LaunchError(`${id} is ${selected.status}; only todo tasks can be dispatched`);
+  if (isTaskInactive(selected)) throw new LaunchError(`Restore task ${id} before dispatching it`);
   if (!herdr.envOk()) throw new LaunchError("Run this command inside a Herdr pane (HERDR_ENV=1).");
   const runtime = taskRuntime(herdr);
   for (const task of project.tasks) {
     const delivery = deliveryFor(task);
-    if (delivery && !isTerminal(task.status)) runtime.assertDelivery(delivery);
+    if (delivery && !isTaskInactive(task)) runtime.assertDelivery(delivery);
   }
   enqueueTask(project, id, new Date(), runtime.scope);
   if (!deferDelivery) pumpQueue(project, herdr);

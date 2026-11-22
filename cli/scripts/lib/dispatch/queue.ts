@@ -9,7 +9,7 @@ import { appendRecord, stamp } from "../tasks/records.ts";
 import { withTeamLock } from "../runtime/state.ts";
 import { DeliveryRejected, sameReceiver, taskRuntime, type DeliveryTarget, type TaskRuntime } from "./runtime.ts";
 import { findTask, TaskError, writeTaskMeta } from "../tasks/cards.ts";
-import { TASK_BODY, TASK_META, isTerminal, type Project, type TaskCard } from "../shared/types.ts";
+import { TASK_BODY, TASK_META, isTaskInactive, type Project, type TaskCard } from "../shared/types.ts";
 import { formatProblems, validateProject } from "../team/validate.ts";
 import { dispatchFeature, featureKey, scopeFor } from "../team/features.ts";
 
@@ -18,13 +18,13 @@ export interface QueueOutcome { id: string; state: string; reason?: string }
 /** A cached preflight can skip an empty queue; every actual pass reloads under the lock. */
 export function needsQueuePass(project: Project): boolean {
   return project.tasks.some(task => typeof task.meta.pending_history === "string" && task.meta.pending_history.length > 0 ||
-    !isTerminal(task.status) && ["queued", "sending", "submitted", "claimed", "invalid"].includes(deliveryState(task) ?? ""));
+    !isTaskInactive(task) && ["queued", "sending", "submitted", "claimed", "invalid"].includes(deliveryState(task) ?? ""));
 }
 
 export function nextQueueDeadline(project: Project): number | undefined {
   let next = Infinity;
   for (const task of project.tasks) {
-    if (isTerminal(task.status)) continue;
+    if (isTaskInactive(task)) continue;
     try {
       const d = deliveryFor(task);
       if (d?.state === "submitted") next = Math.min(next, Date.parse(d.sent_at ?? d.queued_at) + 60_001);
@@ -57,6 +57,7 @@ export function enqueueTask(project: Project, id: string, now = new Date(), scop
     const fresh = loadProject(project.root);
     const task = findTask(fresh, id);
     if (task.status !== "todo") throw new TaskError(`${id} is not todo; only todo tasks can be dispatched`);
+    if (isTaskInactive(task)) throw new TaskError(`Restore task ${id} before dispatching it`);
     dispatchFeature(fresh, task, fresh.roles.find(role => role.name === task.role));
     const existing = deliveryFor(task);
     if (existing) return { id, state: existing.state, reason: existing.reason };
@@ -86,12 +87,12 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
     }
     for (const task of fresh.tasks) {
       const d = deliveryFor(task);
-      if (d && !isTerminal(task.status)) runtime.assertDelivery(d);
+      if (d && !isTaskInactive(task)) runtime.assertDelivery(d);
     }
     let reconciled = false;
     for (const task of fresh.tasks) {
       const d = deliveryFor(task);
-      if (!d || isTerminal(task.status)) continue;
+      if (!d || isTaskInactive(task)) continue;
       if (d.state === "sending" || d.state === "submitted" && now.getTime() - Date.parse(d.sent_at ?? d.queued_at) > 60_000) {
         save(fresh, task, { ...d, state: "uncertain", reason: "Delivery needs reconciliation; no automatic resend" });
         reconciled = true;
@@ -104,7 +105,7 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
       }
     }
     if (reconciled) fresh = loadProject(project.root);
-    const pending = fresh.tasks.filter((task) => !isTerminal(task.status) && deliveryFor(task)?.state === "queued")
+    const pending = fresh.tasks.filter((task) => !isTaskInactive(task) && deliveryFor(task)?.state === "queued")
       .sort((a, b) => a.priority.localeCompare(b.priority) || deliveryFor(a)!.queued_at.localeCompare(deliveryFor(b)!.queued_at) || a.id.localeCompare(b.id));
     const outcomes: QueueOutcome[] = [];
     for (const original of pending) {
@@ -133,7 +134,7 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
         const feature = dispatchFeature(fresh, task, role);
         const featureKeyForTask = feature && (task.meta.feature_dispatched !== true || task.meta.feature_workspace === true) && featureKey(feature);
         const occupied = featureKeyForTask && fresh.tasks.find(other => {
-          if (other.id === task.id || isTerminal(other.status)) return false;
+          if (other.id === task.id || isTaskInactive(other)) return false;
           const assignment = deliveryFor(other);
           if (other.status === "todo" && (!assignment || assignment.state === "queued")) return false;
           const scope = scopeFor(fresh, other);
@@ -159,7 +160,7 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
       }
       catch (error) { hold(`Agent startup failed: ${error instanceof Error ? error.message : String(error)}`); continue; }
       if (receiver) {
-        const occupied = fresh.tasks.find((other) => other.id !== task.id && !isTerminal(other.status) &&
+        const occupied = fresh.tasks.find((other) => other.id !== task.id && !isTaskInactive(other) &&
           sameReceiver(deliveryFor(other) ?? {}, receiver!.target) && deliveryFor(other)?.state !== "queued");
         if (occupied) { hold(`Session is processing #${occupied.id}`); continue; }
       }
@@ -205,7 +206,7 @@ export function claimTask(project: Project, id: string, deliveryId: string, auth
     const fresh = loadProject(project.root);
     const task = findTask(fresh, id);
     const d = deliveryFor(task);
-    if (!d || d.id !== deliveryId || d.role !== task.role || isTerminal(task.status)) throw new TaskError("Stale or invalid delivery ID; do not start this task");
+    if (!d || d.id !== deliveryId || d.role !== task.role || isTaskInactive(task)) throw new TaskError("Stale or invalid delivery ID; do not start this task");
     authorize?.(task, d);
     if (d.state === "claimed") return { id, delivery: d.id, duplicate: true };
     if (!["submitted", "uncertain"].includes(d.state)) throw new TaskError(`Cannot claim a ${d.state} delivery`);
@@ -217,7 +218,7 @@ export function claimTask(project: Project, id: string, deliveryId: string, auth
 export function retryDelivery(project: Project, id: string, runtime?: TaskRuntime): QueueOutcome {
   return withTeamLock(project, "queue", () => {
     const fresh = loadProject(project.root), task = findTask(fresh, id), d = deliveryFor(task);
-    if (!d || d.state !== "uncertain" || isTerminal(task.status)) throw new TaskError("Only uncertain deliveries can be retried; first verify that the old assignment is not running");
+    if (!d || d.state !== "uncertain" || isTaskInactive(task)) throw new TaskError("Only uncertain deliveries can be retried; first verify that the old assignment is not running");
     runtime?.assertDelivery(d);
     const replacement = { ...newDelivery(task.role, d.phase), ...runtime?.scope };
     writeTaskMeta(fresh, task, { delivery: replacement });
@@ -226,7 +227,7 @@ export function retryDelivery(project: Project, id: string, runtime?: TaskRuntim
 }
 
 export function queueRows(project: Project): Array<{ id: string; role: string; state: string; delivery: string; reason: string }> {
-  return project.tasks.filter((t) => !isTerminal(t.status) && deliveryFor(t)).map((t) => {
+  return project.tasks.filter((t) => !isTaskInactive(t) && deliveryFor(t)).map((t) => {
     const d = deliveryFor(t)!;
     return { id: t.id, role: t.role, state: d.state, delivery: d.id, reason: deliveryReasonLabel(d.reason ?? "") };
   });

@@ -272,15 +272,13 @@ qoder 由适配层转换为 Herdr 原生 qodercli；配置与 CLI 始终使用 q
 | `review` | 已交付，等待下游角色接手 |
 | `done` | 终态 |
 | `blocked` | 缺少必要前置条件或发生故障，负责人确认任务无法继续 |
-| `archived` | 未完成任务已存档 |
-| `deleted` | 未完成任务已移至回收站 |
 
 注意：`status` 是**任务的**生命周期，与 Herdr 的 agent 状态（`working` / `blocked` /
 `done` / `idle` / `unknown`）是两回事，不要混用。
 普通确认、权限审批或补充输入属于会话的 **Needs input**。任务保留当前状态与负责人。
 
-终态任务不再被派活。依赖仅在被引用任务为 `done` 时满足，包括已存档或放入回收站的已完成任务。
-旧记录中的 `cancelled` 仍可读取，并归入存档。
+完成、存档或移到回收站的任务停止派活。依赖仅在被引用任务为 `done` 时满足，包括已存档或放入回收站的已完成任务。
+旧记录中的 `archived`、`deleted` 和 `cancelled` 仍可读取。
 
 ## 校验规则
 
@@ -302,7 +300,8 @@ qoder 由适配层转换为 Herdr 原生 qodercli；配置与 CLI 始终使用 q
 ## 存档、删除与恢复
 
 - `herdr-team task archive ID` 将任务移入 Archive，`herdr-team task delete ID` 将任务移入 Trash。任务目录、编号、正文和交接历史仍保存在 `tasks/`。
-- 未完成任务的状态改为 `archived` 或 `deleted`，存在未完成的下游依赖时 CLI 会拒绝操作。已完成任务保留 `done`，通过 `disposition` 记录位置。
+- Task 和 Issue 通过 `disposition` 独立记录归档，保留推进状态。Task 删除会记录 `disposition: deleted`，Issue 删除会永久移除内容。
+- 存档或删除有未完成下游依赖的 Task 会被拒绝。对正在处理的 Task，显式 `--force` 结束当前投递并保留归档时的状态。
 - `herdr-team task restore ID` 将已完成任务移回 Done，将未完成任务移回 Todo 等待重新派活。
 
 任务目录和 retired ID 由 CLI 管理，不手动删除。清理 worktree 使用 clean；不等于删除任务历史。

@@ -8,6 +8,7 @@ import {
   SLUG_RE,
   TASK_BODY,
   TASK_META,
+  isTaskInactive,
   isTerminal,
   taskDisposition,
   type Project,
@@ -248,15 +249,17 @@ export function setTaskDisposition(project: Project, id: string, disposition?: C
           throw new TaskError(`Task #${id} belongs to an accepted issue. Create a follow-up task instead.`);
         }
       }
-      writeTaskMeta(fresh, card, { status: "todo", ...clearedAssignment });
-    } else if (isTerminal(card.status)) {
-      writeTaskMeta(fresh, card, { status: disposition });
+      writeTaskMeta(fresh, card, { status: "todo", disposition: undefined, ...clearedAssignment });
+    } else if (taskDisposition(card)) {
+      writeTaskMeta(fresh, card, { disposition, ...(isTerminal(card.status) ? { status: "todo" } : {}) });
     } else {
-      const dependents = fresh.tasks.filter(task => !isTerminal(task.status) && task.dependsOn.includes(id));
+      if (integrationFor(card)?.state === "running") throw new TaskError("Integration is running; wait for it to finish before changing visibility");
+      const dependents = fresh.tasks.filter(task => !isTaskInactive(task) && task.dependsOn.includes(id));
       if (dependents.length) {
         throw new TaskError(`Tasks ${dependents.map(task => "#" + task.id).join(", ")} depend on #${id}. Update their dependencies first.`);
       }
-      editTaskLocked(fresh, id, { status: disposition }, force);
+      if (card.status !== "todo" && !force) throw new TaskError(`#${id} is ${card.status}. Use --force to end its current assignment.`);
+      writeTaskMeta(fresh, card, { disposition, ...clearedAssignment });
     }
     return findTask(loadProject(project.root), id);
   });
@@ -281,7 +284,7 @@ function editTaskLocked(project: Project, id: string, patch: EditOptions, force:
   }
 
   if (integrationFor(card)?.state === "running") throw new TaskError("Integration is running; wait for it to finish before editing this task");
-  if (isTerminal(card.status)) {
+  if (isTaskInactive(card)) {
     throw new TaskError(`${id} is terminal (${taskDisposition(card) ?? card.status}); create a new task instead of editing it`);
   }
   if (card.status !== "todo" && !force) {

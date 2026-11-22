@@ -5,7 +5,7 @@ import { roleAgents, projectAgents } from "../dispatch/team-scope.ts";
 import { deliveryState } from "../dispatch/delivery.ts";
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
 import { findInconsistencies, roleStatusesFrom, integrationStatus, formatReport, formatTaskDetail, type Inconsistency, type RoleStatus } from "./status.ts";
-import { isTerminal, taskDisposition, type Project, type TaskCard } from "../shared/types.ts";
+import { isTaskInactive, taskDisposition, type Project, type TaskCard } from "../shared/types.ts";
 import { validateProject } from "../team/validate.ts";
 
 export function fuzzyScore(text: string, query: string): number | null {
@@ -121,7 +121,7 @@ export function modelFromAgents(project: Project, agents: AgentInfo[], state: Co
     roles: roleStatusesFrom(project, agents).map((role) => ({
       ...role,
       current: role.current ?? project.tasks.filter((task) => task.role === role.role &&
-        !isTerminal(task.status) && task.status !== "todo").map((task) => task.id),
+        !isTaskInactive(task) && task.status !== "todo").map((task) => task.id),
     })),
     // An unavailable service must not manufacture missing-agent warnings.
     inconsistencies: herdrOk ? findInconsistencies(project, agents) : [],
@@ -144,7 +144,7 @@ export function taskFlow(task: TaskCard, project: Project, model: ConsoleModel):
   } catch { /* Malformed records are surfaced by the health banner. */ }
   if (past.at(-1) !== task.role) past.push(task.role);
   let current = past.length - 1;
-  const participants = [...past, ...(isTerminal(task.status) ? [] : task.handoff)];
+  const participants = [...past, ...(isTaskInactive(task) ? [] : task.handoff)];
   const integration = integrationStatus(task);
   if (integration) { participants.push("merge"); current = participants.length - 1; }
   const live = model.taskAgents.get(task.id);
@@ -173,7 +173,7 @@ export function taskFlow(task: TaskCard, project: Project, model: ConsoleModel):
 }
 
 export function selectTasks(project: Project, state: ConsoleState) {
-  const candidates = project.tasks.filter((task) => state.showAll || !isTerminal(task.status));
+  const candidates = project.tasks.filter((task) => state.showAll || !isTaskInactive(task));
   const tasks = filterTasks(candidates, state.query);
   return { showAll: state.showAll, query: state.query, candidateCount: candidates.length, tasks,
     selectedIndex: resolveSelection({ id: state.selectedId, index: state.selectedIndex }, tasks) };
@@ -189,7 +189,7 @@ interface PendingCounts {
 function pendingCounts(tasks: TaskCard[]): PendingCounts {
   const counts = { waiting: 0, delivering: 0, claimed: 0, integration: 0 };
   for (const task of tasks) {
-    if (isTerminal(task.status)) continue;
+    if (isTaskInactive(task)) continue;
     const integration = integrationStatus(task);
     if (integration && integration.state !== "done") {
       counts.integration++;

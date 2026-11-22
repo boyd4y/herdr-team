@@ -34,10 +34,9 @@ export function tasksForIteration(tasks, iteration) {
 
 const ISSUE_STATUSES = {
   ready: "Ready", "in-progress": "In progress", planned: "Planned",
-  backlog: "Backlog", accepted: "Accepted", archived: "Archived",
+  backlog: "Backlog", accepted: "Accepted",
 };
 
-export const issueStatus = card => card.disposition === "archived" ? "archived" : card.status;
 export const issueStatusLabel = status => ISSUE_STATUSES[status] ?? status;
 
 export function requirementsForIteration(requirements, iteration, type = null) {
@@ -47,12 +46,14 @@ export function requirementsForIteration(requirements, iteration, type = null) {
 
 export function groupIssues(requirements, iteration, type) {
   const groups = new Map(Object.keys(ISSUE_STATUSES).map(status => [status, []]));
+  const archived = [];
   for (const card of requirementsForIteration(requirements, iteration, type)) {
-    const status = issueStatus(card);
+    if (card.disposition === "archived") { archived.push(card); continue; }
+    const { status } = card;
     if (!groups.has(status)) groups.set(status, []);
     groups.get(status).push(card);
   }
-  return [...groups].filter(([, cards]) => cards.length).map(([status, cards]) => ({ status, cards }));
+  return { groups: [...groups].filter(([, cards]) => cards.length).map(([status, cards]) => ({ status, cards })), archived };
 }
 
 /** The shown space is a lookup key, never evidence of project ownership. */

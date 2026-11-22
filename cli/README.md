@@ -196,7 +196,7 @@ herdr-team issue list --iteration v0.2
 herdr-team issue list --type defect
 herdr-team issue show R0001
 herdr-team issue archive R0001
-herdr-team issue list --status archived
+herdr-team issue list --disposition archived
 herdr-team issue delete R0002
 herdr-team issue list --all
 herdr-team issue restore R0002
@@ -220,6 +220,8 @@ herdr-team task list --all --iteration v1.2
 清空任务迭代会恢复继承。列表用 `--iteration ''` 筛选未排期任务。已排期任务的 JSON 用 `iteration` 显示实际使用的版本，`meta.iteration` 保存任务单独设置的版本。
 
 `herdr-team iteration list` 列出需求、缺陷和任务使用的活跃版本。归档迭代从常规列表隐藏，可用 Team 面板的 Archived 分组或 CLI 的 `--iteration v0.2` 查看。`iteration list --all` 包含隐藏版本，`iteration restore v0.2` 可恢复到常规列表。
+
+Task 和 Issue 的归档记录在 `disposition`，保留归档时的推进状态。列表可以合用 `--status` 和 `--disposition`。恢复曾强制结束的未完成任务时，任务回到 Todo 等待重新派发。
 
 ### 按交付收尾
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withTeamLock } from "../runtime/state.ts";
-import { featureWorkspace, isTerminal, SLUG_MAX, SLUG_RE, worktreeBranch, type Project, type RoleCard, type TaskCard } from "../shared/types.ts";
+import { featureWorkspace, isTaskInactive, SLUG_MAX, SLUG_RE, worktreeBranch, type Project, type RoleCard, type TaskCard } from "../shared/types.ts";
 import { loadProject } from "./project.ts";
 import { findIssueMetadata } from "./issue-store.ts";
 import { iterationVersion, taskIteration, validateIteration } from "./requirements.ts";
@@ -30,7 +30,7 @@ export function deliveredTask(
   task: TaskCard | undefined, feature: string | undefined, iteration: string | undefined,
   delivery: string | undefined, confirmations: ReadonlyMap<string, FeatureDelivery>,
 ): task is TaskCard {
-  if (!task || !feature || !iteration || !delivery || !isTerminal(task.status) || task.meta.pending_history) return false;
+  if (!task || !feature || !iteration || !delivery || !isTaskInactive(task) || task.meta.pending_history) return false;
   const confirmed = confirmations.get(featureKey({ feature, iteration }));
   return Boolean(confirmed?.tasks.includes(task.id) && (task.status !== "done" || completedDeliveries(task).includes(delivery)));
 }
@@ -94,7 +94,7 @@ export function finishFeature(project: Project, feature: string, version: string
     }
     const tasks = fresh.tasks.filter(task => task.meta.feature === feature && scopeFor(fresh, task)?.iteration === scope.iteration);
     if (!tasks.length) throw new FeatureError(`No tasks found for ${key}`);
-    const open = tasks.filter(task => !isTerminal(task.status) || task.meta.pending_history);
+    const open = tasks.filter(task => !isTaskInactive(task) || task.meta.pending_history);
     if (open.length) throw new FeatureError(`Finish the tasks for ${key} first: ${open.map(task => task.id).join(", ")}`);
     const shared = tasks.filter(featureWorkspace);
     if (shared.length && !merge) throw new FeatureError(`Merge the reviewed feature commit before confirming ${key}; use herdr-team feature merge`);

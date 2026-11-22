@@ -6,7 +6,7 @@ import { deliveryFor, newDelivery } from "../scripts/lib/dispatch/delivery.ts";
 import { handoff } from "../scripts/lib/tasks/handoff.ts";
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, enqueueTask, flushTaskHistory, pumpQueue, queueRows, retryDelivery } from "../scripts/lib/dispatch/queue.ts";
-import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
+import { editTask, setTaskDisposition, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
 import { claimCurrent, makeProject, runningWorkspace, taskMeta, twoResidentRoles, writeTask } from "./helpers.ts";
 
 function fixture(run: (f: ReturnType<typeof setup>) => void): void {
@@ -146,10 +146,14 @@ test("claimed deliveries reconcile against one agent snapshot per queue pass", (
   expect(f.load().tasks.every(task => deliveryFor(task)?.state === "claimed")).toBe(true);
 }));
 
-test.each(["cancelled", "reassign"])("%s invalidates an unsent assignment", (action) => fixture((f) => {
+test.each(["archive", "reassign"])("%s invalidates an unsent assignment", (action) => fixture((f) => {
   enqueueTask(f.load(), "0001");
   const old = deliveryFor(f.task())!.id;
-  editTask(f.load(), "0001", action === "reassign" ? { role: "docs" } : { status: "cancelled" });
+  if (action === "reassign") editTask(f.load(), "0001", { role: "docs" });
+  else {
+    expect(setTaskDisposition(f.load(), "0001", "archived")).toMatchObject({ status: "todo", meta: { disposition: "archived" } });
+    expect(() => enqueueTask(f.load(), "0001")).toThrow(/Restore task/);
+  }
   pumpQueue(f.load(), f.herdr);
   expect(deliveryFor(f.task())).toBeUndefined();
   expect(f.prompts()).toHaveLength(0);

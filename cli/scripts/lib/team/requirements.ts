@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { withTeamLock } from "../runtime/state.ts";
 import { replaceFile } from "../shared/atomic-file.ts";
-import { PRIORITIES, type CardDisposition, type Project, type TaskCard } from "../shared/types.ts";
+import { PRIORITIES, taskDisposition, type CardDisposition, type Project, type TaskCard } from "../shared/types.ts";
 import { createIssue, eraseDeletedIssueText, issueIds, listIssueMetadata, migrateIssueStore, readIssue, RequirementError, requireIssueMetadata, saveIssue, saveIssueMetadata,
   type Requirement, type RequirementMetadata, type RequirementType } from "./issue-store.ts";
 import { loadProject } from "./project.ts";
@@ -151,7 +151,11 @@ export function requirementSummary(card: RequirementMetadata, tasks: readonly Pi
 
 export function requirementDetail(project: Project, card: Requirement) {
   const tasks = project.tasks.filter(task => task.meta.requirement === card.id)
-    .map(({ id, title, status, role }) => ({ id, title, status, role }));
+    .map(task => {
+      const { id, title, status, role } = task;
+      const disposition = taskDisposition(task);
+      return { id, title, status, role, ...(disposition ? { meta: { disposition } } : {}) };
+    });
   const { body, acceptance, ...meta } = card;
   return { ...requirementSummary(meta, tasks), body, acceptance, tasks };
 }

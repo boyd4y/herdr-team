@@ -2,7 +2,7 @@ import { deliveryFor } from "../dispatch/delivery.ts";
 import { shellQuote } from "../dispatch/queue.ts";
 import { DeliveryRejected, sameReceiver, type Receiver, type TaskRuntime } from "../dispatch/runtime.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
-import { canonicalKind, isTerminal, type Project, type RoleCard } from "../shared/types.ts";
+import { canonicalKind, isTaskInactive, type Project, type RoleCard } from "../shared/types.ts";
 import { logDaemon } from "./daemon-log.ts";
 import { HerdrError, type Herdr } from "./herdr.ts";
 import { listMail, recoverMailNotifications, updateMailState } from "./mail-inbox.ts";
@@ -44,7 +44,7 @@ export function notifyMail(project: Project, runtime: Herdr | TaskRuntime, space
     if (receiver.status !== "idle" && !(receiver.status === "done" && receiver.target.pane_id)) continue;
     const busy = project.tasks.some(task => {
       const delivery = deliveryFor(task);
-      return !isTerminal(task.status) && delivery && delivery.state !== "queued" && sameReceiver(delivery, receiver.target);
+      return !isTaskInactive(task) && delivery && delivery.state !== "queued" && sameReceiver(delivery, receiver.target);
     });
     if (busy || !updateMailState(key, id, "sending", "pending")) continue;
     occupied.add(name);

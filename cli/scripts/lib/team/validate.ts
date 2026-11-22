@@ -6,6 +6,7 @@ import {
   SLUG_MAX,
   SLUG_RE,
   STATUSES,
+  isTaskInactive,
   isTerminal,
   isRoleLifecycle,
   splitTaskDir,
@@ -118,13 +119,13 @@ function validateTask(t: TaskCard, roles: Set<string>, ids: Set<string>, out: Pr
   if (t.status !== "" && !(STATUSES as readonly string[]).includes(t.status) && !isTerminal(t.status)) {
     at("2", `Unsupported status "${t.status}"`);
   }
-  if (t.meta.disposition !== undefined && (t.status !== "done" || t.meta.disposition !== "archived" && t.meta.disposition !== "deleted")) {
-    at("1", "disposition must be archived or deleted on a completed task");
+  if (t.meta.disposition !== undefined && t.meta.disposition !== "archived" && t.meta.disposition !== "deleted") {
+    at("1", "disposition must be archived or deleted");
   }
 
   // 终态任务不再被派活，它的 role / handoff 只是历史记录。
   // 角色后来改名或删掉了，不该让一条已经完成的记录永远报错。
-  if (!isTerminal(t.status)) {
+  if (!isTaskInactive(t)) {
     if (t.meta.workflow != null) at("1", "Workflow snapshots are no longer supported; cancel and recreate the assignment with an explicit role/handoff chain");
     if (t.role !== "" && !roles.has(t.role)) at("5", `role "${t.role}" does not resolve to a role`);
     for (const h of t.handoff) {

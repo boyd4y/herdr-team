@@ -75,10 +75,8 @@ test("issues group by recorded workflow status after applying the type and itera
     { id: "R0006", iteration: "v1.2", type: "requirement", status: "planned" },
     { id: "R0007", iteration: "", type: "requirement", status: "backlog" },
   ];
-  assert.deepEqual(groupIssues(cards, null).map(group => group.status), ["ready", "in-progress", "planned", "backlog", "accepted", "archived"]);
-  assert.deepEqual(groupIssues(cards, "v1.2", "defect"), [
-    { status: "ready", cards: [cards[4]] }, { status: "archived", cards: [cards[1]] },
-  ]);
+  assert.deepEqual(groupIssues(cards, null).groups.map(group => group.status), ["ready", "in-progress", "planned", "backlog", "accepted"]);
+  assert.deepEqual(groupIssues(cards, "v1.2", "defect"), { groups: [{ status: "ready", cards: [cards[4]] }], archived: [cards[1]] });
 });
 
 test("iteration options show active versions first and omit deleted versions", () => {

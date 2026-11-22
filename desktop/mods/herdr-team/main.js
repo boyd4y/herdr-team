@@ -1,7 +1,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { Button, Popover, TextView, h_flex, v_flex } from "gpui-base";
 import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder } from "herdr";
-import { boardColumns, consoleBinding, flowNodes, groupIssues, issueStatus, issueStatusLabel, iterationGroups, iterationVersion, listFilters, listTasks,
+import { boardColumns, consoleBinding, flowNodes, groupIssues, issueStatusLabel, iterationGroups, iterationVersion, listFilters, listTasks,
   roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
 import { sample } from "./sample.js";
 
@@ -65,7 +65,7 @@ export default class TeamConsole extends View {
     this.section = "tasks"; this.iterations = null; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
     this.inboxFolder = "active"; this.inboxRows = []; this.inboxRequest = 0; this.mail = null;
     this.bodies = new Map();
-    this.taskFolder = "current"; this.taskAction = null;
+    this.taskAction = null;
     this.view = localStorage.getItem("view") === "board" ? "board" : "list";
     this.demoView = "board";
     this.setup = null;
@@ -176,7 +176,7 @@ export default class TeamConsole extends View {
     this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
     this.issueGroupExpansion = new Map(); this.issueAction = null;
     this.iterations = null; this.iteration = null; this.iterationMenu = false; this.requirementType = null;
-    this.taskFolder = "current"; this.taskAction = null;
+    this.taskAction = null;
     this.bodies = new Map();
   }
 
@@ -654,7 +654,7 @@ export default class TeamConsole extends View {
     if (showcase) this.demoView = view;
     else this.view = view;
     this.selected = null;
-    this.taskFolder = "current"; this.taskAction = null;
+    this.taskAction = null;
     this.selectedRequirement = null;
     this.iterationMenu = false;
     if (!showcase) localStorage.setItem("view", view);
@@ -686,10 +686,7 @@ export default class TeamConsole extends View {
         const updated = teamJson(result, `task ${action}`);
         if (this.closed || this.binding !== binding) return;
         this.tasks = this.tasks.map(card => card.id === task.id ? { ...card, status: updated.status, meta: updated.meta } : card);
-        if (this.taskAction === request) {
-          this.taskFolder = taskFolder(updated);
-          this.taskAction = null;
-        }
+        if (this.taskAction === request) this.taskAction = null;
         this.load(cx);
       } catch (error) {
         if (this.taskAction === request) this.taskAction = { ...request, busy: false, error: errorMessage(error) };
@@ -769,8 +766,8 @@ export default class TeamConsole extends View {
     const versionGroups = iterationGroups(this.preview ? null : this.iterations, [...tasks, ...requirements]);
     const archivedVersions = new Set(versionGroups.find(group => group.state === "archived")?.versions);
     const selectedArchive = archivedVersions.has(this.iteration);
-    const folderTasks = tasksForIteration(this.iteration === null ? tasks.filter(task => !archivedVersions.has(task.iteration)) : tasks, this.iteration);
-    const iterationTasks = folderTasks.filter(task => taskFolder(task) === "current");
+    const iterationTasks = tasksForIteration(tasks, this.iteration)
+      .filter(task => taskFolder(task) === "current" && (this.iteration !== null || !archivedVersions.has(task.iteration)));
     const inbox = demo?.inbox?.[this.inboxFolder] ?? this.inboxRows;
     const live = scopedTerminals(demo?.terminals ?? terminals(), binding);
     const roles = roleRows(demo?.roles ?? this.roles, live);
@@ -794,8 +791,9 @@ export default class TeamConsole extends View {
         .child(div().flex_1().h(1).bg(t.border)));
     const detailMarkdown = (id, text) => TextView.markdown(id, text).w_full().selectable(true).scrollable(false);
     const statusColor = status => status === "doing" ? t.working : status === "review" ? t.accent : status === "blocked" ? t.blocked : status === "done" ? t.done : t.dim;
-    const taskDisplayLabel = task => taskFolder(task) === "current" ? taskReviewPhase(task) ?? label(task.status) : label(taskFolder(task));
-    const taskDisplayColor = task => taskFolder(task) !== "current" ? t.muted : task.status === "review" && task.meta?.integration?.state === "blocked"
+    const taskDisplayLabel = task => taskFolder(task) === "current" ? taskReviewPhase(task) ?? label(task.status)
+      : ["archived", "cancelled", "deleted"].includes(task.status) ? null : label(task.status);
+    const taskDisplayColor = task => taskFolder(task) === "current" && task.status === "review" && task.meta?.integration?.state === "blocked"
       ? t.blocked : statusColor(task.status);
     const emptyState = (title, description, icon = this.teamIcon(), detail) => v_flex().w_full().flex_1().min_h(220)
       .px(22).py(32).gap(10).items_center().justify_center().text_center()
@@ -891,7 +889,7 @@ export default class TeamConsole extends View {
           .child(div().font_semibold().child(action.action === "delete" ? `Move #${task.id} to Trash?` : `Archive #${task.id}?`))
           .child(div().text_size(12).text_color(t.muted).child(running
             ? "The current delivery will end. Task history and Git work are kept."
-            : "The task can be restored from Trash."))
+            : "You can restore the task from its details."))
           .child(h_flex().gap(6).flex_wrap()
             .child(actionButton("task-action-back", "Go back", cx => { this.taskAction = null; cx.notify(); }))
             .child(actionButton("task-action-confirm", action.action === "delete" ? "Move to Trash" : "Archive task",
@@ -902,7 +900,8 @@ export default class TeamConsole extends View {
           .child(h_flex().gap(7).items_center().flex_wrap()
             .child(taskGlyph(task))
             .child(div().font_family(mono).text_size(11).text_color(t.dim).child(`#${task.id}`))
-            .child(pill(taskDisplayLabel(task), taskDisplayColor(task)))
+            .when(Boolean(taskDisplayLabel(task)), el => el.child(pill(taskDisplayLabel(task), taskDisplayColor(task))))
+            .when(folder !== "current", el => el.child(pill(label(folder), t.muted).id("task-disposition")))
             .when(Boolean(task.priority), el => el.child(pill(task.priority, priorityColor(task.priority))))
             .when(Boolean(task.iteration), el => el.child(div().max_w(108).truncate().text_size(11).text_color(t.muted)
               .tooltip(task.meta?.iteration ? task.iteration : `${task.iteration} · From issue`).child(task.iteration)))
@@ -969,12 +968,15 @@ export default class TeamConsole extends View {
       .on_click((_e, cx) => { this.filter = status; cx.notify(); })
       .child(div().text_size(11.5).font_medium().child(title))
       .child(div().text_size(10.5).text_color(t.dim).child(String(count)));
-    const listView = v_flex().min_w(0).gap(8)
-      .child(h_flex().flex_wrap().gap(4).pb(8).border_b(1).border_color(t.border).children(filters.map(filterButton)))
-      .child(v_flex().min_w(0).gap(1).children(visibleTasks.map(taskRow))
-        .when(!visibleTasks.length, el => el.child(div().px(6).py(14).text_size(12).text_color(t.muted)
-          .child(this.iteration && !iterationTasks.length ? `No tasks in ${this.iteration}.`
-            : activeFilter === "open" ? "No open tasks. Use Done to see completed tasks." : `No ${label(activeFilter).toLowerCase()} tasks.`))));
+    const taskEmpty = (filtered = false) => (this.loading && !this.preview
+      ? emptyState("Loading tasks…", "Reading tasks for this team.")
+      : filtered ? emptyState("No matching tasks", "Choose another status or select All.", ICON("search"))
+      : this.iteration ? emptyState("No tasks in this iteration", "Choose another iteration to see its tasks.")
+      : emptyState("No tasks yet", "Tasks will appear here once your team creates them.")).id("task-empty");
+    const listView = v_flex().id("status-list").min_w(0).gap(8)
+      .when(!visibleTasks.length, el => el.flex_1().min_h(0))
+      .child(h_flex().flex_none().flex_wrap().gap(4).pb(8).border_b(1).border_color(t.border).children(filters.map(filterButton)))
+      .child(visibleTasks.length ? v_flex().min_w(0).gap(1).children(visibleTasks.map(taskRow)) : taskEmpty(Boolean(iterationTasks.length)));
 
     // B. Board: one card in its recorded status column, with its current assignee.
     const card = task => {
@@ -1013,7 +1015,7 @@ export default class TeamConsole extends View {
         .child(div().text_size(10.5).text_color(t.muted).child(String(cards.length))))
       .children(cards.map(card));
     const emptyColumns = compactBoard ? columns.filter(column => !column.tasks.length) : [];
-    const boardView = v_flex().id("status-board").w_full().min_w(0).gap(8).pb(4)
+    const boardView = !iterationTasks.length ? taskEmpty() : v_flex().id("status-board").w_full().min_w(0).gap(8).pb(4)
       .when(emptyColumns.length > 0, el => el.child(h_flex().gap(8).flex_wrap().px(3).children(emptyColumns.map(({ status, title }) =>
         h_flex().gap(4).items_center().text_size(10.5).text_color(t.muted)
           .child(div().size(5).flex_none().rounded(3).bg(statusColor(status))).child(`${title} 0`)))))
@@ -1028,13 +1030,10 @@ export default class TeamConsole extends View {
       .child(text);
 
     const typePill = type => pill(type === "defect" ? "Defect" : "Requirement", type === "defect" ? t.blocked : t.accent);
-    const folderTabs = (kind, selected, onSelect) => h_flex().self_start().flex_none().flex_wrap().gap(2).p(2).rounded(7).bg(t.raised)
-      .children([["current", "Current"], ["archive", "Archive"], ["trash", "Trash"]].map(([folder, name]) =>
-        segment(`${kind}-folder-${folder}`, name, selected === folder, cx => onSelect(folder, cx))));
     const issueIteration = card => iterationTag(`issue-iteration-${card.id}`, iterationVersion(card.iteration));
     const issueColor = status => status === "ready" ? t.accent : status === "in-progress" ? t.working : status === "accepted" ? t.done : t.muted;
     const requirementStatus = card => {
-      const status = issueStatus(card);
+      const { status } = card;
       return pill(issueStatusLabel(status), issueColor(status)).id(`issue-status-${card.id}`)
         .when(status === "ready", el => el.tooltip("Ready for acceptance"));
     };
@@ -1047,22 +1046,22 @@ export default class TeamConsole extends View {
       .child(h_flex().gap(6).items_center().flex_wrap().min_w(0)
         .child(div().flex_none().font_family(mono).text_size(11).text_color(t.dim).child(card.id))
         .child(typePill(card.type))
+        .when(card.disposition === "archived", el => el.child(requirementStatus(card)))
         .child(div().flex_none().font_family(mono).text_size(11).text_color(t.muted).child(`${card.progress.done}/${card.progress.total}`)));
-    const requirementGroups = groupIssues(this.iteration === null
+    const { groups: requirementGroups, archived: archivedIssues } = groupIssues(this.iteration === null
       ? requirements.filter(card => !archivedVersions.has(iterationVersion(card.iteration))) : requirements, this.iteration, this.requirementType);
-    const requirementGroup = ({ status, cards }) => {
-      const expanded = this.issueGroupExpansion.get(status) ?? (status !== "accepted" && status !== "archived");
-      const title = issueStatusLabel(status);
-      return v_flex().id(`issue-group-${status}`).min_w(0).gap(2)
-        .child(Button.new(`issue-toggle-${status}`).w_full().h(28).px(7).rounded(5).bg(t.raised)
+    const issueSection = (key, title, cards, { collapsed = false, dot } = {}) => {
+      const expanded = this.issueGroupExpansion.get(key) ?? !collapsed;
+      return v_flex().id(`issue-group-${key}`).min_w(0).gap(2)
+        .child(Button.new(`issue-toggle-${key}`).w_full().h(28).px(7).rounded(5).bg(t.raised)
           .flex().items_center().gap(6).text_size(11.5).text_color(t.foreground)
-          .accessibility_label(`${expanded ? "Collapse" : "Expand"} ${title} issues (${cards.length})`)
-          .hover(s => s.bg(t.hover)).on_click((_e, cx) => { this.issueGroupExpansion.set(status, !expanded); cx.notify(); })
-          .child(div().size(6).flex_none().rounded(3).bg(issueColor(status)))
+          .accessibility_label(`${expanded ? "Collapse" : "Expand"} ${key === "archive" ? "Archived" : title} issues (${cards.length})`)
+          .hover(s => s.bg(t.hover)).on_click((_e, cx) => { this.issueGroupExpansion.set(key, !expanded); cx.notify(); })
+          .when(Boolean(dot), el => el.child(div().size(6).flex_none().rounded(3).bg(dot)))
           .child(div().flex_1().min_w(0).font_semibold().child(title))
           .child(div().text_color(t.muted).child(String(cards.length)))
           .child(svg(ICON(expanded ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(t.muted))
-          .when(status === "ready", el => el.tooltip("Ready for acceptance")))
+          .when(key === "ready", el => el.tooltip("Ready for acceptance")))
         .when(expanded, el => el.child(v_flex().gap(1).children(cards.map(requirementRow))));
     };
     const iterationTitle = this.iteration ?? "All iterations";
@@ -1094,13 +1093,16 @@ export default class TeamConsole extends View {
           .child(div().px(7).py(3).text_size(10.5).font_semibold().text_color(t.muted).child(state === "archived" ? "Archived" : "Active"))
           .children(versions.map(version => iterationOption(version, state))))));
     const issueListError = this.preview ? null : this.requirementError;
-    const emptyIssueList = Boolean(issueListError) || !requirementGroups.length;
+    const emptyIssueList = Boolean(issueListError) || (!requirementGroups.length && !archivedIssues.length);
     const requirementList = v_flex().id("issue-list").min_w(0).gap(8)
       .when(emptyIssueList, el => el.flex_1().min_h(0))
       .child(h_flex().id("issue-filters").self_start().flex_none().flex_wrap().gap(2).p(2).rounded(7).bg(t.raised)
         .children(REQUIREMENT_TYPES.map(([type, name], index) => segment(`requirement-type-${index}`, name,
           type === this.requirementType, cx => { this.requirementType = type; cx.notify(); }))))
-      .when(!emptyIssueList, el => el.children(requirementGroups.map(requirementGroup)))
+      .when(!emptyIssueList, el => el.children(requirementGroups.map(({ status, cards }) =>
+        issueSection(status, issueStatusLabel(status), cards, { collapsed: status === "accepted", dot: issueColor(status) }))))
+      .when(!issueListError && archivedIssues.length > 0, el => el.child(v_flex().id("issue-archive-section").pt(4)
+        .border_t(1).border_color(t.border).child(issueSection("archive", "Archive", archivedIssues, { collapsed: true }))))
       .when(emptyIssueList, el => el.child((issueListError
         ? emptyState("Issues unavailable", issueListError, ICON("file-text"))
         : this.loading && !this.preview ? emptyState("Loading issues…", "Reading requirements and defects.", ICON("file-text"))
@@ -1118,7 +1120,8 @@ export default class TeamConsole extends View {
         .gap(6).items_center().px(6).py(6).rounded(5).hover(s => s.bg(t.hover)).on_click((_e, cx) => this.select(task.id, cx))
         .child(div().font_family(mono).flex_none().text_size(10.5).text_color(t.muted).child(`#${task.id}`))
         .child(div().flex_1().min_w(0).truncate().text_size(12).child(task.title))
-        .child(div().text_size(10.5).flex_none().text_color(taskDisplayColor(task)).child(taskDisplayLabel(task))));
+        .when(Boolean(taskDisplayLabel(task)), el => el.child(div().text_size(10.5).flex_none().text_color(taskDisplayColor(task)).child(taskDisplayLabel(task))))
+        .when(taskFolder(task) !== "current", el => el.child(pill(label(taskFolder(task)), t.muted))));
       return v_flex().w_full().max_w(680).gap(12).min_w(0)
         .child(h_flex().gap(6).items_center().flex_wrap()
           .child(h_flex().id("back-to-requirements").h(24).gap(4).items_center().rounded(6).hover(s => s.bg(t.hover))
@@ -1145,6 +1148,7 @@ export default class TeamConsole extends View {
         .child(h_flex().gap(6).items_center().flex_wrap().child(typePill(card.type))
           .child(div().text_size(11).font_family(mono).text_color(t.muted).child(card.id))
           .child(requirementStatus(card))
+          .when(archived, el => el.child(pill("Archived", t.muted).id("issue-disposition")))
           .child(pill(card.priority, priorityColor(card.priority)))
           .child(issueIteration(card)))
         .child(div().text_size(16).font_semibold().line_height(1.35).child(card.title))
@@ -1265,7 +1269,7 @@ export default class TeamConsole extends View {
         .child(segment("section-requirements", "Issues", this.section === "requirements", cx => this.showRequirements(null, cx)))
         .child(segment("section-inbox", "Inbox", this.section === "inbox", cx => this.showInbox(this.inboxFolder, cx)))))
       .child(div().flex_1().min_w(0))
-      .when(hasTeamView && this.section === "tasks" && this.taskFolder === "current", el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
+      .when(hasTeamView && this.section === "tasks", el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
         .child(segment("view-list", "List", displayView === "list", cx => this.setView("list", cx)))
         .child(segment("view-board", "Board", displayView === "board", cx => this.setView("board", cx)))))
       .when(Boolean(binding) && this.section !== "inbox" && !this.selected && !this.selectedRequirement,
@@ -1316,25 +1320,14 @@ export default class TeamConsole extends View {
           .when(!runtime.busy, el => el.hover(s => s.bg(t.hover)).on_click((_e, cx) => this.startStoppedTeam(cx)))
           .child(runtime.busy ? "Working…" : "Up"))
       : null;
-    const hiddenTasks = folderTasks.filter(task => taskFolder(task) === this.taskFolder);
-    const overviewEmpty = this.taskFolder === "current" ? Boolean(runtimePrompt) : !hiddenTasks.length;
-    const taskOverview = v_flex().min_w(0).gap(12).when(overviewEmpty, el => el.flex_1().min_h(0))
-      .child(folderTabs("task", this.taskFolder, (folder, cx) => {
-        this.taskFolder = folder;
-        this.taskAction = null;
-        cx.notify();
-      }))
-      .child(this.taskFolder === "current" ? runtimePrompt ?? (displayView === "board" ? boardView : listView)
-        : hiddenTasks.length ? v_flex().gap(1).children(hiddenTasks.map(taskRow))
-        : emptyState(this.taskFolder === "archive" ? "Archive is empty" : "Trash is empty",
-          this.taskFolder === "archive" ? "Archived tasks appear here." : "Deleted tasks can be restored from here."));
+    const taskOverview = runtimePrompt ?? (displayView === "board" ? boardView : listView);
     const content = setupLoading ? emptyState("Loading team…", "Checking the project for this Space.")
       : setup?.action === "up" ? emptyState("Project initialized", "Start the team in this Space.").child(setupButton())
       : !this.preview && setup?.action === "init" ? setupPage()
       : open ? detailPage(open) : this.popout ? div().text_color(t.dim).child(this.loading ? "Loading…" : "Task not found.")
       : this.section === "requirements" ? binding && (!this.error || this.preview) ? issues : empty
       : this.section === "inbox" ? binding && (!this.error || this.preview) ? this.mail ? mailPage(this.mail) : inboxList : empty
-      : binding && (!this.error || this.preview) && (tasks.length || !this.loading) ? taskOverview : empty;
+      : binding && (!this.error || this.preview) ? taskOverview : empty;
 
     // A popped-out window: the window frame is the app's; its title bar drags it.
     if (this.popout) return v_flex().id("team-root").size_full().overflow_hidden().bg(t.background).text_color(t.foreground).text_size(12.8)

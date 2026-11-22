@@ -4,8 +4,9 @@ import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
 import { padTo, truncate } from "../shared/text.ts";
 import { deliveryState, waitingDelivery } from "../dispatch/delivery.ts";
 import {
-  isTerminal,
+  isTaskInactive,
   taskDisposition,
+  taskWorkflowStatus,
   isolatedAgentName,
   worktreeBranch,
   type Project,
@@ -64,7 +65,7 @@ function loadAgents(project: Project, herdr: Herdr): AgentInfo[] {
 export function roleStatusesFrom(project: Project, agents: AgentInfo[]): RoleStatus[] {
   return project.roles.map((role) => {
     const identity = { role: role.name, kind: role.kind, model: role.model ?? "default" };
-    const owned = project.tasks.filter((t) => t.role === role.name && !isTerminal(t.status));
+    const owned = project.tasks.filter((t) => t.role === role.name && !isTaskInactive(t));
     const queue = owned.some((t) => deliveryState(t)) ? {
       current: owned.filter((t) => !integrationStatus(t) && !waitingDelivery(t) && (deliveryState(t) || t.status !== "todo")).map((t) => t.id),
       queued: owned.filter(waitingDelivery).length,
@@ -96,7 +97,7 @@ export function findInconsistencies(
   const out: Inconsistency[] = [];
 
   for (const task of project.tasks) {
-    if (isTerminal(task.status)) continue;
+    if (isTaskInactive(task)) continue;
     const integration = integrationStatus(task);
     if (integration) {
       if (integration.state === "blocked") out.push({ kind: "integration-blocked", id: task.id, message: `${task.id}: integration blocked; inspect merge list before retrying` });
@@ -153,7 +154,7 @@ export function findInconsistencies(
 
 export function buildReport(project: Project, herdr: Herdr, includeTerminal: boolean): StatusReport {
   const tasks = project.tasks
-    .filter((t) => includeTerminal || !isTerminal(t.status))
+    .filter((t) => includeTerminal || !isTaskInactive(t))
     .sort((a, b) => (a.priority === b.priority ? a.id.localeCompare(b.id) : a.priority.localeCompare(b.priority)));
   // 只问 Herdr 一次 —— 下面两处都用这同一份列表。
   const agents = loadAgents(project, herdr);
@@ -171,14 +172,15 @@ export function formatTasks(tasks: (TaskCard & { iteration?: string })[], roles:
   if (tasks.length === 0) return "(no active tasks; use --all to include terminal tasks)";
 
   const hasIterations = tasks.some(task => task.iteration);
+  const hasDisposition = tasks.some(task => taskDisposition(task));
   const lines = [
-    `  ${pad("id", 6)}${pad("title", 30)}${pad("priority", 10)}${pad("status", 10)}${pad("role", 16)}${hasIterations ? pad("iteration", 14) : ""}branch`,
+    `  ${pad("id", 6)}${pad("title", 30)}${pad("priority", 10)}${pad("status", 10)}${hasDisposition ? pad("disposition", 13) : ""}${pad("role", 16)}${hasIterations ? pad("iteration", 14) : ""}branch`,
   ];
   for (const t of tasks) {
     const role = roles.find((r) => r.name === t.role);
     const branch = taskScoped(t, role) ? worktreeBranch(t) : "—";
     lines.push(
-      `  ${pad(t.id, 6)}${pad(t.title, 30)}${pad(t.priority, 10)}${pad(taskDisposition(t) ?? t.status, 10)}${pad(t.role, 16)}${hasIterations ? pad(t.iteration || "—", 14) : ""}${branch}`,
+      `  ${pad(t.id, 6)}${pad(t.title, 30)}${pad(t.priority, 10)}${pad(taskWorkflowStatus(t) ?? "—", 10)}${hasDisposition ? pad(taskDisposition(t) ?? "—", 13) : ""}${pad(t.role, 16)}${hasIterations ? pad(t.iteration || "—", 14) : ""}${branch}`,
     );
   }
   return lines.join("\n");
@@ -187,13 +189,15 @@ export function formatTasks(tasks: (TaskCard & { iteration?: string })[], roles:
 /** 单张任务详情不截断标题，正文按原文附在元数据之后。 */
 export function formatTaskDetail(task: TaskCard & { iteration?: string }): string {
   const integration = integrationStatus(task);
+  const disposition = taskDisposition(task);
   return [
     `id: ${task.id}`,
     `title: ${task.title}`,
     `priority: ${task.priority}`,
     ...(typeof task.meta.feature === "string" ? [`feature: ${task.meta.feature}`] : []),
     ...(task.iteration ? [`iteration: ${task.iteration}${task.meta.iteration ? "" : " (from issue)"}`] : []),
-    `status: ${taskDisposition(task) ?? task.status}`,
+    `status: ${taskWorkflowStatus(task) ?? "—"}`,
+    ...(disposition ? [`disposition: ${disposition}`] : []),
     `role: ${task.role}`,
     `handoff: [${task.handoff.join(", ")}]`,
     `dependsOn: [${task.dependsOn.join(", ")}]`,
@@ -214,9 +218,10 @@ export function formatReport(report: StatusReport): string {
   if (report.tasks.length === 0) {
     lines.push("  (no active tasks)");
   } else {
-    lines.push(`  ${pad("id", 6)}${pad("title", 28)}${pad("priority", 10)}${pad("status", 10)}${pad("role", 16)}delivery`);
+    const hasDisposition = report.tasks.some(task => taskDisposition(task));
+    lines.push(`  ${pad("id", 6)}${pad("title", 28)}${pad("priority", 10)}${pad("status", 10)}${hasDisposition ? pad("disposition", 13) : ""}${pad("role", 16)}delivery`);
     for (const t of report.tasks) {
-      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(taskDisposition(t) ?? t.status, 10)}${pad(t.role, 16)}${integrationStatus(t) ? `merge-${integrationStatus(t)!.state}` : deliveryState(t) ?? "—"}`);
+      lines.push(`  ${pad(t.id, 6)}${pad(t.title, 28)}${pad(t.priority, 10)}${pad(taskWorkflowStatus(t) ?? "—", 10)}${hasDisposition ? pad(taskDisposition(t) ?? "—", 13) : ""}${pad(t.role, 16)}${integrationStatus(t) ? `merge-${integrationStatus(t)!.state}` : deliveryState(t) ?? "—"}`);
     }
   }
 

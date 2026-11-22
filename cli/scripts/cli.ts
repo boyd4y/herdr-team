@@ -27,7 +27,7 @@ import { acceptRequirement, addRequirement, editRequirements, indexRequirementTa
   setIterationState, setRequirementDisposition, taskIteration, validateIteration } from "./lib/team/requirements.ts";
 import { listIssueMetadata, migrateIssueStore, readIssue, RequirementError, type Requirement } from "./lib/team/issue-store.ts";
 import { formatProblems, validateProject } from "./lib/team/validate.ts";
-import { canonicalKind, CARD_DISPOSITIONS, isRoleLifecycle, isTerminal, NAME_RE, STATUSES, taskDisposition, type Project } from "./lib/shared/types.ts";
+import { canonicalKind, CARD_DISPOSITIONS, isRoleLifecycle, isTaskInactive, NAME_RE, STATUSES, taskDisposition, type Project } from "./lib/shared/types.ts";
 import { confirmedFeatures, FeatureError, featureKey, finishFeature, scopeFor, validateFeature } from "./lib/team/features.ts";
 import { callerSpace, managedContext } from "./lib/runtime/context.ts";
 import { readProxyEnv } from "./lib/runtime/agent-env.ts";
@@ -161,7 +161,7 @@ Use --root DIR or --project ID to select a project explicitly.
 `;
 
 const ISSUE_USAGE = `Usage: herdr-team issue <list|show|create|update|accept|archive|restore|delete|link|unlink|migrate> [options]
-  list [--all] [--status STATUS] [--type requirement|defect] [--iteration VERSION]
+  list [--all] [--status STATUS] [--disposition archived] [--type requirement|defect] [--iteration VERSION]
   show ID
   create "TITLE" [--type requirement|defect]
   update ID [--title TITLE] [--iteration VERSION]
@@ -436,23 +436,35 @@ function cmdAdd(args: string[], name = "add"): number {
   );
 }
 
+function cardListFilters(parsed: ReturnType<typeof parseArgs>, statuses: readonly string[], dispositions: readonly string[]) {
+  const suppliedStatus = parsed.values.get("status");
+  const legacy = suppliedStatus !== undefined && dispositions.includes(suppliedStatus) ? suppliedStatus : undefined;
+  const status = legacy ? undefined : suppliedStatus;
+  const disposition = parsed.values.get("disposition") ?? legacy;
+  if (status !== undefined && !statuses.includes(status)) throw new UsageError(`Use one of these statuses: ${statuses.join(", ")}.`);
+  if (disposition !== undefined && (!dispositions.includes(disposition) || legacy && legacy !== disposition)) {
+    throw new UsageError(`Use one disposition: ${dispositions.join(", ")}.`);
+  }
+  return { status, disposition };
+}
+
 function cmdBacklog(args: string[], name = "backlog"): number {
-  const parsed = parseArgs(args, ["root", "type", "iteration", "status", "title", "priority", "body", "body-file", "acceptance"]);
+  const parsed = parseArgs(args, ["root", "type", "iteration", "status", "disposition", "title", "priority", "body", "body-file", "acceptance"]);
   if (parsed.flags.has("help")) {
     process.stdout.write(
-      `Usage: herdr-team ${name} list [--all] [--status STATUS] [--type requirement|defect] [--iteration VERSION]\n` +
+      `Usage: herdr-team ${name} list [--all] [--status STATUS] [--disposition archived] [--type requirement|defect] [--iteration VERSION]\n` +
       `       herdr-team ${name} ${name === "issue" ? "create" : "add"} "TITLE" [--type requirement|defect] [--priority Pn] [--iteration VERSION] [--body TEXT] [--acceptance TEXT]\n` +
       `       herdr-team ${name} ${name === "issue" ? "update" : "edit"} ID [--title TITLE] [--priority Pn] [--type TYPE] [--body TEXT] [--acceptance TEXT] [--iteration VERSION]\n` +
       `       herdr-team ${name} <show|accept> ID\n` +
       `       herdr-team ${name} <link|unlink> ISSUE_ID TASK_ID\n` +
-      `Status values: ${[...REQUIREMENT_STATUSES, "archived"].join(", ")}. --all includes Archive.\n` +
+      `Status values: ${REQUIREMENT_STATUSES.join(", ")}. --all includes Archive.\n` +
       "Use a version such as v1.1. Use --iteration '' to show items without an iteration or clear an assignment. Supports --root DIR, --project ID and --json.\n",
     );
     return 0;
   }
   const [operation = "list", ...values] = parsed.pos;
   const allowed: Record<string, string[]> = {
-    list: ["type", "iteration", "status"], add: ["type", "iteration", "priority", "body", "body-file", "acceptance"],
+    list: ["type", "iteration", "status", "disposition"], add: ["type", "iteration", "priority", "body", "body-file", "acceptance"],
     edit: ["type", "iteration", "title", "priority", "body", "body-file", "acceptance"],
     show: [], accept: [], link: [], unlink: [],
   };
@@ -465,26 +477,25 @@ function cmdBacklog(args: string[], name = "backlog"): number {
   const iteration = parsed.values.get("iteration");
   const type = parsed.values.get("type");
   const render = (card: ReturnType<typeof requirementSummary>) =>
-    `${card.id}  ${card.type === "defect" ? "Defect" : "Requirement"}  ${card.priority}  ${card.iteration || "—"}  ${card.disposition ?? card.status}  ${card.progress.done}/${card.progress.total}  ${sanitize(card.title)}`;
+    `${card.id}  ${card.type === "defect" ? "Defect" : "Requirement"}  ${card.priority}  ${card.iteration || "—"}  ${card.status}${card.disposition ? ` [${card.disposition}]` : ""}  ${card.progress.done}/${card.progress.total}  ${sanitize(card.title)}`;
   if (operation === "list") {
     if (values.length) throw new UsageError(`Use herdr-team ${name} list without an issue ID`);
     const selectedType = type === undefined ? undefined : requirementType(type);
     const selectedVersion = iteration === undefined ? undefined : validateIteration(iteration);
-    const status = parsed.values.get("status");
-    const filters: readonly string[] = [...REQUIREMENT_STATUSES, "archived"];
-    if (status !== undefined && !filters.includes(status)) throw new UsageError(`Use one of these issue filters: ${filters.join(", ")}.`);
-    const includeHidden = parsed.flags.has("all") || status !== undefined;
+    const { status, disposition } = cardListFilters(parsed, REQUIREMENT_STATUSES, ["archived"]);
+    const includeHidden = parsed.flags.has("all") || disposition !== undefined;
     const hidden = readHiddenIterations(project);
     const linkedTasks = indexRequirementTasks(project);
     const rows = listIssueMetadata(project)
       .filter(card => {
         const version = iterationVersion(card.iteration);
         return card.disposition !== "deleted" && matchesIteration(version, selectedVersion, hidden) &&
-          (includeHidden || card.disposition === undefined) && (selectedType === undefined || card.type === selectedType);
+          (includeHidden || card.disposition === undefined) && (disposition === undefined || card.disposition === disposition) &&
+          (selectedType === undefined || card.type === selectedType);
       })
       .sort((a, b) => a.priority.localeCompare(b.priority) || b.id.localeCompare(a.id))
       .map(card => requirementSummary(card, linkedTasks.get(card.id) ?? []))
-      .filter(card => status === undefined || (card.disposition ?? card.status) === status);
+      .filter(card => status === undefined || card.status === status);
     return out(parsed, rows, rows.length ? rows.map(render).join("\n") : "No issues match. Use issue list --all to include Archive.");
   }
   if (operation === "add") {
@@ -786,7 +797,7 @@ function cmdStatus(args: string[], name = "status"): number {
     const binding = savedDesktopBinding(project);
     if (!binding || showDesktopBinding(client, binding.space)?.root !== binding.root) throw new DesktopError("No valid project space binding; run up first");
     const agents = client.rpc<{ terminals: DesktopTerminal[] }>("terminal.list", { labels: { "team.project": binding.root, "team.owner_space": binding.space } }).terminals;
-    const result = { binding, agents, tasks: project.tasks.filter(task => parsed.flags.has("all") || !isTerminal(task.status)).map(cardForJson) };
+    const result = { binding, agents, tasks: project.tasks.filter(task => parsed.flags.has("all") || !isTaskInactive(task)).map(cardForJson) };
     return out(parsed, result, [`space ${binding.space}  ${binding.root}`, ...agents.map(agent =>
       `${agent.labels["team.role"] ?? "?"}  ${agent.address}  ${agentStatusLabel(agent.status?.state ?? "unknown")}`),
     formatTasks(project.tasks, project.roles)].join("\n"));
@@ -1145,6 +1156,7 @@ async function cmdDispatch(args: string[], name = "dispatch"): Promise<number> {
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
   const task = findTask(project, id);
+  if (taskDisposition(task)) throw new TaskError(`Restore task ${id} before dispatching it`);
   if (task.status === "todo" && !readDaemonTeam(projectKey(project))) {
     throw new TaskError("Start the team with herdr-team team up before dispatching tasks");
   }
@@ -1371,20 +1383,18 @@ async function cmdInbox(args: string[]): Promise<number> {
 }
 
 function cmdTasks(args: string[], mode?: "list" | "show"): number {
-  const parsed = parseArgs(args, ["root", "role", "status", "iteration"]);
+  const parsed = parseArgs(args, ["root", "role", "status", "disposition", "iteration"]);
   if (parsed.flags.has("help")) {
     const command = mode ? `task ${mode}` : "tasks";
-    const filters = "[--all] [--role ROLE] [--status STATUS] [--iteration VERSION]";
+    const filters = "[--all] [--role ROLE] [--status STATUS] [--disposition archived|deleted] [--iteration VERSION]";
     process.stdout.write(`Usage: herdr-team ${command} ${mode === "show" ? "ID" : (mode === "list" ? filters : "[ID] " + filters)} [--root DIR | --project ID] [--json]\n`);
     return 0;
   }
   if (parsed.pos.length > 1 || mode === "list" && parsed.pos.length || mode === "show" && parsed.pos.length !== 1) {
     throw new UsageError("Use herdr-team task list to browse tasks or herdr-team task show ID for details.");
   }
-  checkOptions(parsed, parsed.pos.length ? ["root"] : ["root", "role", "status", "iteration"], parsed.pos.length ? [] : ["all"]);
-  const statusFilter = parsed.values.get("status");
-  const taskFilters: readonly string[] = [...STATUSES, ...CARD_DISPOSITIONS];
-  if (statusFilter !== undefined && !taskFilters.includes(statusFilter)) throw new UsageError(`Use one of these task filters: ${taskFilters.join(", ")}.`);
+  checkOptions(parsed, parsed.pos.length ? ["root"] : ["root", "role", "status", "disposition", "iteration"], parsed.pos.length ? [] : ["all"]);
+  const { status, disposition } = cardListFilters(parsed, STATUSES, CARD_DISPOSITIONS);
   const root = resolveRoot(parsed.values.get("root"));
   const id = parsed.pos[0];
   const project = loadValidated(root, { taskBodies: id ?? false, roleBodies: false });
@@ -1404,12 +1414,14 @@ function cmdTasks(args: string[], mode?: "list" | "show"): number {
   }
 
   const roleFilter = parsed.values.get("role");
+  const all = parsed.flags.has("all");
   const hiddenIterations = readHiddenIterations(project);
   const tasks = scheduled
     .filter(t => matchesIteration(t.iteration ?? "", version, hiddenIterations))
-    .filter((t) => parsed.flags.has("all") || statusFilter !== undefined || !isTerminal(t.status))
+    .filter(t => disposition !== undefined ? taskDisposition(t) === disposition
+      : all || (status !== undefined ? taskDisposition(t) === undefined : !isTaskInactive(t)))
     .filter((t) => roleFilter === undefined || t.role === roleFilter)
-    .filter((t) => statusFilter === undefined || (taskDisposition(t) ?? t.status) === statusFilter)
+    .filter((t) => status === undefined || t.status === status)
     .sort((a, b) =>
       a.priority === b.priority ? a.id.localeCompare(b.id) : a.priority.localeCompare(b.priority),
     );
@@ -1418,7 +1430,7 @@ function cmdTasks(args: string[], mode?: "list" | "show"): number {
     return out(parsed, tasks.map(cardForJson), "");
   }
   if (tasks.length) return out(parsed, tasks, formatTasks(tasks, project.roles));
-  if (roleFilter !== undefined || statusFilter !== undefined || version !== undefined) {
+  if (roleFilter !== undefined || status !== undefined || disposition !== undefined || version !== undefined) {
     return out(parsed, tasks, "No tasks match these filters.");
   }
   return out(parsed, tasks, project.tasks.length

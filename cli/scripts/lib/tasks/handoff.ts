@@ -10,7 +10,7 @@ import { completedDeliveries, deliveryFor, newDelivery } from "../dispatch/deliv
 import { commitTaskTransition, flushTaskHistory, pumpQueue } from "../dispatch/queue.ts";
 import { withTeamLock } from "../runtime/state.ts";
 import { findTask, TaskError } from "./cards.ts";
-import { TASK_BODY, featureWorkspace, isTerminal, worktreeBranch, type Project } from "../shared/types.ts";
+import { TASK_BODY, featureWorkspace, isTaskInactive, worktreeBranch, type Project } from "../shared/types.ts";
 import { assertPullRequest, attachTestedPullRequest, prDecisionFor, pullRequestFor, realGitHub, testResultFor, usesPullRequest, type GitHub } from "../integration/pull-request.ts";
 
 export interface HandoffOptions {
@@ -87,7 +87,7 @@ function handoffLocked(
   const receipts = completedDeliveries(card);
   const taskPath = join(project.herdrDir, card.dir, TASK_BODY);
   if (options.delivery && receipts.includes(options.delivery)) {
-    return { id, from: card.role, to: isTerminal(card.status) ? null : card.role, status: card.status,
+    return { id, from: card.role, to: isTaskInactive(card) ? null : card.role, status: card.status,
       previousStatus: card.status, prompted: false, summarySaved: false, taskPath, duplicate: true,
       note: `Delivery ${options.delivery} was already handed off; no changes made.` };
   }
@@ -98,7 +98,7 @@ function handoffLocked(
     throw new TaskError("Claim the current delivery first, then hand off with its --delivery ID");
   }
   if (!currentDelivery && options.delivery) throw new TaskError("Stale delivery ID; no changes made");
-  if (isTerminal(card.status)) {
+  if (isTaskInactive(card)) {
     throw new TaskError(`${id} is already terminal (${card.status}); cannot hand off`);
   }
 

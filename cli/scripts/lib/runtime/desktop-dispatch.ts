@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { Project, RoleCard, TaskCard } from "../shared/types.ts";
-import { featureWorkspace, isTerminal, workspaceKey, worktreeBranch } from "../shared/types.ts";
+import { featureWorkspace, isTaskInactive, workspaceKey, worktreeBranch } from "../shared/types.ts";
 import { acceptanceFor, reviewFor, taskEnvironment, taskRepo, taskScoped, verifyCheckout } from "../tasks/verification.ts";
 import { deliveryFor, type Delivery } from "../dispatch/delivery.ts";
 import { DeliveryRejected, type DeliveryTarget, type TaskRuntime } from "../dispatch/runtime.ts";
@@ -44,10 +44,10 @@ export function closeFinishedDesktopTaskAgents(project: Project, client: Desktop
     if (!deliveries.size) return;
     const tasks = new Map(fresh.tasks.map(task => [task.id, task]));
     if (tasks.size !== fresh.tasks.length) throw new DesktopError("Ambiguous task IDs");
-    if (!fresh.tasks.some(task => isTerminal(task.status))) return;
+    if (!fresh.tasks.some(task => isTaskInactive(task))) return;
     const activeTerminals = new Set<string>();
     for (const task of fresh.tasks) {
-      if (isTerminal(task.status)) continue;
+      if (isTaskInactive(task)) continue;
       const delivery = deliveryFor(task);
       if (delivery?.runtime === "desktop" && delivery.space === binding.space && delivery.terminal) {
         activeTerminals.add(delivery.terminal);

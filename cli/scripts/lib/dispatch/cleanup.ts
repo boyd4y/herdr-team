@@ -3,7 +3,7 @@ import { runtimePath } from "../runtime/state.ts";
 import { assertProjectWorkspace } from "./team-scope.ts";
 import { join } from "node:path";
 import type { Herdr } from "../runtime/herdr.ts";
-import { featureWorkspace, isTerminal, workspaceKey, worktreeBranch, type Project, type TaskCard } from "../shared/types.ts";
+import { featureWorkspace, isTaskInactive, workspaceKey, worktreeBranch, type Project, type TaskCard } from "../shared/types.ts";
 import { confirmedFeatures } from "../team/features.ts";
 import { git } from "../tasks/verification.ts";
 
@@ -37,7 +37,7 @@ export interface CleanupResult {
  * 悄悄丢掉别人没提交的工作是最不该发生的事。
  */
 export function releaseTaskResources(project: Project, card: TaskCard): void {
-  if (!isTerminal(card.status)) return;
+  if (!isTaskInactive(card)) return;
   const path = runtimePath(project, "resources");
   if (!existsSync(path)) return;
   for (const name of readdirSync(path)) {
@@ -51,7 +51,7 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
   const key = workspaceKey(card);
   const members = scope ? project.tasks.filter(task => workspaceKey(task) === key) : [card];
   const confirmation = scope ? confirmedFeatures(project).get(key) : undefined;
-  if (scope && (!confirmation?.commit || members.some(task => !isTerminal(task.status) || task.meta.pending_history || !confirmation.tasks.includes(task.id)))) {
+  if (scope && (!confirmation?.commit || members.some(task => !isTaskInactive(task) || task.meta.pending_history || !confirmation.tasks.includes(task.id)))) {
     return { id: card.id, branch, action: "retained", note: "Confirm feature delivery before reclaiming the shared checkout" };
   }
 
@@ -141,7 +141,7 @@ export function cleanupTask(project: Project, herdr: Herdr, card: TaskCard): Cle
  * `handoff` 走到终态时调它。
  */
 export function cleanupIfDone(project: Project, herdr: Herdr, card: TaskCard): CleanupResult {
-  if (!isTerminal(card.status)) {
+  if (!isTaskInactive(card)) {
     return {
       id: card.id,
       branch: worktreeBranch(card),
@@ -154,5 +154,5 @@ export function cleanupIfDone(project: Project, herdr: Herdr, card: TaskCard): C
 
 /** 扫一遍所有终态任务，把留下的 worktree 收掉。 */
 export function cleanupAll(project: Project, herdr: Herdr): CleanupResult[] {
-  return project.tasks.filter((t) => isTerminal(t.status)).map((t) => cleanupTask(project, herdr, t));
+  return project.tasks.filter((t) => isTaskInactive(t)).map((t) => cleanupTask(project, herdr, t));
 }

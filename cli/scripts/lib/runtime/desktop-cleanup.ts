@@ -2,7 +2,7 @@ import { realpathSync, unlinkSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { releaseTaskResources, type CleanupResult } from "../dispatch/cleanup.ts";
 import { deliveryFor } from "../dispatch/delivery.ts";
-import { featureWorkspace, isTerminal, workspaceKey, worktreeBranch, type Project, type TaskCard } from "../shared/types.ts";
+import { featureWorkspace, isTaskInactive, workspaceKey, worktreeBranch, type Project, type TaskCard } from "../shared/types.ts";
 import { confirmedFeatures, deliveredTask } from "../team/features.ts";
 import { loadProject } from "../team/project.ts";
 import { findTask } from "../tasks/cards.ts";
@@ -30,7 +30,7 @@ function settledAgent(terminal: DesktopTerminal): boolean {
 function cleanTask(project: Project, client: DesktopClient, binding: DesktopBinding, caller: string | undefined, task: TaskCard): CleanupResult {
   const branch = worktreeBranch(task);
   const result = (action: CleanupResult["action"], note: string): CleanupResult => ({ id: task.id, branch, action, note });
-  if (!isTerminal(task.status)) return result("not-terminal", `Task #${task.id} is still ${task.status}`);
+  if (!isTaskInactive(task)) return result("not-terminal", `Task #${task.id} is still ${task.status}`);
   if (task.meta.pending_history || integrationFor(task)?.state === "running") {
     return result("retained", "Task history or integration is still being recorded; retry clean after it settles");
   }
@@ -38,7 +38,7 @@ function cleanTask(project: Project, client: DesktopClient, binding: DesktopBind
   const shared = featureWorkspace(task) !== undefined;
   const members = shared ? project.tasks.filter(item => workspaceKey(item) === key) : [task];
   const confirmations = task.meta.feature ? confirmedFeatures(project) : undefined;
-  if (shared && members.some(item => !isTerminal(item.status) || item.meta.pending_history || !confirmations?.get(key)?.tasks.includes(item.id))) {
+  if (shared && members.some(item => !isTaskInactive(item) || item.meta.pending_history || !confirmations?.get(key)?.tasks.includes(item.id))) {
     return result("retained", "Confirm feature delivery before reclaiming the shared checkout");
   }
 
@@ -80,7 +80,7 @@ function cleanTask(project: Project, client: DesktopClient, binding: DesktopBind
       (terminal.labels["herdr.space"] === alias?.space && Boolean(alias) ||
         within(checkout, terminal.cwd) || within(checkout, terminal.foreground?.cwd)));
     if (elsewhere || occupied) return result("foreign", `Checkout is in use by ${occupied?.address ?? `space ${elsewhere?.id}`}`);
-    const active = new Set(project.tasks.filter(item => !isTerminal(item.status)).map(item => deliveryFor(item))
+    const active = new Set(project.tasks.filter(item => !isTaskInactive(item)).map(item => deliveryFor(item))
       .filter(delivery => delivery?.runtime === "desktop" && delivery.space === binding.space).map(delivery => delivery?.terminal));
     const liveProblem = (terminal: DesktopTerminal) => {
       if (terminal.address === caller) return "Run clean from a shell outside the task session";
@@ -140,7 +140,7 @@ export function cleanDesktopTasks(project: Project, client: DesktopClient, bindi
     const registered = registeredDesktopBinding(client, binding.space);
     if (registered?.root !== binding.root || registered.view_space) throw new DesktopError("Project space binding changed before cleanup");
     const fresh = loadProject(project.root);
-    const tasks = ids === undefined ? fresh.tasks.filter(task => isTerminal(task.status)) : ids.map(id => findTask(fresh, id));
+    const tasks = ids === undefined ? fresh.tasks.filter(task => isTaskInactive(task)) : ids.map(id => findTask(fresh, id));
     const cleaned = new Map<string, CleanupResult>();
     return tasks.map(task => {
       const key = workspaceKey(task);

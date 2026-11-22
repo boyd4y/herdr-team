@@ -132,6 +132,14 @@ export function taskDisposition(task: Pick<TaskCard, "status" | "meta">): CardDi
   if (task.status === "archived" || task.status === "cancelled" || task.meta.disposition === "archived") return "archived";
 }
 
+export function isTaskInactive(task: Pick<TaskCard, "status" | "meta">): boolean {
+  return task.status === "done" || taskDisposition(task) !== undefined;
+}
+
+export function taskWorkflowStatus(task: Pick<TaskCard, "status">): string | undefined {
+  return (STATUSES as readonly string[]).includes(task.status) ? task.status : undefined;
+}
+
 /** `0001-fix-login` → `{ id: "0001", slug: "fix-login" }`，不合规时返回 null。 */
 export function splitTaskDir(dirName: string): { id: string; slug: string } | null {
   const m = /^([0-9]{4})-(.+)$/.exec(dirName);

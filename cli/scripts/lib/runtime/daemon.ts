@@ -16,7 +16,7 @@ import { daemonLogPath, deliveryLogReason, logDaemon } from "./daemon-log.ts";
 import { startAgentMail, type AgentMailStatus } from "./agentmail.ts";
 import { listMail } from "./mail-inbox.ts";
 import { notifyMail } from "./mail-notifications.ts";
-import { featureWorkspace, isTerminal, workspaceKey } from "../shared/types.ts";
+import { featureWorkspace, isTaskInactive, workspaceKey } from "../shared/types.ts";
 import { confirmedFeatures } from "../team/features.ts";
 import { closeDeliveredTuiAgents } from "./tui-feature-sessions.ts";
 import { cleanupAll, cleanupIfDone, type CleanupResult } from "../dispatch/cleanup.ts";
@@ -212,7 +212,7 @@ export function daemonPass(key: string, cleanup?: { ids?: string[] }): void {
     }
     let cleanupPanes: string[] = [];
     try {
-      if (team.kind === "desktop" && hasFeaturePreviews(project) || project.tasks.some(task => isTerminal(task.status)) && confirmedFeatures(project).size) {
+      if (team.kind === "desktop" && hasFeaturePreviews(project) || project.tasks.some(task => isTaskInactive(task)) && confirmedFeatures(project).size) {
         if (team.kind === "desktop") closeRegisteredDesktopTaskAgents(project, team);
         else {
           const backend = registeredRuntime(project, team);
