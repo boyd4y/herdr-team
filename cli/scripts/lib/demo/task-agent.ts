@@ -1,9 +1,11 @@
-import { demoDelay } from "./config.ts";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
+import { setTimeout as pause } from "node:timers/promises";
 import { completedDeliveries } from "../dispatch/delivery.ts";
 import { isMockHarness, mockConsole, report } from "../mock-console.ts";
 import type { TaskCard } from "../shared/types.ts";
+import { runMockSession } from "../ui/mock-session.ts";
+import { demoDelay } from "./config.ts";
 import { smokeChecks, smokeFixtures, smokeSource } from "./scenario.ts";
 import { checkArtifact, command, handoffGate, team, type MockRun } from "./shared.ts";
 
@@ -27,39 +29,35 @@ async function main(): Promise<void> {
     throw new Error("Expected the dedicated task worktree and a demo artifact");
   }
 
+  const gate = run.scenario?.hold && step === "review" ? {
+    state: run.scenario.hold, path: handoffGate(dirname(manifest), delivery),
+  } : undefined;
   const session = `${step === "dev" ? "Development" : step === "test" ? "Verification" : "Review"}  ·  #${taskId}`;
-  const tui = process.stdin.isTTY && process.stdout.isTTY
-    ? await (await import("../mock-tui.ts")).openMockTui(harness, { session, fast: run.fast })
-    : undefined;
-  const view = tui ?? mockConsole(harness, run.fast);
-  if (!tui) view.heading(session);
-  try {
-    const gate = run.scenario?.hold && step === "review" ? {
-      state: run.scenario.hold, path: handoffGate(dirname(manifest), delivery),
-    } : undefined;
-    await doAssignment(view, harness, step, task, run, cwd, delivery, gate);
-    if (tui) await tui.closed;
-    else for await (const _chunk of Bun.stdin.stream()) { /* Retain the assignment output until cleanup. */ }
-  } finally {
-    tui?.destroy();
-    await tui?.closed;
+  if (process.stdin.isTTY && process.stdout.isTTY) {
+    return runMockSession(harness, session,
+      (view, signal) => doAssignment(view, harness, step, task, run, cwd, delivery, gate, signal), run.fast);
   }
+  const view = mockConsole(harness, run.fast);
+  view.heading(session);
+  await doAssignment(view, harness, step, task, run, cwd, delivery, gate);
+  for await (const _chunk of Bun.stdin.stream()) { /* Retain the assignment output until cleanup. */ }
 }
 
 async function doAssignment(
-  view: ReturnType<typeof mockConsole>, harness: NonNullable<Parameters<typeof report>[1]>,
+  display: Pick<ReturnType<typeof mockConsole>, "step" | "completed">, harness: Parameters<typeof report>[1],
   step: "dev" | "test" | "review", task: MockRun["tasks"][number], run: MockRun, cwd: string, delivery: string,
   gate?: { state: "done" | "blocked"; path: string },
+  signal?: AbortSignal,
 ) {
   const taskId = task.id;
   const options = ["--delivery", delivery];
   const scenario = task.scenario ?? run.scenario;
   const fixture = scenario ? smokeFixtures[scenario.fixture] : undefined;
-  const display = view;
-  view = { ...display, async step(index, detail, notes, delay) {
-    await display.step(index, detail, notes, run.fast ? delay : 30);
-    await demoDelay(run.root, (delay ?? 500) * 12, run.fast);
+  const view: typeof display = { ...display, async step(index, detail, notes, delay) {
+    await display.step(index, detail, notes, run.fast ? delay : 30, signal);
+    await demoDelay(run.root, (delay ?? 500) * 12, run.fast, signal);
   } };
+  signal?.throwIfAborted();
   report("working", harness);
   const receipt = team<{ duplicate: boolean }>(run.root, "task", "claim", taskId, ...options);
   if (receipt.duplicate) throw new Error("The delivery was already claimed");
@@ -127,10 +125,11 @@ async function doAssignment(
     const until = Date.now() + 20_000;
     while (!existsSync(gate.path)) {
       if (Date.now() >= until) throw new Error("The smoke runner did not acknowledge the pending handoff");
-      await Bun.sleep(50);
+      await pause(50, undefined, { signal });
     }
     report("working", harness);
   }
+  signal?.throwIfAborted();
   team(run.root, "task", "handoff", taskId, ...options, ...handoff);
   view.completed("Saved the result for the next step.");
   report("done", harness);

@@ -1,3 +1,5 @@
+import { setTimeout as pause } from "node:timers/promises";
+
 type Accent = (text: string) => string;
 type Step = 0 | 1 | 2;
 const dim = (text: string) => `\x1b[2m${text}\x1b[0m`;
@@ -56,10 +58,10 @@ export function mockConsole(harness: MockHarness, fast = false) {
     heading(detail: string) {
       console.log(profile.intro(detail, accent));
     },
-    async step(index: Step, detail: string, notes: string[], delay = 400) {
+    async step(index: Step, detail: string, notes: string[], delay = 400, signal?: AbortSignal) {
       console.log(profile.step(index, detail, accent));
       for (const note of notes) {
-        await Bun.sleep(fast ? 30 : delay);
+        await pause(fast ? 30 : delay, undefined, { signal });
         console.log(profile.note(note));
       }
     },

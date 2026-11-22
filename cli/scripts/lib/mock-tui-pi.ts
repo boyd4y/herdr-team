@@ -17,7 +17,6 @@ export const piProfile: ExtraMockTuiProfile = {
   prompt: text => `  ${text}`,
   step: (_index, text) => text,
   note: text => `  ${text}`,
-  answer: "•  Response",
   working: "⠋  Working",
   ready: "0.0%/1.0M",
 

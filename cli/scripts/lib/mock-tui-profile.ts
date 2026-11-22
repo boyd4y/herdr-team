@@ -12,7 +12,6 @@ export interface MockTuiProfile {
   prompt(text: string): string;
   step(index: number, text: string): string;
   note(text: string): string;
-  answer: string;
   working: string;
 }
 

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { setTimeout as pause } from "node:timers/promises";
 
 export interface DemoSettings {
   enabled: boolean;
@@ -40,13 +41,14 @@ export function demoSettings(root: string, env = process.env): DemoSettings {
 }
 
 /** Re-read local controls during waits so a presenter can pause or change pace. */
-export async function demoDelay(root: string, milliseconds: number, fast = false) {
+export async function demoDelay(root: string, milliseconds: number, fast = false, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   if (fast) return;
   let remaining = milliseconds;
   while (remaining > 0) {
     const settings = demoSettings(root);
     const start = Date.now();
-    await Bun.sleep(Math.min(250, settings.paused ? 250 : remaining / settings.speed));
+    await pause(Math.min(250, settings.paused ? 250 : remaining / settings.speed), undefined, { signal });
     if (!settings.paused) remaining -= (Date.now() - start) * settings.speed;
   }
 }

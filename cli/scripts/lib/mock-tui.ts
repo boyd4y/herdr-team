@@ -14,21 +14,21 @@ const profiles: Record<MockHarness, MockTuiProfile | ExtraMockTuiProfile> = {
     title: "Claude Code", version: "v2.1.236", accent: "#D97757", edge: "#55565D", fill: "#18191C",
     model: "deepseek-v4.1-flash-1017[1m]",
     shape: "single", input: "Try “check the test output”", prompt: text => `❯  ${text}`,
-    step: (_index, text) => text, note: text => `  ${text}`, answer: "✦",
+    step: (_index, text) => text, note: text => `  ${text}`,
     working: "✦  Preparing a response",
   },
   codex: {
     title: "Codex", version: "v0.170.0", accent: "#95BFE6", edge: "#494E59", fill: "#313236",
     model: "GPT-6.2-Sol high fast",
     shape: "single", input: "Describe a change or ask a question", prompt: text => `›  ${text}`,
-    step: (index, text) => `[0${index + 1}]  ${text}`, note: text => `     └  ${text}`, answer: "› Result",
+    step: (index, text) => `[0${index + 1}]  ${text}`, note: text => `     └  ${text}`,
     working: "◌  Working",
   },
   grok: {
     title: "Grok Build", version: "1.0.89", accent: "#C0BAC7", edge: "#4A484C", fill: "#161618",
     model: "Grok 4.7 (high)",
     shape: "rounded", input: "", prompt: text => `❯ ${text}`,
-    step: (_index, text) => `◆  ${text}`, note: text => `   ${text}`, answer: "",
+    step: (_index, text) => `◆  ${text}`, note: text => `   ${text}`,
     working: "⠴  Thinking",
   },
   pi: piProfile,
@@ -36,15 +36,16 @@ const profiles: Record<MockHarness, MockTuiProfile | ExtraMockTuiProfile> = {
   qoder: qoderProfile,
 };
 
+type Submit = (text: string, signal: AbortSignal) => Promise<void>;
+
 type Options = {
   session: string;
   directory?: string;
   branch?: string;
   fast?: boolean;
-  interactive?: {
-    submit(text: string, signal: AbortSignal): Promise<void>;
-    idle(): void;
-  };
+  deferInput?: boolean;
+  submit: Submit;
+  idle(): void;
 };
 
 const muted = "#999CA7";
@@ -54,30 +55,27 @@ const timeLabel = () => new Intl.DateTimeFormat("en-US", { hour: "numeric", minu
 
 export async function openMockTui(harness: MockHarness, options: Options) {
   const theme = profiles[harness];
-  const extra = options.interactive && "mount" in theme ? theme : undefined;
+  const extra = "mount" in theme ? theme : undefined;
   const renderer = await createCliRenderer({
     screenMode: "alternate-screen", externalOutputMode: "passthrough",
     consoleMode: "disabled", exitOnCtrlC: true, exitSignals: ["SIGTERM", "SIGHUP"], useKittyKeyboard: null, useMouse: true,
   });
   const claude = harness === "claude";
-  const codex = harness === "codex";
-  const compact = codex && Boolean(options.interactive);
-  const grokWelcome = harness === "grok" && Boolean(options.interactive);
+  const compact = harness === "codex";
+  const grokWelcome = harness === "grok";
   const root = new BoxRenderable(renderer, {
     width: "100%", height: "100%", flexDirection: "column", paddingX: compact ? 0 : 1,
     backgroundColor: extra?.background ?? (grokWelcome ? theme.fill : "#18191C"),
   });
   const header = new BoxRenderable(renderer, {
-    width: "100%", maxWidth: harness === "grok" ? 58 : "100%", flexShrink: 0, flexDirection: "column",
-    alignSelf: harness === "grok" ? "center" : "flex-start",
-    ...(harness === "grok" && !grokWelcome ? { border: true, borderStyle: theme.shape, borderColor: theme.edge } : {}),
+    width: "100%", maxWidth: grokWelcome ? 58 : "100%", flexShrink: 0, flexDirection: "column",
+    alignSelf: grokWelcome ? "center" : "flex-start",
     marginTop: compact ? 2 : 1, marginBottom: compact ? 2 : 0, paddingX: compact ? 2 : claude ? 0 : 1, paddingY: 0,
   });
   const text = (content: string | ReturnType<typeof t>, ink = foreground) => new TextRenderable(renderer, {
     width: "100%", flexShrink: 0, content, fg: ink, wrapMode: "word",
   });
   const hint = compact ? text(t`${fg("#EC9CB4")("Try:")} ${fg(foreground)("Verify the sidebar after reconnect")}`, muted) : null;
-  const modelLine = claude && options.interactive ? text(theme.model, muted) : null;
   const grokMark = grokWelcome ? new TextRenderable(renderer, {
     content: [
       "⠀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠀⢀⠄",
@@ -92,14 +90,14 @@ export async function openMockTui(harness: MockHarness, options: Options) {
   }) : null;
   if (extra) {
     // The added harnesses assemble their own terminal chrome.
-  } else if (modelLine) {
+  } else if (claude) {
     const intro = new BoxRenderable(renderer, { flexDirection: "row", alignItems: "center", gap: 1, width: "100%" });
     const signature = new TextRenderable(renderer, {
       width: 9, height: 3, flexShrink: 0, content: " ▐▛███▛█\n▝▜██████▀\n  ▝▝ ▝▝", fg: theme.accent,
     });
     const identity = new BoxRenderable(renderer, { flexDirection: "column", flexGrow: 1, minWidth: 0 });
     identity.add(text(t`${fg(foreground)(theme.title)} ${fg(muted)(theme.version)}`));
-    identity.add(modelLine);
+    identity.add(text(theme.model, muted));
     identity.add(text(options.session, muted));
     intro.add(signature);
     intro.add(identity);
@@ -113,9 +111,9 @@ export async function openMockTui(harness: MockHarness, options: Options) {
       header.add(item);
     }
   } else {
-    header.add(codex ? text(t`${fg(theme.accent)("›·")} ${fg(foreground)(theme.title)} ${fg(muted)(theme.version)}`)
+    header.add(compact ? text(t`${fg(theme.accent)("›·")} ${fg(foreground)(theme.title)} ${fg(muted)(theme.version)}`)
       : text(`${theme.title} ${theme.version}`, theme.accent));
-    if (!grokWelcome) header.add(text(options.session, muted));
+    header.add(text(options.session, muted));
   }
   if (hint) {
     hint.marginTop = 1;
@@ -149,17 +147,17 @@ export async function openMockTui(harness: MockHarness, options: Options) {
     header.onSizeChange = fitCompactTranscript;
   }
   const footer = new TextRenderable(renderer, { height: 1, minHeight: 1, flexShrink: 0, width: "100%", fg: muted, truncate: true });
-  const input = options.interactive ? new InputRenderable(renderer, {
+  const input = new InputRenderable(renderer, {
     flexGrow: 1, flexBasis: 0, minWidth: 0, maxLength: 240, placeholder: theme.input, backgroundColor: theme.fill,
-    focusedBackgroundColor: theme.fill, focusedTextColor: foreground, cursorColor: codex ? "#CFD0D4" : theme.accent, placeholderColor: muted,
-  }) : undefined;
+    focusedBackgroundColor: theme.fill, focusedTextColor: foreground, cursorColor: compact ? "#CFD0D4" : theme.accent, placeholderColor: muted,
+  });
 
   const spacers = grokWelcome ? [new BoxRenderable(renderer, { flexGrow: 1 }), new BoxRenderable(renderer, { flexGrow: 1 })] : [];
   if (grokWelcome) {
     const workspace = options.branch ? `⎇  ${options.branch}  ${options.session}` : options.session;
     root.add(new TextRenderable(renderer, { content: workspace, width: "100%", height: 1, fg: muted, flexShrink: 0, truncate: true }));
   }
-  if (extra && input) {
+  if (extra) {
     header.destroyRecursively();
     extra.mount({ renderer, root, transcript, input, status: footer, activity, session: options.session,
       directory: options.directory, branch: options.branch });
@@ -170,15 +168,15 @@ export async function openMockTui(harness: MockHarness, options: Options) {
     root.add(transcript);
     root.add(activity);
   }
-  if (input && !extra) {
+  if (!extra) {
     const composer = new BoxRenderable(renderer, {
       width: "100%", flexShrink: 0, flexDirection: "row", backgroundColor: theme.fill,
-      ...(!codex ? { border: claude ? ["top", "bottom"] : true, borderStyle: theme.shape, borderColor: theme.edge } : {}),
+      ...(!compact ? { border: claude ? ["top", "bottom"] : true, borderStyle: theme.shape, borderColor: theme.edge } : {}),
       ...(grokWelcome ? { bottomTitle: ` ${theme.model} `, bottomTitleAlignment: "right" } : {}),
-      paddingX: codex ? 0 : 1, paddingY: codex ? 1 : 0,
+      paddingX: compact ? 0 : 1, paddingY: compact ? 1 : 0,
     });
     composer.add(new TextRenderable(renderer, {
-      width: codex || claude ? 2 : 3, flexShrink: 0, height: 1, fg: codex || claude ? foreground : theme.accent, content: claude ? "❯" : "›",
+      width: compact || claude ? 2 : 3, flexShrink: 0, height: 1, fg: compact || claude ? foreground : theme.accent, content: claude ? "❯" : "›",
     }));
     composer.add(input);
     root.add(composer);
@@ -225,7 +223,6 @@ export async function openMockTui(harness: MockHarness, options: Options) {
   let running: AbortController | undefined;
   let startedAt = 0;
   let closed = false;
-  const lifetime = new AbortController();
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
     if (key.name === "escape" && running) {
       key.preventDefault();
@@ -238,12 +235,12 @@ export async function openMockTui(harness: MockHarness, options: Options) {
   });
 
   const idle = "/exit quit  ·  PgUp/PgDn history";
-  const ready = extra?.ready ?? (compact ? "↵ send  ·  PgUp/PgDn history  ·  /exit quit"
+  const shortcuts = extra?.ready ?? (compact ? "↵ send  ·  PgUp/PgDn history  ·  /exit quit"
     : claude ? `↵ send  ·  ${idle}`
     : "");
-  footer.content = input ? ready : "Waiting for assignment";
-  input?.on(InputRenderableEvents.ENTER, (value: string) => { void submit(value); });
-  input?.focus();
+  footer.content = shortcuts;
+  input.on(InputRenderableEvents.ENTER, (value: string) => { void submit(value); });
+  if (!options.deferInput) input.focus();
 
   function add(content: string, color = foreground, spacing = 0, fill?: string, timestamp?: string) {
     if (closed) return;
@@ -272,12 +269,12 @@ export async function openMockTui(harness: MockHarness, options: Options) {
     }
   }
 
-  async function submit(value: string) {
-    if (!input || !options.interactive || running || closed) return;
+  async function submit(value: string, assignment?: Submit) {
+    if (running || closed) return;
     const request = value.trim();
     if (!request) return;
     input.value = "";
-    if (request === "/exit") {
+    if (!assignment && request === "/exit") {
       renderer.destroy();
       return;
     }
@@ -288,34 +285,35 @@ export async function openMockTui(harness: MockHarness, options: Options) {
     if (claude) input.placeholder = "";
     activity.content = `${theme.working}  ·  Esc interrupt`;
     activity.visible = true;
-    add(theme.prompt(request), foreground, 1, codex ? theme.fill : grokWelcome ? "#242424" : undefined,
+    add(theme.prompt(request), foreground, 1, compact ? theme.fill : grokWelcome ? "#242424" : undefined,
       grokWelcome ? timeLabel() : undefined);
     fitCompactTranscript();
     try {
-      await options.interactive.submit(request, current.signal);
+      await (assignment ?? options.submit)(request, current.signal);
     } catch (error) {
       if (!closed) add(current.signal.aborted ? "Turn interrupted." : String(error), muted, 1);
+      if (assignment) throw error;
     } finally {
       running = undefined;
       if (!closed) {
-        if (current.signal.aborted) options.interactive.idle();
+        if (current.signal.aborted && !assignment) options.idle();
         input.placeholder = claude ? "" : theme.input;
         activity.visible = false;
         fitCompactTranscript();
-        footer.content = ready;
+        footer.content = shortcuts;
         input.focus();
       }
     }
   }
 
-  renderer.on("destroy", () => { closed = true; lifetime.abort(); running?.abort(); });
+  renderer.on("destroy", () => { closed = true; running?.abort(); });
+  renderer.requestRender();
   return {
+    ready: renderer.idle(),
     closed: renderer.closed,
     destroy: () => renderer.destroy(),
     submit,
-    heading(detail: string) { if (!extra) header.add(text(detail, muted)); },
-    async step(index: number, detail: string, notes: string[], delay = 400, signal = lifetime.signal) {
-      if (!input) footer.content = `${theme.working}  ·  PgUp/PgDn history`;
+    async step(index: number, detail: string, notes: string[], delay = 400, signal?: AbortSignal) {
       add(theme.step(index, detail), theme.accent, harness === "grok" && index > 0 ? 0 : 1);
       for (const note of notes) {
         await pause(options.fast ? 30 : delay, undefined, { signal });
@@ -323,17 +321,11 @@ export async function openMockTui(harness: MockHarness, options: Options) {
       }
     },
     completed(result: string) {
-      if (input) {
-        const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
-        if (grokWelcome) add(`◆  Thought for ${seconds}s`, muted, 1);
-        add(responseMarker[harness] + result, foreground, 1, undefined, grokWelcome ? timeLabel() : undefined);
-        if (codex || grokWelcome || claude) {
-          add(claude ? `✻  Crunched for ${seconds}s` : `Worked for ${seconds}s${codex ? `  ·  ${timeLabel()}` : ""}`, muted, 1);
-        }
-      } else {
-        if (theme.answer) add(theme.answer, theme.accent, 1);
-        add(result);
-        footer.content = "Handoff saved  ·  PgUp/PgDn history";
+      const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+      if (grokWelcome) add(`◆  Thought for ${seconds}s`, muted, 1);
+      add(responseMarker[harness] + result, foreground, 1, undefined, grokWelcome ? timeLabel() : undefined);
+      if (compact || grokWelcome || claude) {
+        add(claude ? `✻  Crunched for ${seconds}s` : `Worked for ${seconds}s${compact ? `  ·  ${timeLabel()}` : ""}`, muted, 1);
       }
     },
   };

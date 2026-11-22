@@ -17,7 +17,6 @@ export const qoderProfile: ExtraMockTuiProfile = {
   prompt: text => `>   ${text}`,
   step: (_index, text) => `•  ${text}`,
   note: text => `   ${text}`,
-  answer: "•  Response",
   working: "⠙ Generating…",
   ready: "",
 

@@ -20,7 +20,6 @@ export const kimiProfile: ExtraMockTuiProfile = {
   prompt: text => `❯  ${text}`,
   step: (index, text) => `${index === 1 ? "✦" : index === 2 ? "✓" : "·"}  ${text}`,
   note: text => `   ${text}`,
-  answer: "✦  Result",
   working: "✦  Thinking",
   mount({ renderer, root, transcript, input, status, activity, session, directory: cwd, branch }) {
     const welcome = new BoxRenderable(renderer, {
