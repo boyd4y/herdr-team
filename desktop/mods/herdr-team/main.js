@@ -1093,14 +1093,20 @@ export default class TeamConsole extends View {
           .pt(3).border_t(1).border_color(t.border)
           .child(div().px(7).py(3).text_size(10.5).font_semibold().text_color(t.muted).child(state === "archived" ? "Archived" : "Active"))
           .children(versions.map(version => iterationOption(version, state))))));
-    const requirementList = v_flex().min_w(0).gap(8)
-      .child(h_flex().id("issue-filters").self_start().flex_wrap().gap(2).p(2).rounded(7).bg(t.raised)
+    const issueListError = this.preview ? null : this.requirementError;
+    const emptyIssueList = Boolean(issueListError) || !requirementGroups.length;
+    const requirementList = v_flex().id("issue-list").min_w(0).gap(8)
+      .when(emptyIssueList, el => el.flex_1().min_h(0))
+      .child(h_flex().id("issue-filters").self_start().flex_none().flex_wrap().gap(2).p(2).rounded(7).bg(t.raised)
         .children(REQUIREMENT_TYPES.map(([type, name], index) => segment(`requirement-type-${index}`, name,
           type === this.requirementType, cx => { this.requirementType = type; cx.notify(); }))))
-      .children(requirementGroups.map(requirementGroup))
-      .when(!requirementGroups.length, el => el.child(div().px(6).py(14).text_size(12).text_color(t.muted)
-        .child(this.loading ? "Loading issues…" : this.iteration !== null || this.requirementType || requirements.length
-          ? "No issues match these filters." : "No requirements or defects yet.")));
+      .when(!emptyIssueList, el => el.children(requirementGroups.map(requirementGroup)))
+      .when(emptyIssueList, el => el.child((issueListError
+        ? emptyState("Issues unavailable", issueListError, ICON("file-text"))
+        : this.loading && !this.preview ? emptyState("Loading issues…", "Reading requirements and defects.", ICON("file-text"))
+        : this.iteration !== null || this.requirementType
+          ? emptyState("No matching issues", "Choose another iteration or issue type.", ICON("search"))
+          : emptyState("No issues yet", "Requirements and defects for this team appear here.", ICON("file-text"))).id("issue-empty")));
     const requirementPage = card => {
       const detail = this.preview ? card : this.requirementDetails.get(card.id);
       const archived = card.disposition === "archived";
@@ -1301,9 +1307,7 @@ export default class TeamConsole extends View {
 
     const open = tasks.find(task => task.id === this.selected);
     const activeRequirement = requirements.find(card => card.id === this.selectedRequirement);
-    const issues = this.requirementError && !this.preview ? emptyState("Issues unavailable", this.requirementError)
-      : this.loading && !requirements.length && !this.preview ? emptyState("Loading issues…", "Reading requirements and defects.")
-      : activeRequirement ? requirementPage(activeRequirement) : requirementList;
+    const issues = activeRequirement && !issueListError ? requirementPage(activeRequirement) : requirementList;
     const runtimePrompt = this.section === "tasks" && !selectedArchive && !open && runtime && !runtime.error && !runtime.running
       ? runtime.running === null || runtime.starting
         ? emptyState("Checking team…", "Waiting for the team service.")
