@@ -133,6 +133,9 @@ Issue 列表读取元数据，根据关联任务的状态计算进度。详情�
 | `feature` | | str | 交付批次的 Feature 名，例如 `session-recovery`。临时角色派发需要 Feature 和迭代 |
 | `iteration` | | str | 版本号，例如 `v1.2`。可继承关联 Issue 的迭代。Feature 首次准备投递时固定实际版本 |
 | `execution` | | str | 新任务为 `task`；未发送的旧队列投递前自动迁移 |
+| `delivery` | | object | 当前内部投递。由 CLI 管理，状态供 daemon 调度 |
+| `completed_deliveries` | | list[str] | 已完成交棒的投递 ID，用于识别重复请求 |
+| `inbox_receipts` | | list[object] | 成功交棒时保存的内部消息回执，供 Inbox 的 Read 视图和执行复盘查询 |
 | `review` | | object | commit、developer、当前指定 reviewer；后续验收阶段接手时更新，由 CLI 管理 |
 | `acceptance` | | object | 当前阶段验收 commit 与 role；转交后续 test/review 时清空，最终验收后才允许合入；由 CLI 管理 |
 | `integration` | | object | 验收 commit 与 queued/running/blocked/done；由 CLI 管理 |
@@ -140,10 +143,14 @@ Issue 列表读取元数据，根据关联任务的状态计算进度。详情�
 
 **没有 `id`。** 它来自目录名。
 
+当前 `delivery` 用 `id` 标识本次投递，`role` 是收件角色，`queued_at` 是入队时间，新交棒用 `sender` 记录发件角色。`state` 可为 `queued`、`sending`、`submitted`、`claimed` 或 `uncertain`。Inbox 根据该条投递是否已有处理回执显示 Unread 或 Read。
+
+每个 `inbox_receipts` 条目保存投递 `id`、`role`、`subject` 和 `queued_at`，有记录时还保存 `sender`。有交付摘要的投递和回执通过 `summary_ref` 定位 `task.md` 中的交棒记录，用 `summary_length` 保存摘要的 JavaScript 字符串长度。正文在打开消息时从 `task.md` 读取。无摘要引用时读取任务描述。旧记录可能只有 `completed_deliveries` 和 Markdown 历史。
+
 ### `task.md`
 
 正文 = 任务描述，末尾可以带一个 `## 流转记录` 小节。文件可以缺席（视为空）。
-`handoff --summary TEXT` 或 `--summary-file F` 会在流转记录中追加带时间、上游和下游角色的 `### 交付` 小节，原文保留。
+`handoff --summary TEXT` 或 `--summary-file F` 会在流转记录中追加带时间、上游和下游角色的 `### Delivery` 小节，原文保留。
 摘要可选；未提供时不编造内容。下游优先读取任务正文及引用产物，终端回读只作为诊断手段。
 
 `## 流转记录` 是**追加式，只增不改**。每行一次状态变化：

@@ -19,16 +19,17 @@
 同项目可以有多个 workspace。以具体 pane/tab/workspace 绑定、任务和 delivery 关联记录，不按目录名全局猜会话。
 
 1. 读取项目 AGENTS.md、根 TEAM.md、角色说明和已有反馈报告，理解实际约定及之前建议的处理情况。
-2. 用只读 `herdr-team task list --json --root <team-root>` 获取索引，再读候选卡的 `.task.yaml`、task.md 历史与交付摘要。
+2. 用只读 `herdr-team task list --all --json --root <team-root>` 获取索引，再读候选卡的 `.task.yaml`、`task.md` 历史与交付摘要。
    纳入时间窗内有执行事件或与时间窗重叠的任务，包含进行中、blocked、已存档、已移到回收站和窗口前开始的任务。
    不能只看当前 doing/done，也不能把列表中的当前角色或已缩短的 handoff 当成原始执行链。
+   需要核对消息时，用 `herdr-team inbox list --all --json --root <team-root>` 查看投递 ID、发件人、收件人和已读标记。打开外部邮件会写入已读状态，复盘使用列表和已有处理记录取证。
 3. 按需核对引用报告、测试日志、Git commit/变更路径、PR 与 CI 记录。只为候选异常补读相关证据，
    不为复盘重跑测试、启动 agent 或遍历全部 harness 对话。Herdr 实时状态只能证明当前状态，不能还原历史。
    需要实时会话信息时使用 CLI 的状态查询；离线或缺记录时继续生成有边界的报告。
 4. 文件 mtime 只帮助筛选，不作为建卡、开始或完成时间。先判断数据覆盖率；缺少历史、被清理的日志和
    无法定位的会话列为缺口，不能凭任务 ID 大小或相似标题补时间。历史正文以实际记录为准，不按固定措辞解析。
 
-任务时间来自实际字段与事件：当前 delivery 有 queued_at、可选 sent_at；已完成 delivery 主要留下 ID 和 Markdown 历史。
+任务时间来自实际字段与事件。当前 `delivery` 有 `queued_at` 和可选的 `sent_at`。成功交棒会留下 `completed_deliveries` 的 ID、Markdown 交棒记录，以及新格式的 `inbox_receipts`。回执证明该条内部消息已处理，其中的 `queued_at` 是最初入队时间。完成时间从交棒记录或有时间戳的事件核对。外部邮件的已读表示打开过，跟进完成以 `inbox ack` 对应的确认记录为准。
 不要假定存在 created_at、claimed_at 或每阶段 completed_at。ISO 时间带时区；无时区的历史时间须注明解释依据，
 不同机器的时区或时钟不明时不精算跨机器间隔。提交时间证明版本存在，不证明 agent 正在工作。
 

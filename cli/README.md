@@ -277,7 +277,7 @@ herdr-team inbox restore <mail-id>
 herdr-team inbox ack <mail-id>
 ```
 
-首次连接每个邮箱时记录当前事件位置，从后续的收件和相关标签变更开始处理。daemon 重启后接着读取保存的位置，按邮箱和邮件 ID 去重。未注册项目的匹配邮件直接进入该项目的 Inbox 垃圾箱。项目注册后，新邮件进入普通 Inbox，垃圾箱里的邮件可以手动恢复。已注册项目尚未启动、已暂停或角色忙时，邮件留在普通 Inbox，daemon 会在常驻角色可用时提醒，提醒只带本地邮件 ID。邮件不会创建任务、worktree 或新 agent，也不会触发 `dispatch`。从旧版 daemon 升级时，重启 daemon 以加载新的收件功能。
+首次连接每个邮箱时记录当前事件位置，从后续的收件和相关标签变更开始处理。daemon 重启后接着读取保存的位置，按邮箱和邮件 ID 去重。未注册项目的匹配邮件直接进入该项目的 Inbox 垃圾箱。项目注册后，新邮件进入普通 Inbox，垃圾箱里的邮件可以手动恢复。已注册项目尚未启动、已暂停或角色忙时，邮件留在普通 Inbox，daemon 会在常驻角色可用时提醒，提醒只带本地邮件 ID。收件角色按 [Inbox 与交棒流程](../skill/references/handoff.md#inbox-与投递) 处理邮件，需要时再创建或更新 Issue、Task。从旧版 daemon 升级时，重启 daemon 以加载新的收件功能。
 
 同项目的并发 up 使用项目锁，重新读取现场后只创建一份主 workspace 和常驻角色。
 主 workspace 优先按归属 token 和原生 checkout 身份定位，归属标记不完整且目录证据明确时补齐；

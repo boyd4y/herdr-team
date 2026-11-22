@@ -103,8 +103,14 @@ set their own iteration or inherit the linked issue's iteration.
 A task can stand alone or link to one issue. An issue can link to several tasks.
 Open a link from either detail view. The CLI accepts `--requirement R0001` when
 creating a task and `backlog link R0001 0001` for an existing task.
-**Inbox** displays current deliveries and AgentMail, including message bodies and
-the routing reasons in Trash.
+
+**Inbox** groups external **Email** and **Internal messages**. Both show a sender,
+recipient, subject, and message body. **Active / Trash** selects the folder, and
+**All / Unread / Read** filters messages by read status. Opening an email marks it
+as read. An internal message becomes read after the recipient successfully hands
+off the assignment. Open an internal message to read it or follow its link to
+the associated task. Trash shows why an email could not be routed. See the
+[handoff guide](skill/references/handoff.md#inbox-与投递) for how agents process messages.
 
 The layout uses Herdr's shipped Spaces, Tabs, Files and Changes mods.
 
@@ -121,9 +127,8 @@ and color marker. Pins and Priority keep their native behavior. Row clicks
 still focus the agent's actual worktree pane; grouping never moves a terminal.
 
 The layout reads the shown Space's explicit CLI binding for project data. The
-terminal directory is used for setup. In Inbox, **Email** opens the message body
-and routing information, and **Task deliveries** opens the corresponding task.
-To pin a read-only panel explicitly, change its content props:
+terminal directory is used for setup. To pin the panel to a project and Space,
+change its content props:
 
 ```json
 {
@@ -144,8 +149,9 @@ The Team Panel follows the selected Space's machine. With the shared `herdr-team
 CLI installed on that machine, it reads Tasks, Issues, and Inbox for the bound
 project. On a remote host, run `herdr-team space bind --core` once from the project's
 terminal in that Space. This connects the view through that host's Core registry
-without requiring a Desktop window there. The remote panel is read-only and loads
-records on entry or **Refresh**. Local `.herdr/` changes use `watchFolder`, with
+without requiring a Desktop window there. Remote task and issue views are read-only.
+The panel loads remote records on entry or **Refresh**, and opening an email records
+its read status on that machine. Local `.herdr/` changes use `watchFolder`, with
 **Refresh** also available. Core terminal status updates reactively on both.
 
 Terminals are matched by machine plus labels `team.project=<exact-root>`, `herdr.space=<machine-local-space-id>` and `team.role=<role>`. Resident `up` writes these labels; old `herdr` metadata does not migrate automatically. Without matching terminals roles remain unknown. **Open** focuses the actual terminal; it sends no message.

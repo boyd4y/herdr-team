@@ -27,7 +27,7 @@ TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队�
 | 入口 | 用途 | 参考 |
 | --- | --- | --- |
 | setup（onboard） | 初始化、调整角色与本地配置、按用户要求更新共享工具 | [setup.md](references/setup.md) |
-| handoff | 需求与缺陷、拆任务、领取、协作交付、PR、合并、收尾与会话恢复 | [handoff.md](references/handoff.md) |
+| handoff | Inbox 消息处理、需求与缺陷、拆任务、领取、协作交付、PR、合并、收尾与会话恢复 | [handoff.md](references/handoff.md) |
 | agents | 选择或维护完整 agent 配置预设 | [agents.md](references/agents.md) |
 | feedback | 回顾指定时间的执行，分析耗时、重复与职责交叉，生成报告、上游 issue 草稿和仓库改进建议 | [feedback.md](references/feedback.md) |
 

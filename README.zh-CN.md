@@ -22,7 +22,7 @@ Herdr Team 支持 **Herdr 桌面版**和 **Herdr 终端版**。桌面版的终�
 - 本机任务详情的 **Archive** 将任务移入存档，**Delete** 经确认后移入回收站。两个位置都可 **Restore**，以前取消的任务统一显示在 Archive。
 - List 面向窄侧栏，显示标题、任务号、负责人和记录状态。状态筛选默认选 All，按任务号倒序显示。Open 按阻塞、待审、执行中、待办排序。任务详情分为 Description 和 History，关联需求或缺陷可直接打开。
 - 内置明确标注的 Sample，无需项目数据，不启动 agent、不创建任务。
-- Inbox 的 **Email** 可打开正文和路由信息，**Task deliveries** 可打开对应任务。
+- Inbox 分为 **Email** 和 **Internal messages**，两类消息都能查看发件人、收件人、标题和正文。
 - 显式绑定 root＋machine＋space 后，可通过现有 CLI 读取项目角色与任务，展示匹配标签的 Core 终端；这是只读预览。
 
 ## 本地验证与试用
@@ -84,7 +84,7 @@ npm run typecheck
 
 Agents 没有明确排序偏好时默认按 Space 分组，仍可从原生排序菜单切换。
 
-Team Panel 跟随所选 Space 的机器，显示该机器上已绑定项目的 Tasks、Issues 和 Inbox。远程机器需要安装同版 `herdr-team`。在该远程 Space 的项目终端内运行一次 `herdr-team space bind --core`，然后切回该 Space 或点 **Refresh**。远程项目记录为只读，切换 Space 或点击 **Refresh** 时重新读取。本地项目继续监听 `.herdr/`，两端的终端状态都由 Core 实时提供。
+Team Panel 跟随所选 Space 的机器，显示该机器上已绑定项目的 Tasks、Issues 和 Inbox。远程机器需要安装同版 `herdr-team`。在该远程 Space 的项目终端内运行一次 `herdr-team space bind --core`，然后切回该 Space 或点 **Refresh**。远程任务和 Issue 视图为只读，切换 Space 或点击 **Refresh** 时重新读取。在远程 Inbox 打开邮件会在对应机器上记录已读。本地项目继续监听 `.herdr/`，两端的终端状态都由 Core 实时提供。
 
 手动固定面板见 [英文 README 的 props 示例](README.md#try-the-preview)。`root` 指向主检出，`space` 与 `machine` 使用 `herdr-app ls` 返回的标识。远程 `space` 使用 `机器名/Space ID`。
 
@@ -118,4 +118,4 @@ Tasks 和 Issues 共用右上角的迭代筛选器。Task 可以设置自己的�
 
 任务可以独立存在，也可以关联一张 Issue。一张 Issue 可以关联多个任务，两个详情页可以互相跳转。创建任务时可加 `--requirement R0001`，已有任务可用 `herdr-team backlog link R0001 0001` 关联。
 
-Inbox 显示当前团队的投递和 AgentMail，支持查看邮件正文及 Trash 原因。创建、派发、验收和邮件状态操作使用共享 CLI。
+Inbox 左侧用 **Active / Trash** 切换文件夹，右侧用 **All / Unread / Read** 筛选。外部邮件打开后记为已读，Trash 中的邮件详情会显示路由原因。内部消息在接棒人成功交棒后记为已读，消息详情可以跳转到关联任务。Agent 按职责处理邮件和内部消息，需要时创建或更新 Issue、Task。见 [Inbox 与交棒流程](skill/references/handoff.md#inbox-与投递)。

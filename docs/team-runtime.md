@@ -68,7 +68,8 @@ herdr-team daemon start
 herdr-team daemon stop
 herdr-team project list
 herdr-team project show
-herdr-team inbox list --role lead
+herdr-team inbox list --role lead --all
+herdr-team inbox read <delivery-id-or-mail-id>
 herdr-team inbox retry <task-id>
 ```
 
@@ -84,6 +85,14 @@ uncertain deliveries for reconciliation. `daemon stop` preserves registrations
 and queued work for the next start.
 `herdr-team team down` pauses automatic delivery for the current project and keeps
 it in the global project list.
+
+The Inbox shows external email and internal messages. `inbox list --all` includes
+handled internal messages and acknowledged email. `inbox read` opens the message
+body and records read status for email. The receiving agent uses
+`inbox ack <mail-id>` after handling the email. A successful task handoff records
+a read receipt for the internal message and queues a new unread message when
+there is a next recipient. See the [handoff guide](../skill/references/handoff.md#inbox-与投递) for
+how agents turn incoming feedback into updates to Issues or Tasks.
 
 Use `role add ... --lifecycle resident` for project-wide agents and
 `--lifecycle temporary` for agents launched on demand. Tasks for temporary
