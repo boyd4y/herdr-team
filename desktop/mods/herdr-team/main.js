@@ -1076,15 +1076,18 @@ export default class TeamConsole extends View {
       })
       .child(div().flex_1().min_w(0).truncate().child(version ?? "All iterations"))
       .when(version === this.iteration, el => el.child(svg(ICON("check")).size(12).flex_none().text_color(t.accent)));
-    const iterationFilter = Popover.new("iteration-filter").anchor("top_right").flex_none()
+    const issuesSection = this.section === "requirements";
+    const compactIteration = !issuesSection && compactHeader;
+    const iterationFilter = Popover.new("iteration-filter").anchor(issuesSection ? "top_left" : "top_right")
       .open(this.iterationMenu).on_open_change((open, cx) => { this.iterationMenu = open; cx.notify(); })
-      .trigger(h_flex().w(narrowHeader ? 56 : compactHeader ? 82 : selectedArchive ? 153 : 124).gap(5).items_center().px(narrowHeader ? 4 : 7).h(24).rounded(6)
+      .trigger(h_flex().w(compactIteration ? narrowHeader ? 56 : 82 : selectedArchive ? 153 : 124).gap(5).items_center()
+        .px(compactIteration && narrowHeader ? 4 : 7).h(issuesSection ? 26 : 24).rounded(6)
         .border(1).border_color(t.border).text_color(t.muted).hover(s => s.bg(t.hover))
         .tooltip(`Filter by iteration · ${iterationTitle}${this.iteration === null ? "" : selectedArchive ? " · Archived" : " · Active"}`)
-        .when(selectedArchive, el => el.child(compactHeader
+        .when(selectedArchive, el => el.child(compactIteration
           ? div().size(6).flex_none().rounded(3).bg(t.muted) : div().flex_none().text_size(9.5).child("Archived")))
         .child(div().flex_1().min_w(0).truncate().text_size(11.5)
-          .child(compactHeader && this.iteration === null ? "All" : iterationTitle))
+          .child(compactIteration && this.iteration === null ? "All" : iterationTitle))
         .child(svg(ICON("chevron-down")).size(12).flex_none()))
       .content(v_flex().id("iteration-options").w(185).max_h(250).overflow_y_scrollbar()
         .p(3).rounded(6).bg(t.surface).border(1).border_color(t.border).gap(4)
@@ -1094,9 +1097,11 @@ export default class TeamConsole extends View {
           .child(div().px(7).py(3).text_size(10.5).font_semibold().text_color(t.muted).child(state === "archived" ? "Archived" : "Active"))
           .children(versions.map(version => iterationOption(version, state))))));
     const requirementList = v_flex().min_w(0).gap(8)
-      .child(h_flex().id("issue-filters").self_start().flex_wrap().gap(2).p(2).rounded(7).bg(t.raised)
-        .children(REQUIREMENT_TYPES.map(([type, name], index) => segment(`requirement-type-${index}`, name,
-          type === this.requirementType, cx => { this.requirementType = type; cx.notify(); }))))
+      .when(issuesSection, el => el.child(h_flex().id("issue-filters").w_full().items_center().justify_between().flex_wrap().gap(6)
+        .child(iterationFilter)
+        .child(h_flex().id("issue-type-filter").flex_none().gap(2).p(2).rounded(7).bg(t.raised)
+          .children(REQUIREMENT_TYPES.map(([type, name], index) => segment(`requirement-type-${index}`, name,
+            type === this.requirementType, cx => { this.requirementType = type; cx.notify(); }))))))
       .children(requirementGroups.map(requirementGroup))
       .when(!requirementGroups.length, el => el.child(div().px(6).py(14).text_size(12).text_color(t.muted)
         .child(this.loading ? "Loading issues…" : this.iteration !== null || this.requirementType || requirements.length
@@ -1262,7 +1267,7 @@ export default class TeamConsole extends View {
       .when(hasTeamView && this.section === "tasks" && this.taskFolder === "current", el => el.child(h_flex().flex_none().p(2).gap(1).rounded(7).bg(t.raised)
         .child(segment("view-list", "List", displayView === "list", cx => this.setView("list", cx)))
         .child(segment("view-board", "Board", displayView === "board", cx => this.setView("board", cx)))))
-      .when(Boolean(binding) && this.section !== "inbox" && !this.selected && !this.selectedRequirement,
+      .when(Boolean(binding) && this.section === "tasks" && !this.selected,
         el => el.child(iterationFilter))
       .when(!this.preview || setup?.agentStarted, el => el.child(this.loading || this.resolving || this.section === "inbox" && this.inboxLoading
         ? div().size(22).flex_none().flex().items_center().justify_center().child(svg(ICON("spinner")).size(13).text_color(t.muted).spin(900))
