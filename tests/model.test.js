@@ -7,7 +7,19 @@ import { join } from "node:path";
 import { childPath, pathKey, teamArgv } from "../desktop/mods/herdr-team/platform.js";
 import { teamArgv as agentsArgv } from "../desktop/mods/herdr-team-agents/platform.js";
 import { boardColumns, consoleBinding, filterInbox, flowNodes, groupIssues, groupTasks, iterationGroups, iterationOptions, listFilters, listTasks,
-  requirementsForIteration, roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/herdr-team/model.js";
+  requirementsForIteration, roleRows, sameTeam, scopedTerminals, serviceSpace, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "../desktop/mods/herdr-team/model.js";
+
+test("Service panels use the window's machine and only open local team and feature scopes", () => {
+  const record = { root: "/project", space: "main", machine: null };
+  const main = { id: "main", machine: null };
+  const remote = { id: "workstation/main", machine: "workstation" };
+  const view = { ...record, view_space: "feature", feature: "search@v1.0", checkout: "/worktrees/search" };
+  assert.deepEqual(serviceSpace(consoleBinding(record, main), record), { root: "/project", space: "main" });
+  assert.deepEqual(serviceSpace(consoleBinding(view, { id: "feature", machine: null }), view), { root: "/project", space: "feature" });
+  assert.equal(serviceSpace(consoleBinding(record, remote), record), null);
+  const legacy = { ...view, feature: undefined, task: "0001" };
+  assert.equal(serviceSpace(consoleBinding(legacy, { id: "feature", machine: null }), legacy), null);
+});
 
 test("Windows Team bindings and file watches accept drive and UNC paths", () => {
   const space = { id: "worktree", machine: null };

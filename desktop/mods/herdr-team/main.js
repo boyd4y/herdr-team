@@ -2,7 +2,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { Button, Link, Popover, TextView, h_flex, v_flex } from "gpui-base";
 import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder, window } from "herdr";
 import { boardColumns, consoleBinding, filterInbox, flowNodes, groupIssues, INBOX_FILTERS, issueStatusLabel, iterationGroups, iterationVersion, listFilters, listTasks,
-  roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
+  roleRows, sameTeam, scopedTerminals, serviceSpace, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
 import { sample } from "./sample.js";
 import { absolutePath, childPath, pathKey, teamArgv } from "./platform.js";
 
@@ -315,13 +315,13 @@ export default class TeamConsole extends View {
   }
 
   followServices(record, cx) {
-    if (!record || record.machine || record.task) {
+    const scope = serviceSpace(this.binding, record);
+    if (!scope) {
       this.servicePanel = null;
       return;
     }
-    const space = record.view_space ?? record.space;
-    if (this.servicePanel?.space !== space) {
-      this.servicePanel = { root: record.root, space, rows: [], pending: new Set() };
+    if (this.servicePanel?.space !== scope.space) {
+      this.servicePanel = { ...scope, rows: [], pending: new Set() };
     }
     this.loadServices(cx);
   }

@@ -98,6 +98,11 @@ export function sameTeam(a, b) {
   return Boolean(a && b && a.root === b.root && a.space === b.space && (a.machine ?? null) === (b.machine ?? null));
 }
 
+export function serviceSpace(binding, record) {
+  if (!binding || binding.machine || record.task) return null;
+  return { root: binding.root, space: record.view_space ?? binding.space };
+}
+
 export function scopedTerminals(terminals, binding) {
   if (!binding?.root || !binding?.space) return [];
   const machine = binding.machine ?? null;
