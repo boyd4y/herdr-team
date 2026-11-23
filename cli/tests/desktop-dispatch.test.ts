@@ -8,6 +8,7 @@ import { closeFinishedDesktopTaskAgents, desktopTaskRuntime, syncDesktopTaskSpac
 import { desktopWorktrees } from "../scripts/lib/runtime/desktop-worktrees.ts";
 import { cleanDesktopTasks } from "../scripts/lib/runtime/desktop-cleanup.ts";
 import { changeDesktopService, listDesktopServices, reconcileDesktopServices } from "../scripts/lib/runtime/desktop-services.ts";
+import { featurePorts } from "../scripts/lib/runtime/service-ports.ts";
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, pumpQueue, queueRows } from "../scripts/lib/dispatch/queue.ts";
 import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
@@ -159,7 +160,9 @@ test("Desktop dispatch starts exactly the selected task in an owned checkout wit
 test("Desktop shares one workspace per feature, serializes assignments and cleans only the merged feature", () => {
   const f = fixture();
   try {
-    writeFileSync(join(f.root, "herdr-services.json"), JSON.stringify({ services: { web: { argv: ["bun", "dev"] } } }));
+    writeFileSync(join(f.root, "herdr-services.json"), JSON.stringify({
+      services: { web: { argv: ["bun", "dev"] } }, workspace: { requiredServices: ["web"] },
+    }));
     git(f.root, "add", "herdr-services.json"); git(f.root, "commit", "-qm", "Declare service");
     for (const id of ["0003", "0004"]) writeTask(f.root, `${id}-metrics`, taskMeta());
     for (const id of ["0001", "0002", "0003", "0004"]) {
@@ -172,15 +175,22 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
     expect(deliveryFor(f.task("0004"))?.reason).toContain("processing #0003");
     const [first, other] = workers();
     const load = () => loadProject(realpathSync(f.root));
+    const binding = showDesktopBinding(f.client, "s1")!;
+    const searchPorts = featurePorts(load(), binding, "search@v1.2");
+    const metricsPorts = featurePorts(load(), binding, "metrics@v1.2");
+    expect(searchPorts.web).toBeGreaterThan(1023);
+    expect(searchPorts.web).not.toBe(metricsPorts.web);
     for (const worker of [first!, other!]) {
-      expect(changeDesktopService(load(), f.client, "s1", { action: "start", name: "web", space: worker.labels["herdr.space"]! }))
-        .toMatchObject({ state: "starting" });
+      const space = worker.labels["herdr.space"]!;
+      const expectedPort = worker === first ? searchPorts.web : metricsPorts.web;
+      expect(listDesktopServices(load(), f.client, space).services).toMatchObject([{ name: "web", state: "stopped", port: expectedPort, reserved: true }]);
+      expect(changeDesktopService(load(), f.client, "s1", { action: "start", name: "web", space }))
+        .toMatchObject({ state: "starting", port: expectedPort });
     }
     const services = f.terminals.filter(t => t.labels["team.session"] === "service");
     expect(first!.cwd).not.toBe(other!.cwd);
     expect(git(first!.cwd, "branch", "--show-current")).toBe("feature/v1.2/search");
     expect(showDesktopBinding(f.client, first!.labels["herdr.space"]!)).toMatchObject({ feature: "search@v1.2", checkout: first!.cwd });
-    const binding = showDesktopBinding(f.client, "s1")!;
     writeFileSync(join(first!.cwd, "search.txt"), "search\n");
     git(first!.cwd, "add", "search.txt"); git(first!.cwd, "commit", "-qm", "Implement search");
     const sha = git(first!.cwd, "rev-parse", "HEAD");
@@ -226,6 +236,41 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
     expect(other!.state).toBe("live");
     expect(f.terminals).not.toContain(services[0]!);
     expect(services[1]!.state).toBe("live");
+    expect(featurePorts(load(), binding, "search@v1.2")).toEqual({});
+    expect(featurePorts(load(), binding, "metrics@v1.2")).toEqual(metricsPorts);
+  } finally { f.cleanup(); }
+});
+
+test("Feature provisioning rejects an incomplete port reservation before creating workspace resources", () => {
+  const f = fixture();
+  try {
+    const socket = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+    const port = socket.port;
+    socket.stop(true);
+    for (const [id, feature] of [["0001", "search"], ["0002", "metrics"]] as const) {
+      writeTaskMeta(f.load(), f.task(id), { feature, iteration: "v1.2", handoff: [] });
+    }
+    const catalog = (search: string[]) => writeFileSync(join(f.root, "herdr-services.json"), JSON.stringify({
+      ports: { start: port, end: port }, services: { web: { argv: ["bun", "dev"] }, storybook: { argv: ["bun", "dev"] } },
+      workspace: { requiredServices: ["web"], features: { search } },
+    }));
+    catalog(["web", "storybook"]);
+    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "failed", reason: expect.stringContaining("Could not reserve a port for storybook") }]);
+    expect(f.task()).toMatchObject({ status: "todo", meta: { delivery: { state: "failed" } } });
+    expect(f.appSpaces.map(space => space.id)).toEqual(["s1"]);
+    expect(desktopWorktrees(f.root)).toHaveLength(1);
+    expect(git(f.root, "branch", "--list", "feature/v1.2/search")).toBe("");
+    expect(existsSync(runtimePath(f.load(), "desktop/features/search@v1.2.json"))).toBe(false);
+    expect(f.calls.some(call => call.method === "terminal.run")).toBe(false);
+    catalog(["web"]);
+    expect(pumpQueue(f.load(), f.runtime())).toEqual([]);
+    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "dispatched" }]);
+    const binding = showDesktopBinding(f.client, "s1")!;
+    const load = () => loadProject(realpathSync(f.root));
+    expect(featurePorts(load(), binding, "search@v1.2")).toEqual({ web: port });
+    expect(dispatch(f.load(), f.runtime(), "0002")).toMatchObject([{ action: "failed", reason: expect.stringContaining("Could not reserve a port for web") }]);
+    expect(f.terminals.filter(terminal => terminal.labels["team.session"] === "service")).toEqual([]);
+    expect(desktopWorktrees(f.root)).toHaveLength(2);
   } finally { f.cleanup(); }
 });
 

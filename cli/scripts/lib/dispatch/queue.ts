@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadProject } from "../team/project.ts";
 import { assignmentPrompt } from "./assignment.ts";
-import { AGENT_AWAITING_INPUT, deliveryFor, deliveryReasonLabel, deliveryState, newDelivery, type Delivery } from "./delivery.ts";
+import { AGENT_AWAITING_INPUT, deliveryFor, deliveryReasonLabel, deliveryState, newDelivery, WorkspaceProvisionError, type Delivery } from "./delivery.ts";
 import { HerdrError, type Herdr } from "../runtime/herdr.ts";
 import { taskScoped } from "../tasks/verification.ts";
 import { appendRecord, stamp } from "../tasks/records.ts";
@@ -60,7 +60,9 @@ export function enqueueTask(project: Project, id: string, now = new Date(), scop
     if (isTaskInactive(task)) throw new TaskError(`Restore task ${id} before dispatching it`);
     dispatchFeature(fresh, task, fresh.roles.find(role => role.name === task.role));
     const existing = deliveryFor(task);
-    if (existing) return { id, state: existing.state, reason: existing.reason };
+    if (existing && (existing.state !== "failed" || existing.phase !== "dispatch")) {
+      return { id, state: existing.state, reason: existing.reason };
+    }
     const delivery = { ...newDelivery(task.role, "dispatch", now), ...scope };
     writeTaskMeta(fresh, task, { delivery });
     return { id, state: "queued" };
@@ -130,13 +132,14 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
       if (!role) { hold(`Role ${task.role} is unavailable`); continue; }
       const team = readFileSync(join(fresh.root, "TEAM.md"), "utf8");
       let receiver;
+      let priorWorkspace;
       try {
         const feature = dispatchFeature(fresh, task, role);
         const featureKeyForTask = feature && (task.meta.feature_dispatched !== true || task.meta.feature_workspace === true) && featureKey(feature);
         const occupied = featureKeyForTask && fresh.tasks.find(other => {
           if (other.id === task.id || isTaskInactive(other)) return false;
           const assignment = deliveryFor(other);
-          if (other.status === "todo" && (!assignment || assignment.state === "queued")) return false;
+          if (other.status === "todo" && (!assignment || assignment.state === "queued" || assignment.state === "failed")) return false;
           const scope = scopeFor(fresh, other);
           return scope && featureKey(scope) === featureKeyForTask;
         });
@@ -145,6 +148,8 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
           continue;
         }
         if (feature && task.meta.feature_dispatched !== true) {
+          priorWorkspace = { iteration: task.meta.iteration, feature_dispatched: task.meta.feature_dispatched,
+            feature_workspace: task.meta.feature_workspace };
           // The first launch fixes the effective iteration, even when inherited
           // from an issue whose iteration can still change later.
           const legacy = fresh.tasks.some(other => other.id !== task.id && other.meta.feature_workspace !== true &&
@@ -158,7 +163,14 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
         if (runtime.workspaceBusy?.(fresh, task)) { hold("Waiting for the previous feature session to settle"); continue; }
         receiver = runtime.receiver(fresh, role, task, d);
       }
-      catch (error) { hold(`Agent startup failed: ${error instanceof Error ? error.message : String(error)}`); continue; }
+      catch (error) {
+        if (error instanceof WorkspaceProvisionError) {
+          const reason = `Feature workspace request failed: ${error.message}`;
+          save(fresh, task, { ...d, state: "failed", reason }, priorWorkspace);
+          outcomes.push({ id: task.id, state: "failed", reason });
+        } else hold(`Agent startup failed: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
       if (receiver) {
         const occupied = fresh.tasks.find((other) => other.id !== task.id && !isTaskInactive(other) &&
           sameReceiver(deliveryFor(other) ?? {}, receiver!.target) && deliveryFor(other)?.state !== "queued");
@@ -230,7 +242,9 @@ export function claimTask(project: Project, id: string, deliveryId: string, auth
 export function retryDelivery(project: Project, id: string, runtime?: TaskRuntime): QueueOutcome {
   return withTeamLock(project, "queue", () => {
     const fresh = loadProject(project.root), task = findTask(fresh, id), d = deliveryFor(task);
-    if (!d || d.state !== "uncertain" || isTaskInactive(task)) throw new TaskError("Only uncertain deliveries can be retried; first verify that the old assignment is not running");
+    if (!d || (d.state !== "uncertain" && d.state !== "failed") || isTaskInactive(task)) {
+      throw new TaskError("Only failed or uncertain deliveries can be retried; verify that any previous assignment is no longer running");
+    }
     runtime?.assertDelivery(d);
     const replacement = { ...newDelivery(task.role, d.phase), ...runtime?.scope,
       ...(d.sender === undefined ? {} : { sender: d.sender }),

@@ -244,6 +244,8 @@ herdr-team feature merge session-recovery --iteration v1.2 --base develop --comm
 在项目根 `herdr-services.json` 声明本地开发服务，格式见 [Skill 设置](../skill/references/setup.md#feature-开发服务)。
 项目主 Space 和每个 Feature 工作区各自运行同一套服务。daemon 协调同机的端口分配，停止后优先复用仍可用的原端口。端口开始监听后，Team 面板底部显示运行状态和浏览器入口。切换工作区只切换服务视图。
 
+用 `workspace.requiredServices` 声明新 Feature 工作区必须取得端口的服务，或用 `workspace.features` 为指定 Feature 覆盖默认值。daemon 创建 worktree 前一次拿齐这些端口。失败原因可在任务详情和 Inbox 查看，修复配置或释放端口后可显式重试。预留跟随 Feature 和迭代的工作区，回收后释放。项目主 Space 和选用服务在启动时分配端口，避开已有 Feature 预留。
+
 ```sh
 herdr-team service list --space SPACE_ID
 herdr-team service start web --space SPACE_ID
@@ -356,7 +358,7 @@ herdr-team inbox list --json
 herdr-team inbox retry <id>
 ```
 
-`inbox retry` 仅接受 uncertain 项。它分配新 ID，使旧领取令牌失效，再由已启动的 daemon 投递。
+`inbox retry` 可重试工作区申请失败或投递结果未知的任务。它分配新 ID，使旧领取令牌失效，再由已启动的 daemon 投递。
 取消、改派角色或强制退回 todo 会清除旧 delivery。尚未入队的旧任务保持原行为；一旦进入新队列，就必须领取并携带 ID 交棒。
 任务变更通过项目排他锁串行，历史写入可在重启后补齐。队列避免盲目重复发送，并不保证底层终端消息恰好执行一次。
 

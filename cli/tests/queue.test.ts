@@ -146,7 +146,7 @@ test("a claimed agent that disappears requires reconciliation; retry uses a new 
   retryDelivery(f.load(), "0001");
   expect(deliveryFor(f.task())!.id).not.toBe(old);
   expect(() => claimTask(f.load(), "0001", old)).toThrow(/Stale/);
-  expect(() => retryDelivery(f.load(), "0001")).toThrow(/Only uncertain/);
+  expect(() => retryDelivery(f.load(), "0001")).toThrow(/Only failed or uncertain/);
 }));
 
 test("claimed deliveries reconcile against one agent snapshot per queue pass", () => fixture((f) => {

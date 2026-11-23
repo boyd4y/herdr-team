@@ -1,8 +1,8 @@
 import { integrationFor, taskScoped } from "../tasks/verification.ts";
 import { roleAgents, projectAgents } from "../dispatch/team-scope.ts";
 import type { AgentInfo, Herdr } from "../runtime/herdr.ts";
-import { padTo, truncate } from "../shared/text.ts";
-import { deliveryState, waitingDelivery } from "../dispatch/delivery.ts";
+import { padTo, sanitize, truncate } from "../shared/text.ts";
+import { deliveryFor, deliveryState, waitingDelivery } from "../dispatch/delivery.ts";
 import {
   isTaskInactive,
   taskDisposition,
@@ -190,6 +190,8 @@ export function formatTasks(tasks: (TaskCard & { iteration?: string })[], roles:
 export function formatTaskDetail(task: TaskCard & { iteration?: string }): string {
   const integration = integrationStatus(task);
   const disposition = taskDisposition(task);
+  const delivery = deliveryState(task);
+  const failure = delivery === "failed" ? deliveryFor(task)?.reason : undefined;
   return [
     `id: ${task.id}`,
     `title: ${task.title}`,
@@ -204,7 +206,8 @@ export function formatTaskDetail(task: TaskCard & { iteration?: string }): strin
     `repo: ${task.repo}`,
     `dir: ${task.dir}`,
     ...(integration ? [`integration: ${integration.state}${"commit" in integration ? ` ${integration.commit}` : ""}`] : []),
-    ...(deliveryState(task) ? [`delivery: ${deliveryState(task)}`] : []),
+    ...(delivery ? [`delivery: ${delivery}`] : []),
+    ...(failure ? [`reason: ${sanitize(failure)}`] : []),
     "",
     task.body,
   ].join("\n");

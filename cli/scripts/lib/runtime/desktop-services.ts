@@ -5,10 +5,11 @@ import { join, relative } from "node:path";
 import { outsideRoot } from "../shared/paths.ts";
 import { workspaceKey, type Project } from "../shared/types.ts";
 import { confirmedFeatures } from "../team/features.ts";
-import { readServiceCatalog, serviceName, type ServiceCatalog } from "../team/services.ts";
+import { readServiceCatalog, serviceName } from "../team/services.ts";
 import { DesktopError, registeredDesktopBinding, type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
 import { inspectDesktopCheckout } from "./desktop-worktrees.ts";
-import { runtimeDirectory, withStateLock, withTeamLock } from "./state.ts";
+import { withTeamLock } from "./state.ts";
+import { availablePort, choosePort, claimedFeaturePorts, featurePorts, liveServicePorts, withServicePortLock } from "./service-ports.ts";
 
 const stateName = "services.runtime.json";
 const startupTimeout = 30_000;
@@ -80,15 +81,17 @@ export function listDesktopServices(project: ServiceProject, client: DesktopClie
   const view = registeredDesktopBinding(client, space);
   if (!view || view.task || view.root !== project.root) throw new DesktopError("Use this project's local team or feature workspace");
   const workspace = view.feature ?? mainWorkspace;
+  const ports = view.feature ? featurePorts(project, view, view.feature) : {};
   const scope = runs(project).filter(row => row.owner === view.space && row.feature === workspace);
   const removed = scope.filter(row => row.state !== "stopped");
   // Keep stop available after a spec edit, even if the edited file is invalid.
   let services: string[] = [], error: string | undefined;
   try { services = readServiceCatalog(project.root).services.map(item => item.name); }
   catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
-  return { error, services: [...new Set([...services, ...removed.map(row => row.name)])].map(name => {
+  return { error, services: [...new Set([...services, ...Object.keys(ports), ...removed.map(row => row.name)])].map(name => {
     const row = scope.find(record => record.name === name);
-    return { ...(row ? publicRun(row) : { name, state: "stopped" }), declared: services.includes(name) };
+    const port = Object.hasOwn(ports, name) ? ports[name] : undefined;
+    return { ...(row ? publicRun(row) : { name, state: "stopped" }), ...(port ? { port, reserved: true } : {}), declared: services.includes(name) };
   }) };
 }
 
@@ -108,33 +111,6 @@ function stopTerminal(client: DesktopClient, project: ServiceProject, row: Servi
   } catch (error) {
     if (!(error instanceof DesktopError) || error.kind !== "not_found") throw error;
   }
-}
-
-function availablePort(port: number, reserved: Set<number>): number | undefined {
-  try {
-    const probe = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } });
-    const selected = probe.port;
-    probe.stop(true);
-    if (!reserved.has(selected)) return selected;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
-  }
-}
-
-function choosePort(range: ServiceCatalog["ports"], reserved: Set<number>, previous?: number): number {
-  if (previous && (!range || previous >= range.start && previous <= range.end) &&
-      !reserved.has(previous) && availablePort(previous, reserved)) return previous;
-  if (range) {
-    for (let port = range.start; port <= range.end; port++) {
-      if (!reserved.has(port) && availablePort(port, reserved)) return port;
-    }
-    throw new Error(`No service port is available in ${range.start}–${range.end}`);
-  }
-  for (let attempt = 0; attempt < 32; attempt++) {
-    const port = availablePort(0, reserved);
-    if (port) return port;
-  }
-  throw new Error("No service port is available");
 }
 
 export function changeDesktopService(project: Project, client: DesktopClient, owner: string, request: ServiceRequest) {
@@ -177,7 +153,7 @@ export function changeDesktopService(project: Project, client: DesktopClient, ow
       throw new Error(`Service ${request.name} must run inside the workspace checkout`);
     }
 
-    return withStateLock(join(runtimeDirectory(), "service-ports.lock"), () => {
+    return withServicePortLock(() => {
       let candidates = terminals(client, {});
       const terminal = previous && serviceTerminal(project, previous, candidates);
       if (terminal?.state === "live" && request.action === "start") return publicRun(previous!);
@@ -186,10 +162,19 @@ export function changeDesktopService(project: Project, client: DesktopClient, ow
         stopTerminal(client, project, previous, terminal);
         candidates = candidates.filter(item => item.address !== terminal.address);
       }
-      const reserved = new Set(candidates.filter(item => item.state === "live" && !item.address.includes("/"))
-        .map(item => Number(item.labels["team.service_port"])));
+      const live = new Set(liveServicePorts(candidates));
+      const ports = view.feature ? featurePorts(project, view, view.feature) : {};
+      const reserved = Object.hasOwn(ports, request.name) ? ports[request.name] : undefined;
       let selected: number;
-      try { selected = choosePort(catalog.ports, reserved, previous?.port); }
+      try {
+        if (reserved) {
+          if (live.has(reserved) || !availablePort(reserved)) throw new Error(`Reserved port ${reserved} for ${spec.name} is in use`);
+          selected = reserved;
+        } else {
+          for (const port of claimedFeaturePorts()) live.add(port);
+          selected = choosePort(catalog.ports, live, previous?.port);
+        }
+      }
       catch (error) {
         if (previous && terminal) update({ ...previous, state: "failed", reason: "Service stopped; a port could not be allocated" });
         throw error;

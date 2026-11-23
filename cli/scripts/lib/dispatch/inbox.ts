@@ -28,7 +28,7 @@ export function inboxReceipts(task: TaskCard): Receipt[] {
 }
 
 const deliveryLabels = { queued: "Waiting to send", sending: "Sending", submitted: "Awaiting claim",
-  claimed: "In progress", uncertain: "Needs reconciliation" };
+  claimed: "In progress", uncertain: "Needs reconciliation", failed: "Workspace request failed" };
 
 export function inboxDeliveries(project: Project, includeRead: boolean, role?: string) {
   return project.tasks.flatMap(task => {

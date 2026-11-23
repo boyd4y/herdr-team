@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { TaskCard } from "../shared/types.ts";
 
-export const DELIVERY_STATES = ["queued", "sending", "submitted", "claimed", "uncertain"] as const;
+export const DELIVERY_STATES = ["queued", "sending", "submitted", "claimed", "uncertain", "failed"] as const;
+export class WorkspaceProvisionError extends Error {}
 export interface Delivery {
   id: string;
   state: typeof DELIVERY_STATES[number];

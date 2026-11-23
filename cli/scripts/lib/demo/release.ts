@@ -237,7 +237,7 @@ export async function runRelease(root: string, options: ReleaseOptions) {
       if (integration?.state === "queued") {
         if (scenario && binding) {
           const receipts = completedDeliveries(card);
-          const checkout = checkoutFor(loadProject(root), binding, card, false);
+          const checkout = checkoutFor(loadProject(root), binding, card, { create: false });
           verifyCheckout(checkout, integration.commit);
           if ((scenario.hold && (!observed || !receipts.includes(observed.delivery))) ||
               receipts.length !== (scenario.rejectOnce ? 5 : 3) || !checkArtifact(mockRun, tasks[0]!, checkout) ||

@@ -1,17 +1,19 @@
 import { expect, mock, test } from "bun:test";
 
 const machines: (string | null)[] = [];
-const respond: ((rows: object[]) => void)[] = [];
+const requests: string[][] = [];
+const respond: ((value: object) => void)[] = [];
 const unused = () => { throw new Error("Unexpected host operation"); };
 
 mock.module("gpui-kit", () => ({ View: class {}, div: unused, image: unused, svg: unused }));
-mock.module("gpui-base", () => ({ Button: {}, Popover: {}, TextView: {}, h_flex: unused, v_flex: unused }));
+mock.module("gpui-base", () => ({ Button: {}, Link: {}, Popover: {}, TextView: {}, h_flex: unused, v_flex: unused }));
 mock.module("herdr", () => ({
   checking: unused, closeOverlay: unused, focused: unused, knownAgents: unused, layout: unused, nextCommand: unused,
   openOverlay: unused, panes: unused, props: unused, run: unused, settings: unused, spaces: unused, terminals: unused,
   theme: unused, watchFolder: unused, window: () => ({ platform: "macos" }),
-  exec(_program: string, _args: string[], { on }: { on: string | null }) {
+  exec(_program: string, args: string[], { on }: { on: string | null }) {
     machines.push(on);
+    requests.push(args);
     return new Promise(resolve => respond.push(rows => resolve({ code: 0, stdout: JSON.stringify(rows), stderr: "" })));
   },
 }));
@@ -39,4 +41,25 @@ test("leaving a remote Space discards its pending Inbox response", async () => {
   respond[0]!([{ title: "Remote Inbox" }]);
   await jobs[0];
   expect(panel.inboxRows).toEqual([{ title: "Local Inbox" }]);
+});
+
+test("switching Feature Spaces discards the previous service list and uses the current workspace ports", async () => {
+  const index = respond.length;
+  const jobs: Promise<void>[] = [];
+  const cx = { spawn(job: (context: typeof cx) => Promise<void>) { jobs.push(job(cx)); }, notify() {} };
+  const panel = new TeamConsole();
+  panel.binding = { root: "/same/path", space: "team", machine: null };
+  panel.followServices({ view_space: "search" }, cx);
+  panel.followServices({ view_space: "metrics" }, cx);
+
+  expect(machines.slice(index)).toEqual([null, null]);
+  expect(requests.slice(index).map(args => args.slice(args.indexOf("service"), args.indexOf("service") + 4)))
+    .toEqual([["service", "list", "--space", "search"], ["service", "list", "--space", "metrics"]]);
+  const rows = [{ name: "web", port: 6101, reserved: true }];
+  respond[index + 1]!({ services: rows });
+  await jobs[1];
+  respond[index]!({ services: [{ name: "web", port: 6100, reserved: true }] });
+  await jobs[0];
+  expect(panel.servicePanel?.space).toBe("metrics");
+  expect(panel.servicePanel?.rows).toEqual(rows);
 });

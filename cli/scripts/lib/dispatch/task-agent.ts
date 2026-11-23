@@ -9,6 +9,8 @@ import { featureWorkspace, workspaceKey, worktreeBranch, type Project, type Role
 import { dispatchFeature } from "../team/features.ts";
 import { runtimePath } from "../runtime/state.ts";
 import { outsideRoot } from "../shared/paths.ts";
+import { readServiceCatalog, requiredFeatureServices } from "../team/services.ts";
+import { WorkspaceProvisionError } from "./delivery.ts";
 
 /** Each new task owns its sessions; resident tabs are for conversation only. */
 export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: TaskCard): AgentInfo | undefined {
@@ -58,6 +60,12 @@ export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: 
     }
     checkout = existing.path;
   } else {
+    if (shared) {
+      let required;
+      try { required = requiredFeatureServices(readServiceCatalog(project.root), shared.feature); }
+      catch (error) { throw new WorkspaceProvisionError(error instanceof Error ? error.message : String(error)); }
+      if (required.length) throw new WorkspaceProvisionError("Feature service ports require a local Desktop workspace");
+    }
     const ownership = shared ? runtimePath(project, `tui/features/${workspaceKey(task)}.json`) : undefined;
     if (ownership && existsSync(ownership)) throw new Error(`Feature ownership for ${branch} exists without its checkout; inspect it before retrying`);
     ({ workspaceId, paneId: bootstrapPane } = herdr.worktreeCreate(repoPath, branch, branch));

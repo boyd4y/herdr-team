@@ -217,7 +217,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
       const repo = taskRepo(fresh, task);
       const offset = role.cwd ? relative(repo, resolve(fresh.root, role.cwd)) : "";
       if (outsideRoot(offset)) throw new DesktopError("Role cwd is outside the task repository");
-      const taskCheckout = !resident || featureWorkspace(task) ? checkoutFor(fresh, binding, task) : undefined;
+      const taskCheckout = !resident || featureWorkspace(task) ? checkoutFor(fresh, binding, task, { client }) : undefined;
       const checkout = resident ? binding.root : taskCheckout!;
       const workspace = workspaceKey(task);
       const taskSpace = taskCheckout ? ensureDesktopTaskSpace(fresh, client, binding, workspace, taskCheckout, Boolean(registeredSpace)) : null;
@@ -225,7 +225,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
       const cwd = resident ? (role.cwd ? resolve(fresh.root, role.cwd) : binding.root) : join(checkout, offset);
       const review = reviewFor(task), accepted = acceptanceFor(task);
       if (review?.reviewer === role.name && (accepted?.role !== role.name || accepted?.commit !== review.commit)) {
-        verifyCheckout(resident ? checkoutFor(fresh, binding, task, false) : checkout, review.commit);
+        verifyCheckout(resident ? checkoutFor(fresh, binding, task, { create: false }) : checkout, review.commit);
       }
       if (existing) {
         if (!programMatches(existing, role) || realpathSync(existing.cwd) !== realpathSync(cwd)) throw new DesktopError("Task receiver's program or checkout changed; refusing to use a recovery shell or unrelated session");
@@ -307,7 +307,7 @@ export function syncDesktopTaskSpaces(project: Project, client: DesktopClient, i
         terminal.labels["team.project"] === binding.root && terminal.labels["team.owner_space"] === binding.space &&
         terminal.labels["team.task"] === task.id && terminal.labels["team.session"] === "task" && terminal.labels["team.runtime"] === "desktop");
       if (!terminals.length) return [];
-      const checkout = checkoutFor(project, binding, task, false);
+      const checkout = checkoutFor(project, binding, task, { create: false });
       const known = desktopTaskSpaces(client, binding);
       // Preflight every terminal before writing any labels.
       for (const terminal of terminals) {

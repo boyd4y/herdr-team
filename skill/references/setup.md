@@ -85,6 +85,10 @@ herdr-team team validate
 ```json
 {
   "ports": { "start": 6100, "end": 6199 },
+  "workspace": {
+    "requiredServices": ["web"],
+    "features": { "design-system": ["web", "storybook"], "docs": [] }
+  },
   "services": {
     "web": { "cwd": "app", "argv": ["bunx", "next", "dev", "--hostname", "127.0.0.1", "--port", "{port}"] },
     "storybook": { "cwd": "app", "argv": ["bunx", "storybook", "dev", "--host", "127.0.0.1", "--port", "{port}", "--exact-port"] }
@@ -96,6 +100,8 @@ herdr-team team validate
 `argv` 按参数数组直传，`{port}` 替换为分配的端口，也可让程序读取 `PORT` 环境变量。
 `cwd` 默认为所选 Space 的 checkout 根目录。端口范围可省略，由操作系统分配。
 确认服务显式监听 `127.0.0.1` 并使用指定端口。需要固定端口或额外本机依赖时，先和用户确定如何适配。
+`workspace.requiredServices` 声明新 Feature Workspace 的端口前置条件。可在 `workspace.features` 用 Feature 名覆盖默认列表，空列表表示这个 Feature 无需预留端口。
+daemon 在创建 Feature worktree 前一次拿齐端口。申请失败时，任务卡显示原因，资源可用后重新派发。成功后的端口随 Feature Workspace 保存，在启停和切换 Space 时复用，回收 Workspace 后释放。服务由用户显式启动。端口预留适用于本机 Desktop Feature Workspace。
 在本机 Desktop 打开项目主 Space 或 Feature Space，可在 Team 面板底部查看该 Space 的服务、启停并打开地址。
 命令行使用 `herdr-team service list --space ID` 和 `herdr-team service start|stop|restart NAME --space ID`。
 

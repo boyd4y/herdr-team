@@ -1,10 +1,13 @@
-import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Project, TaskCard } from "../shared/types.ts";
 import { featureWorkspace, workspaceKey, worktreeBranch } from "../shared/types.ts";
 import { git, taskRepo } from "../tasks/verification.ts";
-import { DesktopError, type DesktopBinding } from "./desktop.ts";
+import { DesktopError, type DesktopBinding, type DesktopClient } from "./desktop.ts";
 import { runtimePath } from "./state.ts";
+import { readServiceCatalog } from "../team/services.ts";
+import { WorkspaceProvisionError } from "../dispatch/delivery.ts";
+import { allocateFeaturePorts, withServicePortLock, type FeaturePorts } from "./service-ports.ts";
 
 export function desktopWorktrees(repo: string): { path: string; branch: string; locked?: true }[] {
   return git(repo, "worktree", "list", "--porcelain", "-z").split("\0\0").filter(Boolean).flatMap(record => {
@@ -41,19 +44,35 @@ export function inspectDesktopCheckout(project: Project, binding: DesktopBinding
 }
 
 /** Explicit ownership is reserved before Git creates a checkout; a branch name never grants ownership. */
-export function checkoutFor(project: Project, binding: DesktopBinding, task: TaskCard, create = true): string {
+export function checkoutFor(project: Project, binding: DesktopBinding, task: TaskCard, options: { create?: boolean; client?: DesktopClient } = {}): string {
   const { file, owner, expected, pathExists, tree } = inspectDesktopCheckout(project, binding, task);
   const { path, branch, repo } = expected;
   if (owner) {
     if (!tree) throw new DesktopError("Task checkout ownership changed or creation was interrupted; inspect it before retrying");
     return realpathSync(path);
   }
-  if (!create) throw new DesktopError(`No owned Desktop checkout for task ${task.id}; no worktree was created`);
+  if (options.create === false) throw new DesktopError(`No owned Desktop checkout for task ${task.id}; no worktree was created`);
   if (tree || git(repo, "branch", "--list", branch)) throw new DesktopError(`Branch ${branch} already exists without Desktop task ownership; refusing to adopt it`);
   if (pathExists) throw new DesktopError(`Task checkout path already exists: ${path}`);
-  mkdirSync(dirname(file), { recursive: true });
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(file, JSON.stringify(expected), { flag: "wx", mode: 0o600 });
-  git(repo, "worktree", "add", "-b", branch, path);
+  const feature = featureWorkspace(task)?.feature;
+  const writeOwner = (ports?: FeaturePorts) => {
+    mkdirSync(dirname(file), { recursive: true });
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(file, JSON.stringify({ ...expected, ports }), { flag: "wx", mode: 0o600 });
+  };
+  if (feature) {
+    withServicePortLock(() => {
+      let ports: FeaturePorts;
+      try { ports = allocateFeaturePorts(readServiceCatalog(binding.root), feature, options.client); }
+      catch (error) { throw new WorkspaceProvisionError(error instanceof Error ? error.message : String(error)); }
+      writeOwner(ports);
+    });
+  } else writeOwner();
+  try { git(repo, "worktree", "add", "-b", branch, path); }
+  catch (error) {
+    // Keep ownership if Git left a checkout or branch that needs recovery.
+    if (feature && !lstatSync(path, { throwIfNoEntry: false }) && !git(repo, "branch", "--list", branch)) unlinkSync(file);
+    throw error;
+  }
   return realpathSync(path);
 }

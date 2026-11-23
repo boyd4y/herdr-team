@@ -850,9 +850,11 @@ export default class TeamConsole extends View {
         .child(div().flex_1().h(1).bg(t.border)));
     const detailMarkdown = (id, text) => TextView.markdown(id, text).w_full().selectable(true).scrollable(false);
     const statusColor = status => status === "doing" ? t.working : status === "review" ? t.accent : status === "blocked" ? t.blocked : status === "done" ? t.done : t.dim;
-    const taskDisplayLabel = task => taskFolder(task) === "current" ? taskReviewPhase(task) ?? label(task.status)
+    const workspaceFailure = task => taskFolder(task) === "current" && task.meta?.delivery?.state === "failed"
+      ? task.meta.delivery.reason || "Workspace request failed" : "";
+    const taskDisplayLabel = task => taskFolder(task) === "current" ? workspaceFailure(task) ? "Workspace failed" : taskReviewPhase(task) ?? label(task.status)
       : ["archived", "cancelled", "deleted"].includes(task.status) ? null : label(task.status);
-    const taskDisplayColor = task => taskFolder(task) === "current" && task.status === "review" && task.meta?.integration?.state === "blocked"
+    const taskDisplayColor = task => workspaceFailure(task) || taskFolder(task) === "current" && task.status === "review" && task.meta?.integration?.state === "blocked"
       ? t.blocked : statusColor(task.status);
     const emptyState = (title, description, icon = this.teamIcon(), detail) => v_flex().w_full().flex_1().min_h(220)
       .px(22).py(32).gap(10).items_center().justify_center().text_center()
@@ -975,6 +977,7 @@ export default class TeamConsole extends View {
         .child(detailSection("task-assignment", "Assignment").max_w(570)
           .child(v_flex().px(8).py(7).gap(5).rounded(7).bg(t.surface)
             .child(steps(task))
+            .when(Boolean(workspaceFailure(task)), el => el.child(div().text_size(11.5).text_color(t.blocked).child(workspaceFailure(task))))
             .when(Boolean(task.dependsOn?.length), el => el.child(div().text_size(11).text_color(t.dim)
               .child(`Depends on ${task.dependsOn.map(id => `#${id}`).join(", ")}${routeNote(task) ? " · not finished" : ""}`)))))
         // Selecting text must not drag a popped-out window.
@@ -1039,7 +1042,7 @@ export default class TeamConsole extends View {
 
     // B. Board: one card in its recorded status column, with its current assignee.
     const card = task => {
-      const next = visibleRole(task.handoff?.[0]), phase = taskReviewPhase(task);
+      const next = visibleRole(task.handoff?.[0]), phase = workspaceFailure(task) ? "Workspace failed" : taskReviewPhase(task);
       const needsInput = taskReport(task) === "needs input";
       const note = needsInput ? "Needs input" : phase ?? (routeNote(task) || (next ? `Next: ${next}` : ""));
       const owner = taskAssignee(task, roles, this.agentPrograms);
@@ -1415,7 +1418,9 @@ export default class TeamConsole extends View {
               .child(div().font_semibold().text_size(12).child(row.name))
               .child(pill(pending ? "Working…" : running ? "Running" : starting ? "Starting…" : failed ? "Failed" : "Stopped",
                 starting || pending ? t.working : running ? t.done : failed ? t.blocked : t.dim))
-              .when(Boolean(row.port && starting), el => el.child(div().text_size(11).font_family(mono).text_color(t.dim).child(String(row.port))))
+              .when(Boolean(row.port && (starting || row.reserved && !running)), el => el.child(div().text_size(11)
+                .font_family(mono).text_color(t.dim).tooltip(row.reserved ? "Port reserved for this workspace" : "Service port")
+                .child(String(row.port))))
               .when(Boolean(row.url && !pending), el => el.child(Link.new(`service-url-${row.name}`)
                 .href(row.url).text_size(11).font_family(mono).child(row.url)))
               .child(div().flex_1())

@@ -4,7 +4,15 @@ import { join } from "node:path";
 export const serviceName = /^[a-z][a-z0-9-]{0,47}$/;
 
 export interface ServiceSpec { name: string; cwd: string; argv: string[] }
-export interface ServiceCatalog { ports?: { start: number; end: number }; services: ServiceSpec[] }
+export interface ServiceCatalog {
+  ports?: { start: number; end: number };
+  services: ServiceSpec[];
+  workspace?: { requiredServices: string[]; features: Map<string, string[]> };
+}
+
+export function requiredFeatureServices(catalog: ServiceCatalog, feature: string): string[] {
+  return catalog.workspace?.features.get(feature) ?? catalog.workspace?.requiredServices ?? [];
+}
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -21,8 +29,8 @@ export function readServiceCatalog(root: string): ServiceCatalog {
   const invalid = (message: string): never => { throw new Error(`${file}: ${message}`); };
   let value: unknown;
   try { value = JSON.parse(raw); } catch { return invalid("Invalid JSON"); }
-  if (!object(value) || Object.keys(value).some(key => key !== "ports" && key !== "services") || !object(value.services)) {
-    return invalid("Expected a services object and optional ports range");
+  if (!object(value) || Object.keys(value).some(key => !["ports", "services", "workspace"].includes(key)) || !object(value.services)) {
+    return invalid("Expected a services object, optional ports range and workspace requirements");
   }
   let ports: ServiceCatalog["ports"];
   if (value.ports !== undefined) {
@@ -50,5 +58,22 @@ export function readServiceCatalog(root: string): ServiceCatalog {
     }
     return { name, cwd, argv: spec.argv };
   });
-  return { ports, services };
+  if (value.workspace === undefined) return { ports, services };
+  const workspace = value.workspace;
+  if (!object(workspace) || Object.keys(workspace).some(key => key !== "requiredServices" && key !== "features") ||
+      workspace.features !== undefined && !object(workspace.features)) {
+    return invalid("Expected workspace.requiredServices and optional workspace.features");
+  }
+  const known = new Set(services.map(service => service.name));
+  const required = (names: unknown, field: string): string[] => {
+    if (!Array.isArray(names) || names.some(name => typeof name !== "string" || !known.has(name)) ||
+        new Set(names).size !== names.length) return invalid(`${field} must list distinct declared services`);
+    return names;
+  };
+  const requiredServices = workspace.requiredServices === undefined ? [] : required(workspace.requiredServices, "workspace.requiredServices");
+  const features = new Map(Object.entries(workspace.features ?? {}).map(([name, names]) => {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) return invalid(`Invalid Feature name ${name} in workspace.features`);
+    return [name, required(names, `workspace.features.${name}`)];
+  }));
+  return { ports, services, workspace: { requiredServices, features } };
 }

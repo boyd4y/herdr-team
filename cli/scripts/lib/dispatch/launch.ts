@@ -37,7 +37,7 @@ export interface RoleOutcome {
 export interface DispatchOutcome {
   id: string;
   role: string;
-  action: "dispatched" | "queued" | "uncertain" | "waiting-on-deps" | "no-agent";
+  action: "dispatched" | "queued" | "uncertain" | "failed" | "waiting-on-deps" | "no-agent";
   reason?: string;
   /** 隔离角色才会开 worktree。 */
   branch?: string;
@@ -215,10 +215,10 @@ export function dispatch(project: Project, herdr: Herdr | TaskRuntime, id: strin
   const task = findTask(fresh, id), delivery = deliveryFor(task)!;
   return [{ id, role: task.role,
     action: delivery.state === "submitted" || delivery.state === "claimed" ? "dispatched"
-      : delivery.state === "uncertain" ? "uncertain"
+      : delivery.state === "uncertain" || delivery.state === "failed" ? delivery.state
       : task.dependsOn.some((dep) => !fresh.tasks.some((t) => t.id === dep && t.status === "done")) ? "waiting-on-deps" : "queued",
     ...(delivery.reason ? { reason: delivery.reason } : {}),
-    ...(taskScoped(task, project.roles.find((r) => r.name === task.role)) ? {
+    ...(delivery.state !== "failed" && taskScoped(task, project.roles.find((r) => r.name === task.role)) ? {
       branch: worktreeBranch(task),
       ...("agentList" in herdr ? { workspaceId: herdr.agentList().find((a) => a.pane_id === delivery.pane_id)?.workspace_id }
         : { terminal: delivery.terminal, space: delivery.space }),
