@@ -23,6 +23,7 @@ TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队�
 
 每次收到任务，先读取本 Skill，再按当前工作读取参考；不要直接照 role prompt 或命令模板跳过引导。
 这些入口由 agent 理解与执行，不是 CLI 子命令；只读当前需要的参考。
+创建或改写 Issue、Task 描述前，按[卡片描述](references/handoff.md#卡片描述)写好简短的 Markdown 章节。
 
 | 入口 | 用途 | 参考 |
 | --- | --- | --- |
