@@ -5,7 +5,7 @@ import type { Project, RoleCard, TaskCard } from "../shared/types.ts";
 import { outsideRoot } from "../shared/paths.ts";
 import { featureWorkspace, isTaskInactive, workspaceKey, worktreeBranch } from "../shared/types.ts";
 import { acceptanceFor, reviewFor, taskEnvironment, taskRepo, taskScoped, verifyCheckout } from "../tasks/verification.ts";
-import { CORE_START_UNCONFIRMED, deliveryFor, type Delivery } from "../dispatch/delivery.ts";
+import { CORE_RECEIVER_CHANGED, CORE_START_UNCONFIRMED, deliveryFor, type Delivery } from "../dispatch/delivery.ts";
 import { DeliveryRejected, type DeliveryTarget, type Receiver, type TaskRuntime } from "../dispatch/runtime.ts";
 import type { CleanupResult } from "../dispatch/cleanup.ts";
 import { DesktopError, desktopAgentProgram, desktopLaunchArgv, desktopProgramMatches, desktopTaskSpaces, ensureDesktopTaskSpace, registeredDesktopBinding, roleArgv, savedDesktopBinding, showDesktopBinding, terminalMatchesWorkspace, type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
@@ -23,23 +23,8 @@ export interface DesktopTaskRuntime extends TaskRuntime {
   clean(...ids: string[]): CleanupResult[];
 }
 
-type CoreSchema = { enum?: unknown[]; $ref?: string; anyOf?: CoreSchema[]; oneOf?: CoreSchema[] };
-
-function coreCanSendWhenDone(client: DesktopClient): boolean {
-  try {
-    const api = client.rpc<{
-      methods?: { name: string; params?: { name: string; schema?: CoreSchema }[] }[];
-      components?: { schemas?: Record<string, CoreSchema> };
-    }>("rpc.discover", {});
-    const condition = api.methods?.find(method => method.name === "terminal.send")?.params?.find(param => param.name === "if")?.schema;
-    if (!condition) return false;
-    const prefix = "#/components/schemas/";
-    const variants = [condition, ...(condition.anyOf ?? []), ...(condition.oneOf ?? [])];
-    return variants.some(schema => {
-      const resolved = schema.$ref?.startsWith(prefix) ? api.components?.schemas?.[schema.$ref.slice(prefix.length)] : schema;
-      return resolved?.enum?.includes("done") === true;
-    });
-  } catch { return false; }
+function acceptsDelivery(state: string | undefined): boolean {
+  return state === "idle" || state === "done";
 }
 
 function target(terminal: DesktopTerminal, space: string): DeliveryTarget {
@@ -89,7 +74,7 @@ export function closeFinishedDesktopTaskAgents(project: Project, client: Desktop
       if (!deliveredTask(task, feature, iteration, delivery, deliveries) || !space || !terminalMatchesWorkspace(space, terminal) || !role) return;
       const program = desktopAgentProgram(terminal);
       if (!program || terminal.status?.app !== program ||
-          (terminal.status.state !== "done" && terminal.status.state !== "idle") ||
+          !acceptsDelivery(terminal.status.state) ||
           typeof terminal.turn !== "number" || (task.status === "done" && terminal.turn < 1) ||
           !terminal.pid || terminal.foreground?.pid !== terminal.pid) return;
       const offset = relative(space.checkout, terminal.foreground.cwd);
@@ -160,17 +145,25 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
     }).terminals.filter(belongs);
   };
   const programMatches = (terminal: DesktopTerminal, role: RoleCard) => desktopProgramMatches(terminal, roleArgv(role, client));
-  let canSendWhenDone: boolean | undefined;
   const existingReceiver = (terminal: DesktopTerminal, labels?: Record<string, string>): Receiver => {
     const destination = target(terminal, binding.space);
     const status = terminal.status?.state;
-    const canSubmit = status === "idle" || (status === "done" && (canSendWhenDone ??= coreCanSendWhenDone(client)));
+    const canSubmit = acceptsDelivery(status);
     return { target: destination, status, canSubmit, submit(prompt: string) {
-      if (!canSubmit) throw new DeliveryRejected("Core does not allow sending in the current terminal state");
+      if (!canSubmit) throw new DeliveryRejected("Receiver is not ready for delivery");
       let receipt: { started?: boolean | null } | null;
       try {
         if (labels) client.rpc("terminal.label", { terminal: terminal.address, labels });
-        receipt = client.rpc("terminal.send", { terminal: terminal.address, text: prompt, if: status, ...callerOptions });
+        const current = client.rpc<DesktopTerminal>("terminal.get", { terminal: terminal.address });
+        const sameProcess = current.pid && current.pid === terminal.pid && current.argv[0] === terminal.argv[0] &&
+          current.cwd === terminal.cwd && current.foreground?.pid === terminal.foreground?.pid &&
+          current.foreground?.cwd === terminal.foreground?.cwd && current.foreground?.argv[0] === terminal.foreground?.argv[0];
+        const sameRole = current.labels["team.role"] === terminal.labels["team.role"] &&
+          current.labels["team.session"] === terminal.labels["team.session"] && current.status?.app === terminal.status?.app;
+        if (!belongs(current) || current.address !== terminal.address || !sameProcess || !sameRole || !acceptsDelivery(current.status?.state)) {
+          throw new DeliveryRejected(CORE_RECEIVER_CHANGED);
+        }
+        receipt = client.rpc("terminal.send", { terminal: terminal.address, text: prompt, ...callerOptions });
       } catch (error) {
         if (error instanceof DesktopError && ["blocked", "status_mismatch", "finished", "not_found", "invalid_params"].includes(error.kind ?? "")) {
           throw new DeliveryRejected(error.message);
@@ -187,7 +180,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
     workspaceBusy(_project, task) {
       return featureWorkspace(task) !== undefined && list().some(terminal =>
         terminal.labels["team.workspace"] === workspaceKey(task) && terminal.labels["team.task"] !== task.id &&
-        !["done", "idle"].includes(terminal.status?.state ?? ""));
+        !acceptsDelivery(terminal.status?.state));
     },
     assertDelivery(delivery) {
       if (delivery.pane_id || delivery.runtime && delivery.runtime !== "desktop" || delivery.space && delivery.space !== binding.space) {

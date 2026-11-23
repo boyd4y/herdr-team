@@ -170,9 +170,7 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
       if (!receiver) { hold("Waiting for agent; run herdr-team up"); continue; }
       if (!receiver.canSubmit) {
         const status = receiver.status;
-        const reason = status === "blocked" ? AGENT_AWAITING_INPUT
-          : status === "done" ? "Waiting for Core to report idle"
-          : `Agent is ${status ?? "unknown"}`;
+        const reason = status === "blocked" ? AGENT_AWAITING_INPUT : `Agent is ${status ?? "unknown"}`;
         hold(reason);
         continue;
       }
