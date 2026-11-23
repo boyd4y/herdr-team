@@ -5,7 +5,7 @@ import type { Project, RoleCard, TaskCard } from "../shared/types.ts";
 import { outsideRoot } from "../shared/paths.ts";
 import { featureWorkspace, isTaskInactive, workspaceKey, worktreeBranch } from "../shared/types.ts";
 import { acceptanceFor, reviewFor, taskEnvironment, taskRepo, taskScoped, verifyCheckout } from "../tasks/verification.ts";
-import { CORE_START_UNCONFIRMED, deliveryFor, type Delivery } from "../dispatch/delivery.ts";
+import { CORE_RECEIVER_CHANGED, CORE_START_UNCONFIRMED, deliveryFor, type Delivery } from "../dispatch/delivery.ts";
 import { DeliveryRejected, type DeliveryTarget, type Receiver, type TaskRuntime } from "../dispatch/runtime.ts";
 import type { CleanupResult } from "../dispatch/cleanup.ts";
 import { DesktopError, desktopAgentProgram, desktopLaunchArgv, desktopProgramMatches, desktopTaskSpaces, ensureDesktopTaskSpace, registeredDesktopBinding, roleArgv, savedDesktopBinding, showDesktopBinding, terminalMatchesWorkspace, type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
@@ -164,13 +164,31 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
   const existingReceiver = (terminal: DesktopTerminal, labels?: Record<string, string>): Receiver => {
     const destination = target(terminal, binding.space);
     const status = terminal.status?.state;
-    const canSubmit = status === "idle" || (status === "done" && (canSendWhenDone ??= coreCanSendWhenDone(client)));
+    const canSubmit = status === "idle" || status === "done";
     return { target: destination, status, canSubmit, submit(prompt: string) {
-      if (!canSubmit) throw new DeliveryRejected("Core does not allow sending in the current terminal state");
+      if (!canSubmit) throw new DeliveryRejected("Receiver is not ready for delivery");
       let receipt: { started?: boolean | null } | null;
       try {
+        const recheck = status === "done" && !(canSendWhenDone ??= coreCanSendWhenDone(client));
         if (labels) client.rpc("terminal.label", { terminal: terminal.address, labels });
-        receipt = client.rpc("terminal.send", { terminal: terminal.address, text: prompt, if: status, ...callerOptions });
+        let guard: string | undefined = status;
+        if (recheck) {
+          // Legacy Core has no atomic done guard. Recheck the owned process and
+          // send through Core's normal blocked and draft protections.
+          const current = client.rpc<DesktopTerminal>("terminal.get", { terminal: terminal.address });
+          const currentStatus = current.status?.state;
+          if (!belongs(current) || current.address !== terminal.address || !current.pid || current.pid !== terminal.pid ||
+              current.argv[0] !== terminal.argv[0] || current.cwd !== terminal.cwd ||
+              current.foreground?.pid !== terminal.foreground?.pid || current.foreground?.cwd !== terminal.foreground?.cwd ||
+              current.foreground?.argv[0] !== terminal.foreground?.argv[0] ||
+              current.labels["team.role"] !== terminal.labels["team.role"] || current.labels["team.session"] !== terminal.labels["team.session"] ||
+              current.status?.app !== terminal.status?.app || (currentStatus !== "done" && currentStatus !== "idle")) {
+            throw new DeliveryRejected(CORE_RECEIVER_CHANGED);
+          }
+          guard = currentStatus === "idle" ? "idle" : undefined;
+        }
+        receipt = client.rpc("terminal.send", { terminal: terminal.address, text: prompt,
+          ...(guard ? { if: guard } : {}), ...callerOptions });
       } catch (error) {
         if (error instanceof DesktopError && ["blocked", "status_mismatch", "finished", "not_found", "invalid_params"].includes(error.kind ?? "")) {
           throw new DeliveryRejected(error.message);

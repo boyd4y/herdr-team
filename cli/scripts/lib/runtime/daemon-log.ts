@@ -1,7 +1,7 @@
 import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readSync, watch } from "node:fs";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import { CORE_START_UNCONFIRMED, deliveryReasonLabel } from "../dispatch/delivery.ts";
+import { CORE_RECEIVER_CHANGED, CORE_START_UNCONFIRMED, deliveryReasonLabel } from "../dispatch/delivery.ts";
 import { daemonDirectory } from "./daemon-binding.ts";
 import { sanitize } from "../shared/text.ts";
 import { stamp } from "../tasks/records.ts";
@@ -215,7 +215,8 @@ export function deliveryLogReason(reason?: string): string | undefined {
       /^Session is processing #\d{4}$/.test(reason) ||
       /^Waiting to reconcile delivery #\d{4}$/.test(reason) ||
       /^Herdr submission failed \([a-z_]+\); inspect the receiving agent before retrying$/.test(reason) ||
-      ["Waiting for agent; run herdr-team up", "Waiting for Core to report idle", "Assignment changed; cancel or requeue this delivery", CORE_START_UNCONFIRMED,
+      ["Waiting for agent; run herdr-team up", "Waiting for Core to report idle", "Assignment changed; cancel or requeue this delivery",
+        CORE_RECEIVER_CHANGED, CORE_START_UNCONFIRMED,
         "Delivery needs reconciliation; no automatic resend",
         "Claimed agent disappeared or changed session; verify before retrying"].includes(reason)) return reason;
   if (reason.startsWith("Agent startup failed:")) return "Agent startup failed; see inbox for details";

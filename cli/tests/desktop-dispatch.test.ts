@@ -11,7 +11,7 @@ import { featurePreviewStatus, queueFeaturePreview, reconcileFeaturePreviews } f
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, pumpQueue, queueRows } from "../scripts/lib/dispatch/queue.ts";
 import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
-import { CORE_START_UNCONFIRMED, deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
+import { CORE_RECEIVER_CHANGED, CORE_START_UNCONFIRMED, deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
 import { readInboxDelivery } from "../scripts/lib/dispatch/inbox.ts";
 import { handoff } from "../scripts/lib/tasks/handoff.ts";
 import { git } from "../scripts/lib/tasks/verification.ts";
@@ -96,8 +96,11 @@ function fixture(core: { doneGuard?: boolean; started?: boolean } = {}) {
       }
       if (method === "terminal.send") {
         const terminal = terminals.find(terminal => terminal.address === params.terminal)!;
-        if (params.if !== "idle" && !(core.doneGuard && params.if === "done")) throw new DesktopError("Unsupported guard", "invalid_params");
-        if (terminal.status?.state !== params.if) throw new DesktopError("Busy", "status_mismatch");
+        if (params.if !== undefined && params.if !== "idle" && !(core.doneGuard && params.if === "done")) {
+          throw new DesktopError("Unsupported guard", "invalid_params");
+        }
+        if (params.if !== undefined && terminal.status?.state !== params.if) throw new DesktopError("Busy", "status_mismatch");
+        if (terminal.status?.state === "blocked" && !params.force) throw new DesktopError("Blocked", "blocked");
         if (core.started !== false) terminal.status = { state: "working" };
         return { turn: 1, started: core.started } as T;
       }
@@ -233,7 +236,7 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
   } finally { f.cleanup(); }
 });
 
-test("a feature assignment to the resident lead waits for Core idle and stays in the project Space", () => {
+test("older Core delivers to a settled resident lead in the project Space", () => {
   const f = fixture();
   try {
     writeRole(f.root, "lead", { kind: "codex", worktree: false });
@@ -241,17 +244,41 @@ test("a feature assignment to the resident lead waits for Core idle and stays in
     const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
     const terminal = f.terminals.find(item => item.address === lead.terminal)!;
     terminal.status = { app: "codex", state: "done" };
-    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "queued" }]);
-    expect(deliveryFor(f.task())).toMatchObject({ state: "queued", reason: "Waiting for Core to report idle" });
-    expect(f.calls.some(call => call.method === "terminal.send")).toBe(false);
-    terminal.status = { app: "codex", state: "idle" };
-    expect(pumpQueue(f.load(), f.runtime())).toMatchObject([{ state: "submitted" }]);
-    expect(f.calls.filter(call => call.method === "terminal.send")).toMatchObject([{ params: { terminal: terminal.address, if: "idle" } }]);
+    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "dispatched" }]);
+    const sends = f.calls.filter(call => call.method === "terminal.send");
+    expect(sends).toMatchObject([{ params: { terminal: terminal.address } }]);
+    expect(sends[0]!.params).not.toHaveProperty("if");
+    expect(sends[0]!.params).not.toHaveProperty("force");
+    expect(f.calls[f.calls.indexOf(sends[0]!) - 1]).toMatchObject({ method: "terminal.get", params: { terminal: terminal.address } });
     expect(f.terminals.filter(item => item.labels["team.role"] === "lead")).toHaveLength(1);
     expect(deliveryFor(f.task())?.terminal).toBe(terminal.address);
     expect(terminal.labels["herdr.space"]).toBe("s1");
     expect(desktopWorktrees(f.root).some(tree => tree.branch === "feature/v1.2/search")).toBe(true);
     f.claim("0001", terminal);
+  } finally { f.cleanup(); }
+});
+
+test("older Core leaves the delivery queued when the receiver starts working before send", () => {
+  const f = fixture();
+  try {
+    writeRole(f.root, "lead", { kind: "codex", worktree: false });
+    writeTaskMeta(f.load(), f.task(), { role: "lead" });
+    const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
+    const terminal = f.terminals.find(item => item.address === lead.terminal)!;
+    terminal.status = { app: "codex", state: "done" };
+    const rpc = f.client.rpc;
+    f.client.rpc = (method, params) => {
+      if (method === "terminal.get" && params.terminal === terminal.address) terminal.status!.state = "working";
+      return rpc(method, params);
+    };
+    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "queued", reason: CORE_RECEIVER_CHANGED }]);
+    const delivery = deliveryFor(f.task())!;
+    expect(f.calls.some(call => call.method === "terminal.send")).toBe(false);
+    f.client.rpc = rpc;
+    terminal.status.state = "idle";
+    expect(pumpQueue(f.load(), f.runtime())).toMatchObject([{ state: "submitted" }]);
+    expect(deliveryFor(f.task())?.id).toBe(delivery.id);
+    expect(f.calls.filter(call => call.method === "terminal.send")).toMatchObject([{ params: { terminal: terminal.address, if: "idle" } }]);
   } finally { f.cleanup(); }
 });
 
@@ -278,7 +305,7 @@ test("an unconfirmed Core send holds later deliveries without resending the firs
     for (const id of ["0001", "0002"]) writeTaskMeta(f.load(), f.task(id), { role: "lead" });
     const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
     const terminal = f.terminals.find(item => item.address === lead.terminal)!;
-    terminal.status = { app: "codex", state: "idle" };
+    terminal.status = { app: "codex", state: "done" };
     expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "uncertain", reason: CORE_START_UNCONFIRMED }]);
     const first = deliveryFor(f.task())!;
     expect(first).toMatchObject({ state: "uncertain", terminal: terminal.address });
