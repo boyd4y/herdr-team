@@ -12,6 +12,7 @@ import { runtimeDirectory, withStateLock, withTeamLock } from "./state.ts";
 
 const stateName = "services.runtime.json";
 const startupTimeout = 30_000;
+const mainWorkspace = "project";
 export type ServiceAction = "start" | "stop" | "restart";
 export interface ServiceRequest { action: ServiceAction; space: string; name: string }
 export function isServiceRequest(value: unknown): value is ServiceRequest {
@@ -77,8 +78,9 @@ function publicRun(row: ServiceRun) {
 
 export function listDesktopServices(project: ServiceProject, client: DesktopClient, space: string) {
   const view = registeredDesktopBinding(client, space);
-  if (!view?.feature || view.root !== project.root) throw new DesktopError("Use a local feature workspace for this project");
-  const scope = runs(project).filter(row => row.owner === view.space && row.feature === view.feature);
+  if (!view || view.task || view.root !== project.root) throw new DesktopError("Use this project's local team or feature workspace");
+  const workspace = view.feature ?? mainWorkspace;
+  const scope = runs(project).filter(row => row.owner === view.space && row.feature === workspace);
   const removed = scope.filter(row => row.state !== "stopped");
   // Keep stop available after a spec edit, even if the edited file is invalid.
   let services: string[] = [], error: string | undefined;
@@ -138,10 +140,10 @@ function choosePort(range: ServiceCatalog["ports"], reserved: Set<number>, previ
 export function changeDesktopService(project: Project, client: DesktopClient, owner: string, request: ServiceRequest) {
   return withTeamLock(project, "desktop", () => {
     const view = registeredDesktopBinding(client, request.space);
-    if (!view?.feature || !view.checkout || view.root !== project.root || view.space !== owner) {
-      throw new DesktopError("Use a local feature workspace owned by the registered project");
+    if (!view || view.task || view.root !== project.root || view.space !== owner) {
+      throw new DesktopError("Use a local team or feature workspace owned by the registered project");
     }
-    const feature = view.feature;
+    const feature = view.feature ?? mainWorkspace;
     const records = runs(project);
     const previous = records.find(row => row.owner === owner && row.feature === feature && row.name === request.name);
     const update = (row: ServiceRun) => save(project, [...records.filter(record => record !== previous), row]);
@@ -154,21 +156,25 @@ export function changeDesktopService(project: Project, client: DesktopClient, ow
       return publicRun(stopped);
     }
     if (!client.spaces().some(space => space.id === request.space && space.machine === null)) {
-      throw new DesktopError("Open the local Desktop feature workspace before starting a service");
+      throw new DesktopError("Open the local Desktop workspace before starting a service");
     }
-    if (confirmedFeatures(project).get(feature)?.commit) throw new DesktopError("The feature is merged; its workspace is being reclaimed");
-    const task = project.tasks.find(item => workspaceKey(item) === feature);
-    if (!task) throw new DesktopError("The feature workspace has no assigned tasks");
-    const checkout = inspectDesktopCheckout(project, view, task);
-    if (!checkout.owner || !checkout.tree || realpathSync(checkout.expected.path) !== view.checkout) {
-      throw new DesktopError("Feature workspace checkout ownership changed");
+    let directory = project.root;
+    if (view.feature) {
+      if (confirmedFeatures(project).get(feature)?.commit) throw new DesktopError("The feature is merged; its workspace is being reclaimed");
+      const task = project.tasks.find(item => workspaceKey(item) === feature);
+      if (!task) throw new DesktopError("The feature workspace has no assigned tasks");
+      const checkout = inspectDesktopCheckout(project, view, task);
+      if (!checkout.owner || !checkout.tree || realpathSync(checkout.expected.path) !== view.checkout) {
+        throw new DesktopError("Feature workspace checkout ownership changed");
+      }
+      directory = view.checkout;
     }
     const catalog = readServiceCatalog(project.root);
     const spec = catalog.services.find(item => item.name === request.name);
     if (!spec) throw new Error(`Service ${request.name} is not declared in herdr-services.json`);
-    const cwd = realpathSync(join(view.checkout, spec.cwd));
-    if (outsideRoot(relative(view.checkout, cwd)) || !lstatSync(cwd).isDirectory()) {
-      throw new Error(`Service ${request.name} must run inside the feature checkout`);
+    const cwd = realpathSync(join(directory, spec.cwd));
+    if (outsideRoot(relative(directory, cwd)) || !lstatSync(cwd).isDirectory()) {
+      throw new Error(`Service ${request.name} must run inside the workspace checkout`);
     }
 
     return withStateLock(join(runtimeDirectory(), "service-ports.lock"), () => {
@@ -223,8 +229,12 @@ function listening(port: number): Promise<boolean> {
   });
 }
 
+export function hasWatchedDesktopServices(project: ServiceProject, owner: string): boolean {
+  return runs(project).some(row => row.owner === owner && (row.state === "running" || row.state === "starting"));
+}
+
 export async function reconcileDesktopServices(project: ServiceProject, owner: string, connect: () => DesktopClient): Promise<number | undefined> {
-  if (!runs(project).some(row => row.owner === owner && (row.state === "running" || row.state === "starting"))) return;
+  if (!hasWatchedDesktopServices(project, owner)) return;
   const snapshot = withTeamLock(project, "desktop", () => {
     const watching = runs(project).filter(row => row.owner === owner && (row.state === "running" || row.state === "starting"));
     const candidates = watching.length ? terminals(connect(), { "team.project": project.root, "team.owner_space": owner }) : [];

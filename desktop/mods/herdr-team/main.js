@@ -306,12 +306,13 @@ export default class TeamConsole extends View {
   }
 
   followServices(record, cx) {
-    if (!record?.feature || record.machine || record.demo) {
+    if (!record || record.machine || record.task) {
       this.servicePanel = null;
       return;
     }
-    if (this.servicePanel?.space !== record.view_space) {
-      this.servicePanel = { root: record.root, space: record.view_space, rows: [], pending: new Set() };
+    const space = record.view_space ?? record.space;
+    if (this.servicePanel?.space !== space) {
+      this.servicePanel = { root: record.root, space, rows: [], pending: new Set() };
     }
     this.loadServices(cx);
   }
@@ -1390,7 +1391,7 @@ export default class TeamConsole extends View {
 
     const servicePanel = this.servicePanel;
     const services = servicePanel && (servicePanel.rows.length || servicePanel.error || servicePanel.actionError)
-      ? v_flex().id("feature-services").flex_none().min_w(0).max_h(175).overflow_y_scrollbar()
+      ? v_flex().id("workspace-services").flex_none().min_w(0).max_h(175).overflow_y_scrollbar()
         .px(14).py(8).gap(5).bg(t.background).border_t(1).border_color(t.border)
         .child(div().text_size(11.5).font_semibold().text_color(t.muted).child("Services"))
         .children([servicePanel.error, servicePanel.actionError].filter(Boolean)

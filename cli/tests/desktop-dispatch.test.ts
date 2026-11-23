@@ -245,7 +245,9 @@ test("Desktop services isolate feature ports and survive uncertain Core launch r
     const change = (space: string, action: "start" | "stop" | "restart") =>
       changeDesktopService(load(), f.client, "s1", { space, action, name: "web" });
     const list = (space: string) => listDesktopServices(load(), f.client, space);
-    expect(() => change("s1", "start")).toThrow("local feature workspace");
+    expect(change("s1", "start")).toMatchObject({ state: "starting" });
+    const mainWeb = f.terminals.at(-1)!;
+    expect(mainWeb.cwd).toBe(realpathSync(f.root));
     expect(list(searchSpace).services).toEqual([{ name: "web", state: "stopped", declared: true }]);
     const rpc = f.client.rpc;
     f.client.rpc = <T>(method: string, params: Record<string, unknown>): T => {
@@ -264,6 +266,8 @@ test("Desktop services isolate feature ports and survive uncertain Core launch r
     expect(change(searchSpace, "start")).toEqual(started);
     const other = change(metricsSpace, "start");
     expect(other).not.toMatchObject({ port });
+    expect(other).not.toMatchObject({ port: Number(mainWeb.labels["team.service_port"]) });
+    expect(port).not.toBe(Number(mainWeb.labels["team.service_port"]));
     const otherWeb = f.terminals.at(-1)!;
     expect(otherWeb.cwd).toBe(metrics!.cwd);
     servers.push(Bun.serve({ hostname: "127.0.0.1", port, fetch: () => new Response("Search") }));
@@ -278,6 +282,7 @@ test("Desktop services isolate feature ports and survive uncertain Core launch r
     expect(list(searchSpace)).toMatchObject({ error: expect.stringContaining("Invalid JSON"), services: [{ declared: false }] });
     expect(change(searchSpace, "stop")).toMatchObject({ state: "stopped" });
     expect(f.terminals).toContain(otherWeb);
+    expect(f.terminals).toContain(mainWeb);
     otherWeb.state = "finished";
     await reconcileDesktopServices(load(), "s1", () => f.client);
     expect(list(metricsSpace).services).toMatchObject([{ state: "failed", reason: "Service process exited" }]);

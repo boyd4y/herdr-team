@@ -97,7 +97,7 @@ Commands:
   issue       Manage requirements and defects
   iteration   Manage iteration visibility
   feature     Confirm deliveries and reclaim temporary worktrees
-  service     List and control services in a Desktop feature workspace
+  service     List and control services in a local Desktop workspace
   role        Manage team roles
   agents      Inspect and run agent presets
   inbox       Read email and manage task deliveries
@@ -637,7 +637,7 @@ async function cmdService(args: string[]): Promise<number> {
   if (parsed.flags.has("help")) {
     process.stdout.write("Usage: herdr-team service list --space ID [--root DIR | --project ID] [--json]\n" +
       "       herdr-team service <start|stop|restart> NAME --space ID [--root DIR | --project ID] [--json]\n" +
-      "Services are declared in herdr-services.json and run in a local Desktop feature workspace.\n");
+      "Services are declared in herdr-services.json and run in a local Desktop team or feature workspace.\n");
     return 0;
   }
   const [action, name] = parsed.pos;

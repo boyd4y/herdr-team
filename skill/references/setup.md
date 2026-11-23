@@ -94,9 +94,9 @@ herdr-team team validate
 
 示例命令按实际 repo 和包管理器改写，优先使用已有的脚本与本地依赖。服务以单个前台进程提供本机 HTTP 入口；
 `argv` 按参数数组直传，`{port}` 替换为分配的端口，也可让程序读取 `PORT` 环境变量。
-`cwd` 默认为 Feature checkout 根目录。端口范围可省略，由操作系统分配。
+`cwd` 默认为所选 Space 的 checkout 根目录。端口范围可省略，由操作系统分配。
 确认服务显式监听 `127.0.0.1` 并使用指定端口。需要固定端口或额外本机依赖时，先和用户确定如何适配。
-在本机 Desktop 打开 Feature Space 后，可在 Team 面板底部查看服务、启停并打开地址。
+在本机 Desktop 打开项目主 Space 或 Feature Space，可在 Team 面板底部查看该 Space 的服务、启停并打开地址。
 命令行使用 `herdr-team service list --space ID` 和 `herdr-team service start|stop|restart NAME --space ID`。
 
 ## 核对后启动

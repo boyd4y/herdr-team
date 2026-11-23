@@ -242,16 +242,16 @@ herdr-team feature merge session-recovery --iteration v1.2 --base develop --comm
 ### Feature 服务
 
 在项目根 `herdr-services.json` 声明本地开发服务，格式见 [Skill 设置](../skill/references/setup.md#feature-开发服务)。
-每个 Feature 工作区独立运行同一套服务。daemon 协调同机的端口分配，停止后优先复用仍可用的原端口。端口开始监听后，Team 面板底部显示运行状态和浏览器入口。切换工作区只切换服务视图。
+项目主 Space 和每个 Feature 工作区各自运行同一套服务。daemon 协调同机的端口分配，停止后优先复用仍可用的原端口。端口开始监听后，Team 面板底部显示运行状态和浏览器入口。切换工作区只切换服务视图。
 
 ```sh
-herdr-team service list --space FEATURE_SPACE_ID
-herdr-team service start web --space FEATURE_SPACE_ID
-herdr-team service restart web --space FEATURE_SPACE_ID
-herdr-team service stop web --space FEATURE_SPACE_ID
+herdr-team service list --space SPACE_ID
+herdr-team service start web --space SPACE_ID
+herdr-team service restart web --space SPACE_ID
+herdr-team service stop web --space SPACE_ID
 ```
 
-服务由本机 Desktop Core 持有。重启 Team daemon 后会重新追踪现有进程。Feature 合并后，满足回收条件时 daemon 仅停止该工作区的受管服务，再回收资源。若检出有修改、未跟踪文件或忽略文件，工作区和服务会保留。解决后可显式运行 `herdr-team feature clean` 重试。团队暂停后，仍可通过正在运行的 daemon 停止该 Feature 的服务。
+服务由本机 Desktop Core 持有。重启 Team daemon 后会重新追踪现有进程。Feature 合并后，满足回收条件时 daemon 仅停止该工作区的受管服务，再回收资源。若检出有修改、未跟踪文件或忽略文件，工作区和服务会保留。解决后可显式运行 `herdr-team feature clean` 重试。团队暂停投递时，仍可通过正在运行的 daemon 管理已绑定 Space 的服务。
 
 ### AgentMail
 

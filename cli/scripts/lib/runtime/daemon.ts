@@ -23,7 +23,7 @@ import { cleanupAll, cleanupIfDone, type CleanupResult } from "../dispatch/clean
 import { findTask } from "../tasks/cards.ts";
 import { spawnWindowsDaemon } from "./windows-daemon.ts";
 import { realDesktop } from "./desktop.ts";
-import { changeDesktopService, isServiceRequest, reconcileDesktopServices, type ServiceRequest } from "./desktop-services.ts";
+import { changeDesktopService, hasWatchedDesktopServices, isServiceRequest, reconcileDesktopServices, type ServiceRequest } from "./desktop-services.ts";
 
 const cli = fileURLToPath(new URL("../../cli.ts", import.meta.url));
 const infoFile = (directory = daemonDirectory()) => join(directory, "daemon.json");
@@ -214,7 +214,7 @@ export async function daemonPass(key: string, operation?: WorkerOperation): Prom
       process.env.HERDR_TEAM_DAEMON_TOKEN !== info()?.token) throw new Error("Invalid daemon worker invocation");
   const result = withRegistration(key, () => {
     const service = operation && "service" in operation ? operation.service : undefined;
-    const team = readDaemonTeam(key, service?.action === "stop");
+    const team = readDaemonTeam(key, !operation || Boolean(service));
     if (!team) {
       if (operation) throw new Error("Start the team with herdr-team team up before managing its resources");
       return;
@@ -225,6 +225,10 @@ export async function daemonPass(key: string, operation?: WorkerOperation): Prom
       }
       const project = loadProject(team.root, { taskBodies: false, roleBodies: false });
       return { service: changeDesktopService(project, realDesktop(), team.space, operation.service) };
+    }
+    if (team.enabled === false) {
+      return { team, project: { root: team.root, herdrDir: join(team.root, ".herdr") },
+        response: { panes: [], deliveries: [], deadline: undefined } };
     }
     const project = loadProject(team.root);
     if (operation) {
@@ -436,9 +440,10 @@ export async function serveDaemon(): Promise<void> {
     }
     for (const key of keys) {
       try {
-        const team = readDaemonTeam(key);
+        const team = readDaemonTeam(key, true);
         const current = active.get(key);
-        if (!team) {
+        if (!team || team.enabled === false && (team.kind !== "desktop" ||
+            !hasWatchedDesktopServices({ root: team.root, herdrDir: join(team.root, ".herdr") }, team.space))) {
           if (current) {
             current.close();
             active.delete(key);
@@ -456,7 +461,7 @@ export async function serveDaemon(): Promise<void> {
   mkdirSync(daemonTeams(), { recursive: true, mode: 0o700 });
   const registrationWatcher = watch(daemonTeams(), reload);
   const agentmail = startAgentMail(id => {
-    const matches = [...active].filter(([key]) => key.startsWith(id));
+    const matches = [...active].filter(([key, current]) => current.team.enabled !== false && key.startsWith(id));
     if (matches.length === 1) matches[0]![1].kick();
   });
   const stop = () => {
@@ -470,7 +475,8 @@ export async function serveDaemon(): Promise<void> {
   const status = (): DaemonStatus => {
     const mail = agentmail.status();
     return { state: stopping ? "stopping" : "running", pid: process.pid, featureWorkspaces: true,
-      teams: [...active.values()].map(current => current.status()), ...(mail ? { agentmail: mail } : {}) };
+      teams: [...active.values()].filter(current => current.team.enabled !== false).map(current => current.status()),
+      ...(mail ? { agentmail: mail } : {}) };
   };
   const server = Bun.serve({
     hostname: "127.0.0.1", port: 0, idleTimeout: 50,
@@ -485,7 +491,7 @@ export async function serveDaemon(): Promise<void> {
         if (ids !== undefined && (!Array.isArray(ids) || ids.length < 1 || ids.length > 9999 ||
           ids.some(id => typeof id !== "string" || !/^\d{4}$/.test(id)))) return new Response(null, { status: 400 });
         const key = path.slice(7), team = active.get(key)?.team;
-        if (stopping || !team) return Response.json({ error: "Start the team with herdr-team team up before cleaning worktrees" });
+        if (stopping || !team || team.enabled === false) return Response.json({ error: "Start the team with herdr-team team up before cleaning worktrees" });
         const result = runWorker(key, team, token, { ids })
           .then(([code, output, stderr]) => code === 0 ? new Response(output, { headers: { "Content-Type": "application/json" } })
             : Response.json({ error: stderr.trim().split("\n")[0] || "Team cleanup failed" }));
@@ -495,14 +501,18 @@ export async function serveDaemon(): Promise<void> {
       if (req.method === "POST" && /^\/service\/[a-f0-9]{64}$/.test(path)) {
         const service = await req.json().catch(() => null);
         if (!isServiceRequest(service)) return new Response(null, { status: 400 });
-        const key = path.slice(9), current = active.get(key);
-        const team = current?.team ?? (service.action === "stop" ? readDaemonTeam(key, true) : undefined);
-        if (stopping || team?.kind !== "desktop") return Response.json({ error: "Start the local Desktop team before managing services" });
+        const key = path.slice(9), team = readDaemonTeam(key, true);
+        if (stopping || team?.kind !== "desktop") return Response.json({ error: "Register the local Desktop team before managing services" });
         const result = runWorker(key, team, token, { service })
           .then(([code, output, stderr]) => code === 0 ? new Response(output, { headers: { "Content-Type": "application/json" } })
             : Response.json({ error: stderr.trim().split("\n")[0] || "Team service operation failed" }));
         operations.add(result);
-        try { return await result; } finally { operations.delete(result); current?.kick(); }
+        try { return await result; }
+        finally {
+          operations.delete(result);
+          reload();
+          active.get(key)?.kick();
+        }
       }
       if (req.method === "POST" && /^\/wake\/[a-f0-9]{64}$/.test(path)) {
         reload();
