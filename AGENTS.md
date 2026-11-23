@@ -16,5 +16,6 @@
 
 # Delivery
 
+- Use `develop` as the development and integration branch. Start new Feature work from the current `develop` checkout and merge reviewed Feature commits with `herdr-team feature merge NAME --iteration VERSION --base develop --commit SHA` from that checkout. Keep `main` for releases; merging or publishing to `main` requires an explicit release request.
 - When adding or changing an Issue or Task operation, check both card types in the CLI and Desktop Team panel before shipping. Keep shared actions, list visibility and recovery paths aligned. Verify any operation specific to one card type through its normal entry points.
 - For a small, self-contained change, commit and push it to the current branch's upstream once implementation and verification are complete. Stage the files for that change and follow any branch or review instructions the user gives for it.
