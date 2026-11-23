@@ -232,13 +232,12 @@ herdr-team role add lead --force --lifecycle resident
 herdr-team role add dev --force --lifecycle temporary
 herdr-team task create "Implement session recovery" --role dev --feature session-recovery --iteration v1.2
 herdr-team task dispatch 0001
-herdr-team feature preview session-recovery --iteration v1.2
 herdr-team feature merge session-recovery --iteration v1.2 --base develop --commit <reviewed-sha>
 ```
 
 常驻角色由 `up` 启动，`down` 关闭。临时角色在派发时启动，并按实际 Feature 和迭代标记该会话。任务可用 `edit <id> --feature NAME --iteration VERSION` 补排期，也可沿用所关联 Issue 的迭代。
 
-新派发的 Feature 在一个工作区内串行处理任务，各 Feature 并行。最后一次任务验收只确认共享分支中的指定提交。Feature 整体验收后，从目标分支执行 `feature merge`，daemon 负责停止预览、关闭临时会话和回收干净的 worktree。已派发的旧任务保留原绑定，旧流程仍使用 `feature finish` 和 `feature clean`。预览配置见 [运行时指南](../docs/team-runtime.md#feature-previews)。
+新派发的 Feature 在一个工作区内串行处理任务，各 Feature 并行。最后一次任务验收只确认共享分支中的指定提交。Feature 整体验收后，从目标分支执行 `feature merge`，daemon 负责关闭临时会话和回收干净的 worktree。已派发的旧任务保留原绑定，旧流程仍使用 `feature finish` 和 `feature clean`。
 
 ### AgentMail
 

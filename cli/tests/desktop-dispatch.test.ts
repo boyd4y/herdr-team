@@ -7,7 +7,6 @@ import { bindDesktop, desktopDown, DesktopError, desktopUp, showDesktopBinding, 
 import { closeFinishedDesktopTaskAgents, desktopTaskRuntime, syncDesktopTaskSpaces } from "../scripts/lib/runtime/desktop-dispatch.ts";
 import { desktopWorktrees } from "../scripts/lib/runtime/desktop-worktrees.ts";
 import { cleanDesktopTasks } from "../scripts/lib/runtime/desktop-cleanup.ts";
-import { featurePreviewStatus, queueFeaturePreview, reconcileFeaturePreviews } from "../scripts/lib/runtime/feature-preview.ts";
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, pumpQueue, queueRows } from "../scripts/lib/dispatch/queue.ts";
 import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
@@ -156,9 +155,6 @@ test("Desktop dispatch starts exactly the selected task in an owned checkout wit
 test("Desktop shares one workspace per feature, serializes assignments and cleans only the merged feature", () => {
   const f = fixture();
   try {
-    const config = "herdr-preview.json";
-    writeFileSync(join(f.root, config), JSON.stringify({ argv: ["tauri", "dev"], kind: "desktop", tauriBeforeDev: "bun run web:dev --port $PORT" }));
-    git(f.root, "add", config); git(f.root, "commit", "-qm", "Configure preview");
     for (const id of ["0003", "0004"]) writeTask(f.root, `${id}-metrics`, taskMeta());
     for (const id of ["0001", "0002", "0003", "0004"]) {
       writeTaskMeta(f.load(), f.task(id), { feature: Number(id) < 3 ? "search" : "metrics", iteration: "v1.2", handoff: id === "0001" ? ["qa"] : [] });
@@ -173,18 +169,6 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
     expect(git(first!.cwd, "branch", "--show-current")).toBe("feature/v1.2/search");
     expect(showDesktopBinding(f.client, first!.labels["herdr.space"]!)).toMatchObject({ feature: "search@v1.2", checkout: first!.cwd });
     const binding = showDesktopBinding(f.client, "s1")!;
-    const search = { feature: "search", iteration: "v1.2" }, metrics = { ...search, feature: "metrics" };
-    const searchPreview = queueFeaturePreview(f.load(), search), metricsPreview = queueFeaturePreview(f.load(), metrics);
-    const reconcile = () => reconcileFeaturePreviews(f.load(), f.client, binding);
-    reconcile(); reconcile();
-    expect(searchPreview.port).not.toBe(metricsPreview.port);
-    const previews = f.terminals.filter(t => t.labels["team.session"] === "preview");
-    expect(previews).toHaveLength(2);
-    const [metricsTerminal, searchTerminal] = previews;
-    expect(searchTerminal!.cwd).toBe(first!.cwd);
-    const configFor = (terminal: DesktopTerminal) => JSON.parse(terminal.argv.at(-1)!);
-    expect(configFor(searchTerminal!).identifier).not.toBe(configFor(metricsTerminal!).identifier);
-    expect(configFor(searchTerminal!).build.devUrl).toBe(`http://127.0.0.1:${searchPreview.port}`);
     writeFileSync(join(first!.cwd, "search.txt"), "search\n");
     git(first!.cwd, "add", "search.txt"); git(first!.cwd, "commit", "-qm", "Implement search");
     const sha = git(first!.cwd, "rev-parse", "HEAD");
@@ -215,9 +199,6 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
     const base = git(f.root, "branch", "--show-current");
     expect(finishFeature(f.load(), "search", "v1.2", { base, commit: sha })).toMatchObject({ commit: sha, tasks: ["0001", "0002"] });
     expect(git(f.root, "merge-base", "HEAD", sha)).toBe(sha);
-    reconcile();
-    expect(featurePreviewStatus(f.load(), search)).toBeUndefined();
-    expect(metricsTerminal!.state).toBe("live");
     const [result] = cleanDesktopTasks(f.load(), f.client, binding, undefined, ["0001", "0002"]);
     expect(result).toMatchObject({ action: "removed" });
     expect(existsSync(first!.cwd)).toBe(false);

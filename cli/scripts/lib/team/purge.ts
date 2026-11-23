@@ -26,10 +26,6 @@ function ensurePath(path: string, kind: "directory" | "file"): boolean {
 }
 
 function checkoutBlockers(project: Project, reclaim?: ReadonlySet<string>): string[] {
-  const previews = runtimePath(project, "desktop/previews");
-  if (ensurePath(previews, "directory") && readdirSync(previews).length) {
-    return ["Managed feature previews remain. Finish and clean the feature before purging."];
-  }
   for (const directory of ["desktop/tasks", "desktop/features", "desktop/checkouts", "tui/features"]) {
     const path = runtimePath(project, directory);
     if (ensurePath(path, "directory") && readdirSync(path).some(entry => !reclaim?.has(join(path, entry)))) {

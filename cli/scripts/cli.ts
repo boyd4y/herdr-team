@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { projectKey, resolveProjectWorkspace, TeamScopeError } from "./lib/dispatch/team-scope.ts";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { setTimeout as delay } from "node:timers/promises";
 import { join, resolve } from "node:path";
 import type { CleanupResult } from "./lib/dispatch/cleanup.ts";
 import { findRoot, findTeamRoots, loadProject, type ProjectReadOptions } from "./lib/team/project.ts";
@@ -38,7 +37,6 @@ import { desktopTaskRuntime, syncDesktopTaskSpaces, type DesktopTaskRuntime } fr
 import { taskRuntime } from "./lib/dispatch/runtime.ts";
 import { assertDaemonOwner, daemonDirectory, daemonEndpoint, inboxProjectStates, listRegisteredProjects, makeDaemonTeam, pauseDaemonTeam, readDaemonTeam, registerDaemonTeam, registerProjectRoot, unregisterProjectRoot } from "./lib/runtime/daemon-binding.ts";
 import { daemonPass, daemonStatus, requestDaemonCleanup, serveDaemon, startDaemon, stopDaemon, wakeDaemon } from "./lib/runtime/daemon.ts";
-import { featurePreviewStatus, queueFeaturePreview } from "./lib/runtime/feature-preview.ts";
 import { daemonLogPath, deliveryLogReason, followDaemonLog, formatDaemonLog, logDaemon, readDaemonLog } from "./lib/runtime/daemon-log.ts";
 import { addAgentMailRoute, AgentMailError, checkAgentMail, readAgentMailRoutes } from "./lib/runtime/agentmail.ts";
 import { MAIL_ID, listMail, mailTrashReasonLabel, markMailRead, readMail, updateMailState } from "./lib/runtime/mail-inbox.ts";
@@ -601,39 +599,23 @@ function cmdIteration(args: string[]): number {
 async function cmdFeature(args: string[]): Promise<number> {
   const parsed = parseArgs(args, ["iteration", "root", "commit", "base"]);
   if (parsed.flags.has("help")) {
-    process.stdout.write("Usage: herdr-team feature <finish|merge|clean|preview> <name> --iteration VERSION [--root DIR | --project ID] [--json]\n" +
+    process.stdout.write("Usage: herdr-team feature <finish|merge|clean> <name> --iteration VERSION [--root DIR | --project ID] [--json]\n" +
       "  merge    Integrate the validated feature with --base BRANCH --commit SHA and let the daemon reclaim its workspace.\n" +
       "  finish   Confirm an existing task-scoped delivery.\n" +
-      "  clean    Reclaim only the confirmed delivery's worktrees, terminals and spaces.\n" +
-      "  preview  Start or reuse the Desktop feature preview configured in herdr-preview.json. Use --retry after a failed preview.\n");
+      "  clean    Reclaim only the confirmed delivery's worktrees, terminals and spaces.\n");
     return 0;
   }
   const [op, name] = parsed.pos;
   const version = parsed.values.get("iteration");
   const commit = parsed.values.get("commit"), base = parsed.values.get("base");
-  if (op !== "finish" && op !== "merge" && op !== "clean" && op !== "preview" || parsed.pos.length !== 2 || !name || !version ||
+  if (op !== "finish" && op !== "merge" && op !== "clean" || parsed.pos.length !== 2 || !name || !version ||
       op === "merge" && (!commit || !base) ||
-      [...parsed.flags].some(flag => flag !== "json" && !(op === "preview" && flag === "retry")) ||
+      [...parsed.flags].some(flag => flag !== "json") ||
       [...parsed.values.keys()].some(key => key !== "root" && key !== "iteration" && (op !== "merge" || key !== "commit" && key !== "base"))) {
     throw new UsageError("Run herdr-team feature --help for the required arguments");
   }
   const root = resolveRoot(parsed.values.get("root"));
   const project = loadValidated(root);
-  if (op === "preview") {
-    const daemon = await daemonStatus();
-    if (readDaemonTeam(projectKey(project))?.kind !== "desktop" || daemon.state !== "running") {
-      throw new FeatureError("Start the Desktop team before opening its feature preview");
-    }
-    if (!daemon.featureWorkspaces) throw new FeatureError("Restart the team daemon to enable feature previews");
-    const scope = { feature: validateFeature(name), iteration: validateIteration(version) };
-    let state = queueFeaturePreview(project, scope, parsed.flags.has("retry"));
-    await wakeDaemon(root);
-    for (let count = 0; count < 30 && (state.state === "queued" || state.state === "starting"); count++) {
-      await delay(100);
-      state = featurePreviewStatus(project, scope) ?? state;
-    }
-    return out(parsed, state, state.error ?? (state.state === "running" ? state.url ?? "Desktop preview launched." : "Preview startup is queued."));
-  }
   if (op === "clean") {
     const scope = { feature: validateFeature(name), iteration: validateIteration(version) };
     const key = featureKey(scope);

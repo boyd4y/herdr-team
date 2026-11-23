@@ -10,7 +10,6 @@ import { realDesktop, registeredDesktopBinding, savedDesktopBinding } from "./de
 import type { ManagedContext } from "./context.ts";
 import { closeFinishedDesktopTaskAgents, desktopTaskRuntime } from "./desktop-dispatch.ts";
 import { cleanDesktopTasks } from "./desktop-cleanup.ts";
-import { reconcileFeaturePreviews } from "./feature-preview.ts";
 import { confirmedFeatures } from "../team/features.ts";
 import { logDaemon } from "./daemon-log.ts";
 import { runtimePath, withStateLock } from "./state.ts";
@@ -246,7 +245,6 @@ export function closeRegisteredDesktopTaskAgents(project: Project, team: DaemonT
       space?.root !== binding.root || space.space !== binding.space || space.view_space) {
     throw new Error("Registered Desktop binding changed");
   }
-  reconcileFeaturePreviews(project, client, binding);
   closeFinishedDesktopTaskAgents(project, client, binding);
   const confirmations = confirmedFeatures(project);
   const members = project.tasks.filter(task => {

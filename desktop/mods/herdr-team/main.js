@@ -746,25 +746,6 @@ export default class TeamConsole extends View {
     });
   }
 
-  startFeaturePreview(key, cx) {
-    const binding = this.binding;
-    if (!binding || binding.machine || this.featurePreview?.key === key && this.featurePreview.busy) return;
-    const [name, iteration] = key.split("@");
-    const args = ["feature", "preview", name, "--iteration", iteration, "--root", binding.root, "--json"];
-    if (this.featurePreview?.key === key && this.featurePreview.state === "failed") args.push("--retry");
-    const request = this.featurePreview = { key, busy: true };
-    cx.notify();
-    cx.spawn(async cx => {
-      try {
-        const result = await team(args, { cwd: binding.root, timeout: 10_000 });
-        const preview = teamJson(result, "feature preview");
-        if (this.binding === binding && this.featurePreview === request) this.featurePreview = { ...preview, key };
-      } catch (error) {
-        if (this.binding === binding && this.featurePreview === request) this.featurePreview = { key, state: "failed", error: errorMessage(error) };
-      } finally { if (!this.closed) cx.notify(); }
-    });
-  }
-
   render(cx) {
     if (props()?.tab) return this.tabButton(theme());
     this.follow(cx);
@@ -1316,20 +1297,6 @@ export default class TeamConsole extends View {
           .on_click((_e, cx) => this.pinned ? this.load(cx) : this.follow(cx, true)).child(div().text_size(14).text_color(t.muted).child("↻"))));
 
     const notices = [];
-    const feature = !this.preview && this.binding && !this.binding.machine ? this.viewBinding?.feature : null;
-    if (feature) {
-      const preview = this.featurePreview?.key === feature ? this.featurePreview : null;
-      notices.push(v_flex().id("feature-preview").gap(5).px(8).py(6).rounded(6).bg(t.surface)
-        .child(h_flex().gap(6).items_center().min_w(0)
-          .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).tooltip(feature).child(feature))
-          .child(actionButton("feature-preview-start", preview?.busy ? "Starting…" : preview?.state === "failed" ? "Retry preview" : "Preview",
-            cx => this.startFeaturePreview(feature, cx), false, preview?.busy)))
-        .when(Boolean(preview?.error), el => el.child(div().text_size(11.5).text_color(t.blocked).child(preview.error)))
-        .when(preview?.state === "queued" || preview?.state === "starting", el => el.child(div().text_size(11.5).text_color(t.muted).child("Preview startup is queued.")))
-        .when(preview?.state === "running" && preview.kind === "desktop", el => el.child(div().text_size(11.5).text_color(t.muted).child("Desktop preview is starting in this Space.")))
-        .when(preview?.state === "running" && Number.isInteger(preview.port) && preview.kind === "web", el =>
-          el.child(detailMarkdown("feature-preview-link", `[Open web preview](http://127.0.0.1:${preview.port})`))));
-    }
     if (this.error) notices.push(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(this.error));
     if (this.watchError && !this.preview) notices.push(div().px(10).py(7).rounded(7).bg(t.surface).text_size(11.5).text_color(t.dim).child(this.watchError));
     if (setup?.error) notices.push(div().px(10).py(7).rounded(7).bg(t.blocked + "1a").text_size(11.5).text_color(t.blocked).child(setup.error));

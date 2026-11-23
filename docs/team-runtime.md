@@ -115,33 +115,8 @@ Changes in that Feature Space before the developer commits. See the
 After validating the integrated Feature and approving its
 merge, run `herdr-team feature merge NAME --iteration VERSION --base BRANCH --commit SHA`
 from the base checkout. The daemon reclaims the merged Feature's clean workspace
-and stops its managed previews and temporary agents. Existing task-scoped
+and stops its temporary agents. Existing task-scoped
 deliveries still use `feature finish` followed by `feature clean`.
-
-### Feature previews
-
-Desktop uses an explicit project-root `herdr-preview.json` to launch a preview
-in the owned Feature checkout. Set `argv` to the development command. The program
-receives `PORT`, `HERDR_TEAM_PREVIEW_PORT`, `HERDR_TEAM_PREVIEW_APP_ID` and
-`HERDR_TEAM_PREVIEW_DATA_DIR`. Web commands should bind to the assigned
-loopback port. Use Preview in the Feature Space or
-`herdr-team feature preview NAME --iteration VERSION`.
-
-For Tauri, set `kind` to `desktop` and provide a Tauri dev command and its
-`tauriBeforeDev` command. The launcher appends a configuration override for
-the Feature's app identifier and dev URL. Example for a project with Vite:
-
-```json
-{
-  "kind": "desktop",
-  "argv": ["bun", "run", "--cwd", "app", "dev"],
-  "tauriBeforeDev": "bun run sidecar && bun run web:dev --port \"$PORT\""
-}
-```
-
-Map the assigned preview data directory in the application launcher when the
-app needs a custom state location. Applications with shared OS deep links
-must route login callbacks to the initiating preview.
 
 Agents, Tasks and Inbox commands each use a single project. Run them in that
 project or its Git worktree to select it by default. From elsewhere or when

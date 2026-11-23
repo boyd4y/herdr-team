@@ -21,7 +21,6 @@ import { confirmedFeatures } from "../team/features.ts";
 import { closeDeliveredTuiAgents } from "./tui-feature-sessions.ts";
 import { cleanupAll, cleanupIfDone, type CleanupResult } from "../dispatch/cleanup.ts";
 import { findTask } from "../tasks/cards.ts";
-import { hasFeaturePreviews } from "./feature-preview.ts";
 import { spawnWindowsDaemon } from "./windows-daemon.ts";
 
 const cli = fileURLToPath(new URL("../../cli.ts", import.meta.url));
@@ -219,7 +218,7 @@ export function daemonPass(key: string, cleanup?: { ids?: string[] }): void {
     }
     let cleanupPanes: string[] = [];
     try {
-      if (team.kind === "desktop" && hasFeaturePreviews(project) || project.tasks.some(task => isTaskInactive(task)) && confirmedFeatures(project).size) {
+      if (project.tasks.some(task => isTaskInactive(task)) && confirmedFeatures(project).size) {
         if (team.kind === "desktop") closeRegisteredDesktopTaskAgents(project, team);
         else {
           const backend = registeredRuntime(project, team);
