@@ -72,6 +72,8 @@ export function closeFinishedDesktopTaskAgents(project: Project, client: Desktop
       const role = terminal.labels["team.role"];
       const feature = terminal.labels["team.feature"], iteration = terminal.labels["team.iteration"];
       if (!deliveredTask(task, feature, iteration, delivery, deliveries) || !space || !terminalMatchesWorkspace(space, terminal) || !role) return;
+      // Confirmed shared worktrees go through cleanup's resource preflight before stopping their agents.
+      if (space.feature && deliveries.get(space.feature)?.commit) return;
       const program = desktopAgentProgram(terminal);
       if (!program || terminal.status?.app !== program ||
           !acceptsDelivery(terminal.status.state) ||

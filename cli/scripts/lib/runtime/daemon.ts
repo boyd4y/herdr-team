@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { needsQueuePass, nextQueueDeadline, pumpQueue, queueRows } from "../dispatch/queue.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
 import { loadProject } from "../team/project.ts";
-import { closeRegisteredDesktopTaskAgents, daemonDirectory, daemonEnv, daemonTeamKeys, daemonTeams, listRegisteredProjects, readDaemonTeam, registeredRuntime, tuiSubscriptionPath, withRegistration, type DaemonTeam } from "./daemon-binding.ts";
+import { closeRegisteredDesktopTaskAgents, daemonDirectory, daemonEndpoint, daemonEnv, daemonTeamKeys, daemonTeams, listRegisteredProjects, readDaemonTeam, registeredRuntime, tuiSubscriptionPath, withRegistration, type DaemonTeam } from "./daemon-binding.ts";
 import { processAlive, withStateLock, withTeamLock } from "./state.ts";
 import { daemonLogPath, deliveryLogReason, logDaemon } from "./daemon-log.ts";
 import { startAgentMail, type AgentMailStatus } from "./agentmail.ts";
@@ -22,6 +22,8 @@ import { closeDeliveredTuiAgents } from "./tui-feature-sessions.ts";
 import { cleanupAll, cleanupIfDone, type CleanupResult } from "../dispatch/cleanup.ts";
 import { findTask } from "../tasks/cards.ts";
 import { spawnWindowsDaemon } from "./windows-daemon.ts";
+import { realDesktop } from "./desktop.ts";
+import { changeDesktopService, isServiceRequest, reconcileDesktopServices, type ServiceRequest } from "./desktop-services.ts";
 
 const cli = fileURLToPath(new URL("../../cli.ts", import.meta.url));
 const infoFile = (directory = daemonDirectory()) => join(directory, "daemon.json");
@@ -82,6 +84,15 @@ export async function requestDaemonCleanup(root: string, ids?: readonly string[]
   const result = await request<{ results?: CleanupResult[]; error?: string }>(value, "/clean/" + projectKey({ root }), { ids });
   if (!result.results) throw new Error(result.error ?? "The team daemon did not return a cleanup result");
   return result.results;
+}
+
+export async function requestDaemonService(root: string, action: ServiceRequest) {
+  const value = info();
+  if (!value?.port || !processAlive(value.pid)) throw new Error("Start the team daemon before managing services");
+  const response = await request<{ service?: ReturnType<typeof changeDesktopService>; error?: string }>(
+    value, "/service/" + projectKey({ root }), action);
+  if (!response.service) throw new Error(response.error ?? "The team daemon did not return a service result");
+  return response.service;
 }
 
 export async function daemonStatus(): Promise<DaemonStatus> {
@@ -196,25 +207,34 @@ function subscribe(team: DaemonTeam, panes: string[], wake: () => void, closed: 
   return close;
 }
 
-export function daemonPass(key: string, cleanup?: { ids?: string[] }): void {
+type WorkerOperation = { ids?: string[] } | { service: ServiceRequest };
+
+export async function daemonPass(key: string, operation?: WorkerOperation): Promise<void> {
   if (!/^[a-f0-9]{64}$/.test(key) || !process.env.HERDR_TEAM_DAEMON_TOKEN ||
       process.env.HERDR_TEAM_DAEMON_TOKEN !== info()?.token) throw new Error("Invalid daemon worker invocation");
-  withRegistration(key, () => {
-    const team = readDaemonTeam(key);
+  const result = withRegistration(key, () => {
+    const service = operation && "service" in operation ? operation.service : undefined;
+    const team = readDaemonTeam(key, service?.action === "stop");
     if (!team) {
-      if (cleanup) throw new Error("Start the team with herdr-team team up before cleaning worktrees");
+      if (operation) throw new Error("Start the team with herdr-team team up before managing its resources");
       return;
     }
+    if (operation && "service" in operation) {
+      if (team.kind !== "desktop" || team.endpoint !== daemonEndpoint("desktop") || !isServiceRequest(operation.service)) {
+        throw new Error("A local Desktop team is required to manage feature services");
+      }
+      const project = loadProject(team.root, { taskBodies: false, roleBodies: false });
+      return { service: changeDesktopService(project, realDesktop(), team.space, operation.service) };
+    }
     const project = loadProject(team.root);
-    if (cleanup) {
+    if (operation) {
       const runtime = registeredRuntime(project, team);
-      const results = "clean" in runtime ? runtime.clean(...(cleanup.ids ?? [])) : withTeamLock(project, "queue", () => {
+      const results = "clean" in runtime ? runtime.clean(...(operation.ids ?? [])) : withTeamLock(project, "queue", () => {
         const fresh = loadProject(project.root);
-        return cleanup.ids ? cleanup.ids.map(id => cleanupIfDone(fresh, runtime, findTask(fresh, id))) : cleanupAll(fresh, runtime);
+        return operation.ids ? operation.ids.map(id => cleanupIfDone(fresh, runtime, findTask(fresh, id))) : cleanupAll(fresh, runtime);
       });
       for (const result of results) logDaemon("task.cleaned", { project: project.root, task: result.id, state: result.action, reason: result.note });
-      process.stdout.write(JSON.stringify({ results }) + "\n");
-      return;
+      return { results };
     }
     let cleanupPanes: string[] = [];
     try {
@@ -248,8 +268,7 @@ export function daemonPass(key: string, cleanup?: { ids?: string[] }): void {
     const projectId = key.slice(0, 12);
     const mailWork = listMail(projectId, null).some(item => item.state === "pending" || item.state === "sending");
     if (!taskWork && !mailWork) {
-      process.stdout.write(JSON.stringify({ panes: cleanupPanes.sort(), deliveries: logRows(project) }) + "\n");
-      return;
+      return { team, project, response: { panes: cleanupPanes.sort(), deliveries: logRows(project), deadline: undefined } };
     }
     const runtime = registeredRuntime(project, team);
     // Each pass releases the queue lock after one successful submission, allowing
@@ -265,8 +284,23 @@ export function daemonPass(key: string, cleanup?: { ids?: string[] }): void {
     })() : [];
     const panes = [...new Set([...taskPanes, ...mailPanes, ...cleanupPanes])].sort();
     const deliveries = logRows(fresh);
-    process.stdout.write(JSON.stringify({ more: outcomes.some(row => row.state === "submitted"), deadline, panes, deliveries }) + "\n");
+    return { team, project, response: { more: outcomes.some(row => row.state === "submitted"), deadline, panes, deliveries } };
   });
+  if (!result) return;
+  if (result.response) {
+    if (result.team.kind === "desktop") {
+      try {
+        const deadline = await reconcileDesktopServices(result.project, result.team.space, () => {
+          if (result.team.endpoint !== daemonEndpoint("desktop")) throw new Error("Registered Desktop Core instance changed");
+          return realDesktop();
+        });
+        if (deadline !== undefined) result.response.deadline = Math.min(result.response.deadline ?? Infinity, deadline);
+      } catch {
+        logDaemon("service.check_failed", { project: result.team.root, space: result.team.space });
+      }
+    }
+    process.stdout.write(JSON.stringify(result.response) + "\n");
+  } else process.stdout.write(JSON.stringify(result) + "\n");
 }
 
 interface ActiveTeam {
@@ -277,8 +311,8 @@ interface ActiveTeam {
   kick(): void;
 }
 
-function runWorker(key: string, team: DaemonTeam, token: string, cleanup?: { ids?: string[] }) {
-  const child = Bun.spawn([process.execPath, cli, "daemon", "_pass", key, ...(cleanup ? [JSON.stringify(cleanup)] : [])], {
+function runWorker(key: string, team: DaemonTeam, token: string, operation?: WorkerOperation) {
+  const child = Bun.spawn([process.execPath, cli, "daemon", "_pass", key, ...(operation ? [JSON.stringify(operation)] : [])], {
     cwd: daemonDirectory(), env: { ...daemonEnv(), ...team.env, HERDR_TEAM_DAEMON_TOKEN: token },
     stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsHide: true,
   });
@@ -387,7 +421,7 @@ export async function serveDaemon(): Promise<void> {
   const value = daemonLock(info);
   if (value?.token !== token || value.pid !== process.pid) throw new Error("Use herdr-team daemon start");
   const active = new Map<string, ActiveTeam>();
-  const cleanups = new Set<Promise<Response>>();
+  const operations = new Set<Promise<Response>>();
   let stopping = false;
   let finish!: () => void;
   const stopped = new Promise<void>(resolve => { finish = resolve; });
@@ -431,7 +465,7 @@ export async function serveDaemon(): Promise<void> {
     logDaemon("daemon.stopping", { projects: active.size });
     registrationWatcher.close();
     for (const current of active.values()) current.close();
-    void Promise.allSettled([agentmail.stop(), ...cleanups, ...[...active.values()].map(current => current.running())]).then(finish);
+    void Promise.allSettled([agentmail.stop(), ...operations, ...[...active.values()].map(current => current.running())]).then(finish);
   };
   const status = (): DaemonStatus => {
     const mail = agentmail.status();
@@ -455,8 +489,20 @@ export async function serveDaemon(): Promise<void> {
         const result = runWorker(key, team, token, { ids })
           .then(([code, output, stderr]) => code === 0 ? new Response(output, { headers: { "Content-Type": "application/json" } })
             : Response.json({ error: stderr.trim().split("\n")[0] || "Team cleanup failed" }));
-        cleanups.add(result);
-        try { return await result; } finally { cleanups.delete(result); }
+        operations.add(result);
+        try { return await result; } finally { operations.delete(result); }
+      }
+      if (req.method === "POST" && /^\/service\/[a-f0-9]{64}$/.test(path)) {
+        const service = await req.json().catch(() => null);
+        if (!isServiceRequest(service)) return new Response(null, { status: 400 });
+        const key = path.slice(9), current = active.get(key);
+        const team = current?.team ?? (service.action === "stop" ? readDaemonTeam(key, true) : undefined);
+        if (stopping || team?.kind !== "desktop") return Response.json({ error: "Start the local Desktop team before managing services" });
+        const result = runWorker(key, team, token, { service })
+          .then(([code, output, stderr]) => code === 0 ? new Response(output, { headers: { "Content-Type": "application/json" } })
+            : Response.json({ error: stderr.trim().split("\n")[0] || "Team service operation failed" }));
+        operations.add(result);
+        try { return await result; } finally { operations.delete(result); current?.kick(); }
       }
       if (req.method === "POST" && /^\/wake\/[a-f0-9]{64}$/.test(path)) {
         reload();

@@ -176,6 +176,7 @@ export default class TeamConsole extends View {
     this.taskLoad = null;
     this.loading = false;
     this.stopRuntimeWatch();
+    this.servicePanel = null;
     this.resetInbox();
     this.binding = null; this.tasks = []; this.roles = []; this.selected = null; this.error = null; this.watchError = null; this.viewBinding = null;
     this.requirements = []; this.requirementDetails = new Map(); this.selectedRequirement = null; this.requirementError = null;
@@ -198,6 +199,7 @@ export default class TeamConsole extends View {
     const changedSpace = changedMachine || target?.space.id !== this.place?.id;
     if (changedMachine) this.clearBinding();
     if (changedSpace) {
+      this.servicePanel = null;
       this.setupWatch?.cancel();
       this.setupConfigWatch?.cancel();
       this.setupWatch = null; this.setup = null;
@@ -233,6 +235,7 @@ export default class TeamConsole extends View {
           if (!wasPreview && (teamChanged || force)) this.load(cx);
         }
         this.watchRuntime(cx, force);
+        this.followServices(record, cx);
         this.followSetup(target.space, cx);
       } catch (error) {
         if (!this.closed && this.followGeneration === generation) {
@@ -300,6 +303,55 @@ export default class TeamConsole extends View {
       runtime.error = errorMessage(error);
     }
     cx.notify();
+  }
+
+  followServices(record, cx) {
+    if (!record?.feature || record.machine || record.demo) {
+      this.servicePanel = null;
+      return;
+    }
+    if (this.servicePanel?.space !== record.view_space) {
+      this.servicePanel = { root: record.root, space: record.view_space, rows: [], pending: new Set() };
+    }
+    this.loadServices(cx);
+  }
+
+  loadServices(cx) {
+    const panel = this.servicePanel;
+    if (!panel) return;
+    const request = panel.request = (panel.request ?? 0) + 1;
+    cx.spawn(async cx => {
+      try {
+        const result = await team(["service", "list", "--space", panel.space, "--root", panel.root, "--json"],
+          { cwd: panel.root, timeout: 10000 });
+        const status = teamJson(result, "service list");
+        if (this.closed || this.servicePanel !== panel || panel.request !== request) return;
+        panel.rows = status.services;
+        panel.error = status.error;
+      } catch (error) {
+        if (this.closed || this.servicePanel !== panel || panel.request !== request) return;
+        panel.error = errorMessage(error);
+      }
+      cx.notify();
+    });
+  }
+
+  changeService(panel, action, name, cx) {
+    if (this.servicePanel !== panel || panel.pending.has(name)) return;
+    panel.pending.add(name);
+    panel.actionError = null;
+    cx.notify();
+    cx.spawn(async cx => {
+      try {
+        const result = await team(["service", action, name, "--space", panel.space, "--root", panel.root, "--json"],
+          { cwd: panel.root, timeout: 50000 });
+        teamJson(result, `service ${action}`);
+      } catch (error) { panel.actionError = errorMessage(error); }
+      finally {
+        panel.pending.delete(name);
+        if (!this.closed && this.servicePanel === panel) { this.loadServices(cx); cx.notify(); }
+      }
+    });
   }
 
   load(cx) {
@@ -380,7 +432,11 @@ export default class TeamConsole extends View {
           const paths = await pending;
           if (this.pendingWatch === pending) this.pendingWatch = null;
           if (this.closed || this.preview || this.binding !== binding) break;
-          if (paths.length) this.load(cx);
+          if (!paths.length) break;
+          const serviceFile = pathKey(childPath(binding.root, ".herdr/services.runtime.json"));
+          const serviceChange = path => pathKey(path) === serviceFile || pathKey(path).startsWith(serviceFile + ".");
+          if (paths.some(serviceChange)) this.loadServices(cx);
+          if (paths.some(path => !serviceChange(path))) this.load(cx);
         }
       } catch (error) {
         if (!this.preview && this.binding === binding) { this.watchError = `Live file updates unavailable; use Refresh. ${String(error)}`; cx.notify(); }
@@ -1332,6 +1388,35 @@ export default class TeamConsole extends View {
       : this.section === "inbox" ? binding && (!this.error || this.preview) ? this.inboxMessage ? inboxMessagePage(this.inboxMessage) : inboxList : empty
       : binding && (!this.error || this.preview) ? taskOverview : empty;
 
+    const servicePanel = this.servicePanel;
+    const services = servicePanel && (servicePanel.rows.length || servicePanel.error || servicePanel.actionError)
+      ? v_flex().id("feature-services").flex_none().min_w(0).max_h(175).overflow_y_scrollbar()
+        .px(14).py(8).gap(5).bg(t.background).border_t(1).border_color(t.border)
+        .child(div().text_size(11.5).font_semibold().text_color(t.muted).child("Services"))
+        .children([servicePanel.error, servicePanel.actionError].filter(Boolean)
+          .map(message => div().text_size(11.5).text_color(t.blocked).child(message)))
+        .children(servicePanel.rows.map(row => {
+          const pending = servicePanel.pending.has(row.name);
+          const starting = row.state === "starting";
+          const running = row.state === "running";
+          const failed = row.state === "failed";
+          const action = (operation, title, disabled = pending) => actionButton(`service-${operation}-${row.name}`, title,
+            cx => this.changeService(servicePanel, operation, row.name, cx), false, disabled);
+          return v_flex().id(`service-${row.name}`).min_w(0).gap(2)
+            .child(h_flex().min_w(0).gap(5).items_center().flex_wrap()
+              .child(div().font_semibold().text_size(12).child(row.name))
+              .child(pill(pending ? "Working…" : running ? "Running" : starting ? "Starting…" : failed ? "Failed" : "Stopped",
+                starting || pending ? t.working : running ? t.done : failed ? t.blocked : t.dim))
+              .when(Boolean(row.port && (running || starting)), el => el.child(div().text_size(11).font_family(mono).text_color(t.dim).child(String(row.port))))
+              .child(div().flex_1())
+              .when(row.declared && !running && !starting, el => el.child(action("start", failed ? "Retry" : "Start")))
+              .when(row.declared && running, el => el.child(action("restart", "Restart")))
+              .when(running || starting || failed, el => el.child(action("stop", "Stop")))
+              .when(Boolean(row.url), el => el.child(actionButton(`service-open-${row.name}`, "Open", cx => cx.open_url(row.url), false, pending))))
+            .when(Boolean(row.reason), el => el.child(div().text_size(11).text_color(t.muted).child(row.reason)));
+        }))
+      : null;
+
     // A popped-out window: the window frame is the app's; its title bar drags it.
     if (this.popout) return v_flex().id("team-root").size_full().overflow_hidden().bg(t.background).text_color(t.foreground).text_size(12.8)
       .child(h_flex().h(40).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
@@ -1353,6 +1438,7 @@ export default class TeamConsole extends View {
       .when(this.preview && !setupLoading, el => el.child(sampleBanner()))
       .child(v_flex().id("team-body").flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(14)
         .children(notices)
-        .child(content));
+        .child(content))
+      .when(Boolean(services), el => el.child(services));
   }
 }

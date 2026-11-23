@@ -36,7 +36,8 @@ import { withTeamLock } from "./lib/runtime/state.ts";
 import { desktopTaskRuntime, syncDesktopTaskSpaces, type DesktopTaskRuntime } from "./lib/runtime/desktop-dispatch.ts";
 import { taskRuntime } from "./lib/dispatch/runtime.ts";
 import { assertDaemonOwner, daemonDirectory, daemonEndpoint, inboxProjectStates, listRegisteredProjects, makeDaemonTeam, pauseDaemonTeam, readDaemonTeam, registerDaemonTeam, registerProjectRoot, unregisterProjectRoot } from "./lib/runtime/daemon-binding.ts";
-import { daemonPass, daemonStatus, requestDaemonCleanup, serveDaemon, startDaemon, stopDaemon, wakeDaemon } from "./lib/runtime/daemon.ts";
+import { daemonPass, daemonStatus, requestDaemonCleanup, requestDaemonService, serveDaemon, startDaemon, stopDaemon, wakeDaemon } from "./lib/runtime/daemon.ts";
+import { isServiceRequest, listDesktopServices } from "./lib/runtime/desktop-services.ts";
 import { daemonLogPath, deliveryLogReason, followDaemonLog, formatDaemonLog, logDaemon, readDaemonLog } from "./lib/runtime/daemon-log.ts";
 import { addAgentMailRoute, AgentMailError, checkAgentMail, readAgentMailRoutes } from "./lib/runtime/agentmail.ts";
 import { MAIL_ID, listMail, mailTrashReasonLabel, markMailRead, readMail, updateMailState } from "./lib/runtime/mail-inbox.ts";
@@ -96,6 +97,7 @@ Commands:
   issue       Manage requirements and defects
   iteration   Manage iteration visibility
   feature     Confirm deliveries and reclaim temporary worktrees
+  service     List and control services in a Desktop feature workspace
   role        Manage team roles
   agents      Inspect and run agent presets
   inbox       Read email and manage task deliveries
@@ -630,6 +632,33 @@ async function cmdFeature(args: string[]): Promise<number> {
     : `Confirmed delivery of ${featureKey(result)}. The daemon will close eligible temporary sessions.`);
 }
 
+async function cmdService(args: string[]): Promise<number> {
+  const parsed = parseArgs(args, ["root", "space"]);
+  if (parsed.flags.has("help")) {
+    process.stdout.write("Usage: herdr-team service list --space ID [--root DIR | --project ID] [--json]\n" +
+      "       herdr-team service <start|stop|restart> NAME --space ID [--root DIR | --project ID] [--json]\n" +
+      "Services are declared in herdr-services.json and run in a local Desktop feature workspace.\n");
+    return 0;
+  }
+  const [action, name] = parsed.pos;
+  const space = parsed.values.get("space");
+  const request = { action, name, space };
+  const list = action === "list" && parsed.pos.length === 1;
+  if (!space || !/^[A-Za-z0-9_-]{1,128}$/.test(space) ||
+      (!list && (parsed.pos.length !== 2 || !isServiceRequest(request))) ||
+      [...parsed.flags].some(flag => flag !== "json") || [...parsed.values.keys()].some(key => key !== "root" && key !== "space")) {
+    throw new UsageError("Run herdr-team service --help for the required arguments");
+  }
+  const root = resolveRoot(parsed.values.get("root"));
+  if (isServiceRequest(request)) {
+    const row = await requestDaemonService(root, request);
+    return out(parsed, row, `${row.name}  ${row.state}${"port" in row ? `  ${row.port}` : ""}${"reason" in row && row.reason ? `  ${row.reason}` : ""}`);
+  }
+  const result = listDesktopServices({ root, herdrDir: join(root, ".herdr") }, realDesktop(), space);
+  const lines = result.services.map(row => `${row.name}  ${row.state}${"port" in row ? `  ${row.port}` : ""}${"reason" in row && row.reason ? `  ${row.reason}` : ""}`);
+  return out(parsed, result, [result.error, ...lines].filter(Boolean).join("\n") || "No services declared.");
+}
+
 async function cmdEdit(args: string[], name = "edit"): Promise<number> {
   const values = [
     "root",
@@ -912,7 +941,7 @@ async function cmdAgentMail(args: string[]): Promise<number> {
 
 async function cmdDaemon(args: string[]): Promise<number> {
   if (args[0] === "_pass" && (args.length === 2 || args.length === 3)) {
-    daemonPass(args[1]!, args[2] === undefined ? undefined : JSON.parse(args[2]));
+    await daemonPass(args[1]!, args[2] === undefined ? undefined : JSON.parse(args[2]));
     return 0;
   }
   if (args[0] === "_serve" && args.length === 1) { await serveDaemon(); return 0; }
@@ -1733,6 +1762,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdIteration(rest);
     case "feature":
       return cmdFeature(rest);
+    case "service":
+      return cmdService(rest);
     case "status":
       return cmdStatus(rest);
     case "claim":

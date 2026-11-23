@@ -12,6 +12,7 @@ import { inspectDesktopCheckout } from "./desktop-worktrees.ts";
 import { DesktopError, desktopAgentProgram, desktopTaskSpaces, forgetDesktopTaskSpace, registeredDesktopBinding,
   type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
 import { runtimePath, withTeamLock } from "./state.ts";
+import { desktopServiceCleanup } from "./desktop-services.ts";
 
 function within(root: string, path: string | null | undefined): boolean {
   if (!path || !isAbsolute(path)) return false;
@@ -69,6 +70,7 @@ function cleanTask(project: Project, client: DesktopClient, binding: DesktopBind
       (terminal.labels["herdr.space"] === binding.space || terminal.labels["herdr.space"] === alias?.space && Boolean(alias)) &&
       within(checkout, terminal.cwd);
     const { terminals } = client.rpc<{ terminals: DesktopTerminal[] }>("terminal.list", { all: true });
+    const services = shared ? desktopServiceCleanup(project, client, binding, key, checkout, terminals) : undefined;
     const candidates = terminals.filter(owned);
     const addresses = new Set(candidates.map(terminal => terminal.address));
     const spaces = client.spaces();
@@ -80,6 +82,7 @@ function cleanTask(project: Project, client: DesktopClient, binding: DesktopBind
     const elsewhere = spaces.find(space => space.id !== alias?.space && (space.machine === null && within(checkout, space.folder) ||
       space.tabs.some(tab => tab.terminals.some(item => addresses.has(item.terminal))) && (space.machine !== null || space.id !== binding.space)));
     const occupied = terminals.find(terminal => terminal.state === "live" && !terminal.address.includes("/") && !owned(terminal) &&
+      !services?.owned(terminal) &&
       (terminal.labels["herdr.space"] === alias?.space && Boolean(alias) ||
         within(checkout, terminal.cwd) || within(checkout, terminal.foreground?.cwd)));
     if (elsewhere || occupied) return result("foreign", `Checkout is in use by ${occupied?.address ?? `space ${elsewhere?.id}`}`);
@@ -105,6 +108,7 @@ function cleanTask(project: Project, client: DesktopClient, binding: DesktopBind
       return { ...result("removed", `Would reclaim ${branch}`), paths: tree ? [file, expected.path, tree.path] : [file] };
     }
 
+    services?.stop();
     for (const terminal of candidates) {
       try {
         const params = { terminal: terminal.address };
@@ -127,13 +131,16 @@ function cleanTask(project: Project, client: DesktopClient, binding: DesktopBind
         if (!(error instanceof DesktopError) || error.kind !== "not_found") throw error;
       }
     }
-    if (alias) client.closeEmptyTaskSpace(alias.space, addresses);
     const latest = inspectDesktopCheckout(project, binding, task);
     if (latest.tree) {
       if (latest.tree.locked) return result("retained", `Git has locked the checkout at ${checkout}`);
       if (changes()) return result("dirty", `Checkout has modified, untracked or ignored files at ${checkout}`);
+    }
+    if (alias) client.closeEmptyTaskSpace(alias.space, addresses);
+    if (latest.tree) {
       git(expected.repo, "worktree", "remove", checkout);
     }
+    services?.clear();
     if (alias) forgetDesktopTaskSpace(client, alias);
     for (const member of members) releaseTaskResources(project, member, Boolean(purge));
     unlinkSync(file);

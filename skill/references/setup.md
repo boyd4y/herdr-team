@@ -74,6 +74,31 @@ herdr-team team validate
 更新元数据可省略 `--kind`，未提供字段保持原值；省略正文也保持原文。
 新增角色后可运行 `up` 纳入管理。`role rm NAME` 拒绝移除仍被活动任务引用的角色。
 
+## Feature 开发服务
+
+初始化或用户提出管理开发服务时，先读 repo 已有的 `herdr-services.json`、README、仓库根和 workspace 的 `package.json`、
+包管理器 lockfile 及相关 Next.js、Storybook 等启动配置。只核对声明和脚本，保持初始化时的服务停止状态。
+列出候选服务、相对目录、启动命令、端口传入方式和所需的本地依赖，指出脚本中需要替换的固定端口。
+按用户确认写入或更新项目根 `herdr-services.json`。用户也可以直接提供完整声明、只纳入部分服务或跳过。
+已有声明原样读取，只有用户确认需要调整的服务才修改，配置随项目纳入 Git。
+
+```json
+{
+  "ports": { "start": 6100, "end": 6199 },
+  "services": {
+    "web": { "cwd": "app", "argv": ["bunx", "next", "dev", "--hostname", "127.0.0.1", "--port", "{port}"] },
+    "storybook": { "cwd": "app", "argv": ["bunx", "storybook", "dev", "--host", "127.0.0.1", "--port", "{port}", "--exact-port"] }
+  }
+}
+```
+
+示例命令按实际 repo 和包管理器改写，优先使用已有的脚本与本地依赖。服务以单个前台进程提供本机 HTTP 入口；
+`argv` 按参数数组直传，`{port}` 替换为分配的端口，也可让程序读取 `PORT` 环境变量。
+`cwd` 默认为 Feature checkout 根目录。端口范围可省略，由操作系统分配。
+确认服务显式监听 `127.0.0.1` 并使用指定端口。需要固定端口或额外本机依赖时，先和用户确定如何适配。
+在本机 Desktop 打开 Feature Space 后，可在 Team 面板底部查看服务、启停并打开地址。
+命令行使用 `herdr-team service list --space ID` 和 `herdr-team service start|stop|restart NAME --space ID`。
+
 ## 核对后启动
 
 核对 TEAM.md 的角色步骤，检查角色正文与启动参数；不要把保留旧配置误报为更新成功。

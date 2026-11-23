@@ -7,6 +7,7 @@ import { bindDesktop, desktopDown, DesktopError, desktopUp, showDesktopBinding, 
 import { closeFinishedDesktopTaskAgents, desktopTaskRuntime, syncDesktopTaskSpaces } from "../scripts/lib/runtime/desktop-dispatch.ts";
 import { desktopWorktrees } from "../scripts/lib/runtime/desktop-worktrees.ts";
 import { cleanDesktopTasks } from "../scripts/lib/runtime/desktop-cleanup.ts";
+import { changeDesktopService, listDesktopServices, reconcileDesktopServices } from "../scripts/lib/runtime/desktop-services.ts";
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, pumpQueue, queueRows } from "../scripts/lib/dispatch/queue.ts";
 import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
@@ -33,7 +34,7 @@ function fixture(core: { started?: boolean } = {}) {
   writeFileSync(join(f.root, ".gitignore"), "/.herdr/\n");
   git(f.root, "init", "-q"); git(f.root, "config", "user.email", "test@example.com"); git(f.root, "config", "user.name", "Test");
   git(f.root, "add", "."); git(f.root, "commit", "-qm", "Initial");
-  let document: any = null, version = 0;
+  let document: any = null, version = 0, nextTerminalId = 1;
   const caller: DesktopTerminal = { address: "caller", state: "live", argv: ["codex"], cwd: f.root, pid: 9, labels: { "herdr.space": "s1" } };
   const terminals = [caller];
   const appSpaces = [{ id: "s1", machine: null, tabs: [{ terminals: [{ terminal: caller.address }] }] }];
@@ -74,9 +75,12 @@ function fixture(core: { started?: boolean } = {}) {
       }
       if (method === "terminal.run") {
         if (terminals.some(terminal => terminal.state === "live" && (terminal as any).name === params.name)) throw new DesktopError("Name exists", "name_taken");
-        const terminal = { address: `t${terminals.length}`, state: "live", argv: params.argv, cwd: params.cwd,
-          name: params.name, pid: terminals.length + 100, labels: params.labels, status: { app: "codex", state: "working" } };
-        terminals.push(terminal); attach(terminal); return structuredClone(terminal) as T;
+        const id = nextTerminalId++;
+        const terminal = { address: `t${id}`, state: "live", argv: params.argv, cwd: params.cwd,
+          name: params.name, pid: id + 100, labels: params.labels, status: { app: "codex", state: "working" } };
+        terminals.push(terminal);
+        if (terminal.labels["herdr.space"]) attach(terminal);
+        return structuredClone(terminal) as T;
       }
       if (method === "terminal.label") {
         const terminal = terminals.find(terminal => terminal.address === params.terminal)!;
@@ -155,6 +159,8 @@ test("Desktop dispatch starts exactly the selected task in an owned checkout wit
 test("Desktop shares one workspace per feature, serializes assignments and cleans only the merged feature", () => {
   const f = fixture();
   try {
+    writeFileSync(join(f.root, "herdr-services.json"), JSON.stringify({ services: { web: { argv: ["bun", "dev"] } } }));
+    git(f.root, "add", "herdr-services.json"); git(f.root, "commit", "-qm", "Declare service");
     for (const id of ["0003", "0004"]) writeTask(f.root, `${id}-metrics`, taskMeta());
     for (const id of ["0001", "0002", "0003", "0004"]) {
       writeTaskMeta(f.load(), f.task(id), { feature: Number(id) < 3 ? "search" : "metrics", iteration: "v1.2", handoff: id === "0001" ? ["qa"] : [] });
@@ -165,6 +171,12 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
     expect(deliveryFor(f.task("0002"))?.reason).toContain("processing #0001");
     expect(deliveryFor(f.task("0004"))?.reason).toContain("processing #0003");
     const [first, other] = workers();
+    const load = () => loadProject(realpathSync(f.root));
+    for (const worker of [first!, other!]) {
+      expect(changeDesktopService(load(), f.client, "s1", { action: "start", name: "web", space: worker.labels["herdr.space"]! }))
+        .toMatchObject({ state: "starting" });
+    }
+    const services = f.terminals.filter(t => t.labels["team.session"] === "service");
     expect(first!.cwd).not.toBe(other!.cwd);
     expect(git(first!.cwd, "branch", "--show-current")).toBe("feature/v1.2/search");
     expect(showDesktopBinding(f.client, first!.labels["herdr.space"]!)).toMatchObject({ feature: "search@v1.2", checkout: first!.cwd });
@@ -199,12 +211,77 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
     const base = git(f.root, "branch", "--show-current");
     expect(finishFeature(f.load(), "search", "v1.2", { base, commit: sha })).toMatchObject({ commit: sha, tasks: ["0001", "0002"] });
     expect(git(f.root, "merge-base", "HEAD", sha)).toBe(sha);
-    const [result] = cleanDesktopTasks(f.load(), f.client, binding, undefined, ["0001", "0002"]);
+    const ignored = join(first!.cwd, ".herdr");
+    writeFileSync(ignored, "user file");
+    closeFinishedDesktopTaskAgents(f.load(), f.client, binding);
+    expect(first!.state).toBe("live");
+    expect(cleanDesktopTasks(load(), f.client, binding, undefined, ["0001"])[0]).toMatchObject({ action: "dirty" });
+    expect(services.every(service => service.state === "live")).toBe(true);
+    expect(f.appSpaces.some(space => space.id === first!.labels["herdr.space"])).toBe(true);
+    unlinkSync(ignored);
+    const [result] = cleanDesktopTasks(load(), f.client, binding, undefined, ["0001", "0002"]);
     expect(result).toMatchObject({ action: "removed" });
     expect(existsSync(first!.cwd)).toBe(false);
     expect(existsSync(other!.cwd)).toBe(true);
     expect(other!.state).toBe("live");
+    expect(f.terminals).not.toContain(services[0]!);
+    expect(services[1]!.state).toBe("live");
   } finally { f.cleanup(); }
+});
+
+test("Desktop services isolate feature ports and survive uncertain Core launch replies", async () => {
+  const f = fixture();
+  const servers: ReturnType<typeof Bun.serve>[] = [];
+  try {
+    for (const [id, feature] of [["0001", "search"], ["0002", "metrics"]] as const) {
+      writeTaskMeta(f.load(), f.task(id), { feature, iteration: "v1.2", handoff: [] });
+      dispatch(f.load(), f.runtime(), id);
+    }
+    const [, search, metrics] = f.terminals;
+    const searchSpace = search!.labels["herdr.space"]!, metricsSpace = metrics!.labels["herdr.space"]!;
+    const spec = join(f.root, "herdr-services.json");
+    writeFileSync(spec, JSON.stringify({ services: { web: { argv: ["bun", "dev", "--port", "{port}"] } } }));
+    const load = () => loadProject(realpathSync(f.root));
+    const change = (space: string, action: "start" | "stop" | "restart") =>
+      changeDesktopService(load(), f.client, "s1", { space, action, name: "web" });
+    const list = (space: string) => listDesktopServices(load(), f.client, space);
+    expect(() => change("s1", "start")).toThrow("local feature workspace");
+    expect(list(searchSpace).services).toEqual([{ name: "web", state: "stopped", declared: true }]);
+    const rpc = f.client.rpc;
+    f.client.rpc = <T>(method: string, params: Record<string, unknown>): T => {
+      const response = rpc<T>(method, params);
+      if (method === "terminal.run") throw new DesktopError("Core response was lost");
+      return response;
+    };
+    const started = change(searchSpace, "start");
+    f.client.rpc = rpc;
+    const web = f.terminals.at(-1)!;
+    expect(web.labels).not.toHaveProperty("herdr.space");
+    expect(web.cwd).toBe(search!.cwd);
+    const port = Number(web.labels["team.service_port"]);
+    expect(web.argv).toEqual(["bun", "dev", "--port", String(port)]);
+    expect(started).toMatchObject({ state: "starting", port });
+    expect(change(searchSpace, "start")).toEqual(started);
+    const other = change(metricsSpace, "start");
+    expect(other).not.toMatchObject({ port });
+    const otherWeb = f.terminals.at(-1)!;
+    expect(otherWeb.cwd).toBe(metrics!.cwd);
+    servers.push(Bun.serve({ hostname: "127.0.0.1", port, fetch: () => new Response("Search") }));
+    await reconcileDesktopServices(load(), "s1", () => f.client);
+    expect(list(searchSpace).services).toMatchObject([{ state: "running", url: `http://127.0.0.1:${port}/` }]);
+    expect(list(metricsSpace).services).toMatchObject([{ state: "starting" }]);
+    await servers.pop()!.stop(true);
+    expect(change(searchSpace, "restart")).toMatchObject({ state: "starting", port });
+    expect(f.terminals).not.toContain(web);
+    expect(f.terminals).toContain(otherWeb);
+    writeFileSync(spec, "{");
+    expect(list(searchSpace)).toMatchObject({ error: expect.stringContaining("Invalid JSON"), services: [{ declared: false }] });
+    expect(change(searchSpace, "stop")).toMatchObject({ state: "stopped" });
+    expect(f.terminals).toContain(otherWeb);
+    otherWeb.state = "finished";
+    await reconcileDesktopServices(load(), "s1", () => f.client);
+    expect(list(metricsSpace).services).toMatchObject([{ state: "failed", reason: "Service process exited" }]);
+  } finally { for (const server of servers) await server.stop(true); f.cleanup(); }
 });
 
 test.each(["idle", "done"])("Core sends to the resident lead in %s in the project Space", state => {
