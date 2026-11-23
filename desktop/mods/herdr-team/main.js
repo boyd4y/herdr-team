@@ -1,5 +1,5 @@
 import { View, div, image, svg } from "gpui-kit";
-import { Button, Popover, TextView, h_flex, v_flex } from "gpui-base";
+import { Button, Link, Popover, TextView, h_flex, v_flex } from "gpui-base";
 import { checking, closeOverlay, exec, focused, knownAgents, layout, nextCommand, openOverlay, panes, props, run, settings, spaces, terminals, theme, watchFolder, window } from "herdr";
 import { boardColumns, consoleBinding, filterInbox, flowNodes, groupIssues, INBOX_FILTERS, issueStatusLabel, iterationGroups, iterationVersion, listFilters, listTasks,
   roleRows, sameTeam, scopedTerminals, sortTasks, taskAssignee, taskDocument, taskFolder, taskReviewPhase, tasksForIteration, tasksWithIterations, teamSpace, waitingOn } from "./model.js";
@@ -34,6 +34,15 @@ function teamJson(result, command, type = "object") {
   const matches = type === "array" ? Array.isArray(value) : value && typeof value === "object" && !Array.isArray(value);
   if (!matches) throw new Error(`${command} returned invalid data. Refresh to retry.`);
   return value;
+}
+async function serviceCommand(panel, args, timeout) {
+  let result;
+  try {
+    result = await team(["service", ...args, "--space", panel.space, "--root", panel.root, "--json"], { on: null, timeout });
+  } catch {
+    throw new Error("Could not start the Herdr Team CLI.");
+  }
+  return teamJson(result, `service ${args[0]}`);
 }
 async function initializedProject(cwd) {
   const result = await team(["project", "show", "--json"], { cwd, timeout: 10000 });
@@ -323,9 +332,7 @@ export default class TeamConsole extends View {
     const request = panel.request = (panel.request ?? 0) + 1;
     cx.spawn(async cx => {
       try {
-        const result = await team(["service", "list", "--space", panel.space, "--root", panel.root, "--json"],
-          { cwd: panel.root, timeout: 10000 });
-        const status = teamJson(result, "service list");
+        const status = await serviceCommand(panel, ["list"], 10000);
         if (this.closed || this.servicePanel !== panel || panel.request !== request) return;
         panel.rows = status.services;
         panel.error = status.error;
@@ -344,9 +351,7 @@ export default class TeamConsole extends View {
     cx.notify();
     cx.spawn(async cx => {
       try {
-        const result = await team(["service", action, name, "--space", panel.space, "--root", panel.root, "--json"],
-          { cwd: panel.root, timeout: 50000 });
-        teamJson(result, `service ${action}`);
+        await serviceCommand(panel, [action, name], 50000);
       } catch (error) { panel.actionError = errorMessage(error); }
       finally {
         panel.pending.delete(name);
@@ -1391,9 +1396,11 @@ export default class TeamConsole extends View {
 
     const servicePanel = this.servicePanel;
     const services = servicePanel && (servicePanel.rows.length || servicePanel.error || servicePanel.actionError)
-      ? v_flex().id("workspace-services").flex_none().min_w(0).max_h(175).overflow_y_scrollbar()
+      ? v_flex().id("workspace-services").flex_none().min_w(0)
         .px(14).py(8).gap(5).bg(t.background).border_t(1).border_color(t.border)
-        .child(div().text_size(11.5).font_semibold().text_color(t.muted).child("Services"))
+        .child(h_flex().items_center().justify_between()
+          .child(div().text_size(11.5).font_semibold().text_color(t.muted).child("Services"))
+          .when(Boolean(servicePanel.error), el => el.child(actionButton("service-list-retry", "Retry", cx => this.loadServices(cx)))))
         .children([servicePanel.error, servicePanel.actionError].filter(Boolean)
           .map(message => div().text_size(11.5).text_color(t.blocked).child(message)))
         .children(servicePanel.rows.map(row => {
@@ -1408,12 +1415,13 @@ export default class TeamConsole extends View {
               .child(div().font_semibold().text_size(12).child(row.name))
               .child(pill(pending ? "Working…" : running ? "Running" : starting ? "Starting…" : failed ? "Failed" : "Stopped",
                 starting || pending ? t.working : running ? t.done : failed ? t.blocked : t.dim))
-              .when(Boolean(row.port && (running || starting)), el => el.child(div().text_size(11).font_family(mono).text_color(t.dim).child(String(row.port))))
+              .when(Boolean(row.port && starting), el => el.child(div().text_size(11).font_family(mono).text_color(t.dim).child(String(row.port))))
+              .when(Boolean(row.url && !pending), el => el.child(Link.new(`service-url-${row.name}`)
+                .href(row.url).text_size(11).font_family(mono).child(row.url)))
               .child(div().flex_1())
               .when(row.declared && !running && !starting, el => el.child(action("start", failed ? "Retry" : "Start")))
               .when(row.declared && running, el => el.child(action("restart", "Restart")))
-              .when(running || starting || failed, el => el.child(action("stop", "Stop")))
-              .when(Boolean(row.url), el => el.child(actionButton(`service-open-${row.name}`, "Open", cx => cx.open_url(row.url), false, pending))))
+              .when(running || starting || failed, el => el.child(action("stop", "Stop"))))
             .when(Boolean(row.reason), el => el.child(div().text_size(11).text_color(t.muted).child(row.reason)));
         }))
       : null;

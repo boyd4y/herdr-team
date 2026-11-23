@@ -37,5 +37,5 @@ export function teamArgv(args, platform, scope) {
   if (scope?.on ? windowsPath(scope.onFolder ?? scope.cwd) : platform === "windows") {
     return ["bun", "-e", windowsLauncher, "--", "herdr-team", ...args];
   }
-  return ["sh", "-c", 'PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH" exec herdr-team "$@"', "herdr-team", ...args];
+  return ["/bin/sh", "-c", 'PATH="$HOME/.bun/bin:$HOME/.local/bin${PATH:+:$PATH}:/usr/bin:/bin" exec herdr-team "$@"', "herdr-team", ...args];
 }

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { childPath, pathKey, teamArgv } from "../desktop/mods/herdr-team/platform.js";
@@ -28,12 +28,26 @@ test("Desktop Windows launchers pass arguments literally to the installed CLI", 
   const argv = teamArgv(args, "windows");
   assert.deepEqual(agentsArgv(args, "windows"), argv);
   assert.deepEqual(teamArgv(args, "macos", { on: "windows", onFolder: "C:/repo" }), argv);
-  assert.equal(teamArgv(args, "windows", { on: "linux", cwd: "/repo" })[0], "sh");
+  assert.equal(teamArgv(args, "windows", { on: "linux", cwd: "/repo" })[0], "/bin/sh");
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (key.toUpperCase() === "PATH") delete env[key];
   const result = spawnSync(process.execPath, ["--input-type=module", ...argv.slice(1)], { env: { ...env, PATH: `"${bin}"` }, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), args);
+});
+
+test("Desktop Unix launchers work before PATH includes the shell or Team CLI", { skip: process.platform === "win32" }, t => {
+  const home = mkdtempSync(join(tmpdir(), "Team Launcher 测试 "));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const bin = join(home, ".local", "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "herdr-team"), "#!/bin/sh\nprintf '%s\\n' \"$@\"\n", { mode: 0o755 });
+  const args = ["service", "list", "--root", "/repo with space"];
+  const argv = teamArgv(args, "macos");
+  assert.deepEqual(agentsArgv(args, "macos"), argv);
+  const result = spawnSync(argv[0], argv.slice(1), { env: { HOME: home, PATH: "" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+  assert.deepEqual(result.stdout.trimEnd().split("\n"), args);
 });
 
 test("task assignee uses native agent and launch model only for the recorded live delivery", () => {
