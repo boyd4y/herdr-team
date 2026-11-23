@@ -46,11 +46,10 @@ handoff and inbox recovery. It uses the same delivery IDs, task records,
 locks, dependency checks and exact-commit review gates as TUI execution. Each
 task owns a Git checkout; Core addresses are stored as `terminal`, never
 `pane_id`. New native processes receive their assignment in argv. Existing
-sessions can receive messages in `idle` or `done`. Team uses Core's atomic guard
-when available. With older Core versions, Team rechecks the owned `done` terminal
-just before using Core's regular send, which still checks for blocked input and
-respects drafts. The recheck and send are separate Core requests. A later
-delivery for a temporary role can start a new native
+sessions can receive messages in `idle` or `done`. For either status, Team
+rechecks the owned terminal and calls Core's regular `terminal.send`. Core
+checks for blocked input and respects drafts. The recheck and send are separate
+Core requests. A later delivery for a temporary role can start a new native
 conversation in the same checkout.
 If Core reports that a send did not start a new turn, the delivery becomes
 uncertain immediately. The original recipient can still claim it. The daemon

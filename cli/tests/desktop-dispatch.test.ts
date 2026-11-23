@@ -25,7 +25,7 @@ import { finishFeature } from "../scripts/lib/team/features.ts";
 import { addRequirement, editRequirements } from "../scripts/lib/team/requirements.ts";
 import { purgeProject } from "../scripts/lib/team/purge.ts";
 
-function fixture(core: { doneGuard?: boolean; started?: boolean } = {}) {
+function fixture(core: { started?: boolean } = {}) {
   const f = makeProject("project with spaces 中文");
   writeRole(f.root, "dev", { kind: "codex", worktree: true });
   writeRole(f.root, "qa", { kind: "claude", worktree: true });
@@ -62,12 +62,6 @@ function fixture(core: { doneGuard?: boolean; started?: boolean } = {}) {
     },
     rpc<T>(method: string, params: Record<string, any>): T {
       calls.push({ method, params });
-      if (method === "rpc.discover") {
-        const type = core.doneGuard ? "SendIf" : "IdleOrWorking";
-        return { methods: [{ name: "terminal.send", params: [{ name: "if", schema: { anyOf: [
-          { $ref: `#/components/schemas/${type}` }, { type: "null" },
-        ] } }] }], components: { schemas: { [type]: { enum: ["idle", "working", ...(core.doneGuard ? ["done"] : [])] } } } } as T;
-      }
       if (method === "doc.get") return structuredClone({ value: document, version }) as T;
       if (method === "doc.set") {
         expect(params.version).toBe(version); document = structuredClone(params.value); version++;
@@ -96,10 +90,6 @@ function fixture(core: { doneGuard?: boolean; started?: boolean } = {}) {
       }
       if (method === "terminal.send") {
         const terminal = terminals.find(terminal => terminal.address === params.terminal)!;
-        if (params.if !== undefined && params.if !== "idle" && !(core.doneGuard && params.if === "done")) {
-          throw new DesktopError("Unsupported guard", "invalid_params");
-        }
-        if (params.if !== undefined && terminal.status?.state !== params.if) throw new DesktopError("Busy", "status_mismatch");
         if (terminal.status?.state === "blocked" && !params.force) throw new DesktopError("Blocked", "blocked");
         if (core.started !== false) terminal.status = { state: "working" };
         return { turn: 1, started: core.started } as T;
@@ -236,14 +226,14 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
   } finally { f.cleanup(); }
 });
 
-test("older Core delivers to a settled resident lead in the project Space", () => {
-  const f = fixture();
+test.each(["idle", "done"])("Core sends to the resident lead in %s in the project Space", state => {
+  const f = fixture({ started: true });
   try {
     writeRole(f.root, "lead", { kind: "codex", worktree: false });
     writeTaskMeta(f.load(), f.task(), { role: "lead", feature: "search", iteration: "v1.2" });
     const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
     const terminal = f.terminals.find(item => item.address === lead.terminal)!;
-    terminal.status = { app: "codex", state: "done" };
+    terminal.status = { app: "codex", state };
     expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "dispatched" }]);
     const sends = f.calls.filter(call => call.method === "terminal.send");
     expect(sends).toMatchObject([{ params: { terminal: terminal.address } }]);
@@ -254,18 +244,18 @@ test("older Core delivers to a settled resident lead in the project Space", () =
     expect(deliveryFor(f.task())?.terminal).toBe(terminal.address);
     expect(terminal.labels["herdr.space"]).toBe("s1");
     expect(desktopWorktrees(f.root).some(tree => tree.branch === "feature/v1.2/search")).toBe(true);
-    f.claim("0001", terminal);
+    expect(f.claim("0001", terminal).duplicate).toBe(false);
   } finally { f.cleanup(); }
 });
 
-test("older Core leaves the delivery queued when the receiver starts working before send", () => {
+test("a receiver that starts working before send leaves the delivery queued", () => {
   const f = fixture();
   try {
     writeRole(f.root, "lead", { kind: "codex", worktree: false });
     writeTaskMeta(f.load(), f.task(), { role: "lead" });
     const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
     const terminal = f.terminals.find(item => item.address === lead.terminal)!;
-    terminal.status = { app: "codex", state: "done" };
+    terminal.status = { app: "codex", state: "idle" };
     const rpc = f.client.rpc;
     f.client.rpc = (method, params) => {
       if (method === "terminal.get" && params.terminal === terminal.address) terminal.status!.state = "working";
@@ -275,26 +265,10 @@ test("older Core leaves the delivery queued when the receiver starts working bef
     const delivery = deliveryFor(f.task())!;
     expect(f.calls.some(call => call.method === "terminal.send")).toBe(false);
     f.client.rpc = rpc;
-    terminal.status.state = "idle";
+    terminal.status.state = "done";
     expect(pumpQueue(f.load(), f.runtime())).toMatchObject([{ state: "submitted" }]);
     expect(deliveryFor(f.task())?.id).toBe(delivery.id);
-    expect(f.calls.filter(call => call.method === "terminal.send")).toMatchObject([{ params: { terminal: terminal.address, if: "idle" } }]);
-  } finally { f.cleanup(); }
-});
-
-test("a resident reporting done uses the advertised atomic Core guard", () => {
-  const f = fixture({ doneGuard: true, started: true });
-  try {
-    writeRole(f.root, "lead", { kind: "codex", worktree: false });
-    writeTaskMeta(f.load(), f.task(), { role: "lead" });
-    const lead = desktopUp(f.load(), f.client).roles.find(role => role.role === "lead")!;
-    const terminal = f.terminals.find(item => item.address === lead.terminal)!;
-    terminal.status = { app: "codex", state: "done" };
-    expect(dispatch(f.load(), f.runtime(), "0001")).toMatchObject([{ action: "dispatched" }]);
-    expect(deliveryFor(f.task())).toMatchObject({ state: "submitted", terminal: terminal.address });
-    expect(f.calls.filter(call => call.method === "terminal.send")).toMatchObject([{ params: { terminal: terminal.address, if: "done" } }]);
-    expect(f.claim("0001", terminal).duplicate).toBe(false);
-    expect(f.terminals.filter(item => item.labels["team.role"] === "lead")).toHaveLength(1);
+    expect(f.calls.filter(call => call.method === "terminal.send")).toMatchObject([{ params: { terminal: terminal.address } }]);
   } finally { f.cleanup(); }
 });
 
@@ -639,7 +613,7 @@ test("Dispatch pins the inherited feature iteration before the issue can be resc
   } finally { f.cleanup(); }
 });
 
-test("Desktop AgentMail notification uses the bound resident terminal and Core's idle guard", () => {
+test("Desktop AgentMail notifies the bound resident terminal once it is ready", () => {
   const f = fixture();
   try {
     writeRole(f.root, "lead", { kind: "codex", worktree: false });
@@ -658,7 +632,8 @@ test("Desktop AgentMail notification uses the bound resident terminal and Core's
     notifyMail(project, f.runtime(), "s1");
     const sends = f.calls.filter(call => call.method === "terminal.send");
     expect(sends).toHaveLength(1);
-    expect(sends[0]!.params).toMatchObject({ terminal: "caller", if: "idle" });
+    expect(sends[0]!.params).toMatchObject({ terminal: "caller" });
+    expect(sends[0]!.params).not.toHaveProperty("if");
     expect(sends[0]!.params.text).toContain(mailId(inbox, message));
     expect(sends[0]!.params.text).not.toContain("private message");
     expect(listMail(projectId, "lead")).toMatchObject([{ state: "notified" }]);
@@ -781,7 +756,7 @@ test("local review sends uncommitted Feature changes and returns to a new develo
   } finally { f.cleanup(); }
 });
 
-test("a busy receiving role stays queued and drains with an atomic idle guard", () => {
+test("a busy receiving role stays queued and drains when idle", () => {
   const f = fixture();
   try {
     writeTaskMeta(f.load(), f.task(), { handoff: ["qa", "dev"] });
@@ -795,7 +770,7 @@ test("a busy receiving role stays queued and drains with an atomic idle guard", 
     f.terminals[1]!.status = { state: "idle" };
     pumpQueue(f.load(), f.runtime());
     expect(deliveryFor(f.task())!.state).toBe("submitted");
-    expect(f.calls.find(call => call.method === "terminal.send")!.params.if).toBe("idle");
+    expect(f.calls.filter(call => call.method === "terminal.send")).toHaveLength(1);
     expect(f.calls.filter(call => call.method === "terminal.run")).toHaveLength(2);
   } finally { f.cleanup(); }
 });
