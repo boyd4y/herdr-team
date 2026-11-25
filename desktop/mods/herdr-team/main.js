@@ -642,23 +642,29 @@ export default class TeamConsole extends View {
             this.follow(cx, true);
             return;
           }
-          const folder = childPath(setup.root, ".herdr");
-          const key = pathKey(folder), record = pathKey(childPath(folder, "desktop.json"));
+          const folder = await teamStateFolder({ cwd: setup.root, timeout: 10000 }).catch(() => null);
+          if (!current()) return;
           const watching = () => !this.closed && this.place?.id === setup.space && !this.binding;
           this.setupWatch?.cancel();
-          cx.spawn(async cx => {
-            while (watching()) {
-              const pending = this.setupWatch = watchFolder(folder);
+          if (absolutePath(folder)) {
+            const key = pathKey(folder), teams = pathKey(childPath(folder, "teams"));
+            let pending = this.setupWatch = watchFolder(folder);
+            cx.spawn(async cx => {
               try {
-                const paths = await pending;
-                if (!paths.length || !watching() || this.setupWatch !== pending) break;
-                if (paths.map(pathKey).some(path => path === key || path === record)) {
-                  this.follow(cx, true); break;
+                while (watching()) {
+                  const paths = await pending;
+                  if (!paths.length || !watching() || this.setupWatch !== pending) break;
+                  pending = this.setupWatch = watchFolder(folder);
+                  if (paths.map(pathKey).some(path => path === key || path === teams ||
+                      path.startsWith(teams + "/") && path.endsWith(".json"))) this.follow(cx, true);
                 }
-              } catch { break; }
-              finally { if (this.setupWatch === pending) this.setupWatch = null; }
-            }
-          });
+              } catch { /* Space and terminal updates can also refresh the binding. */ }
+              finally {
+                pending.cancel();
+                if (this.setupWatch === pending) this.setupWatch = null;
+              }
+            });
+          }
           this.launchTeam(setup);
         }
       } catch (error) { setup.error = String(error); }

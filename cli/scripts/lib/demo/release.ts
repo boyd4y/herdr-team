@@ -10,7 +10,7 @@ import { tasksUsingRole } from "../team/roles.ts";
 import { integrationFor, verifyCheckout } from "../tasks/verification.ts";
 import { findTask, writeTaskMeta } from "../tasks/cards.ts";
 import type { TaskCard } from "../shared/types.ts";
-import { realDesktop, savedDesktopBinding, type DesktopTerminal } from "../runtime/desktop.ts";
+import { realDesktop, projectDesktopBinding, type DesktopTerminal } from "../runtime/desktop.ts";
 import { managedContext } from "../runtime/context.ts";
 import { wakeDaemon } from "../runtime/daemon.ts";
 import { logDaemon } from "../runtime/daemon-log.ts";
@@ -122,7 +122,7 @@ export interface ReleaseOptions {
 
 export async function runRelease(root: string, options: ReleaseOptions) {
   const { area, version, fast, lanes, scenario } = options;
-  const binding = scenario ? savedDesktopBinding({ root }) : null;
+  const binding = scenario ? projectDesktopBinding({ root }, realDesktop()) : null;
   if (scenario && (lanes.length !== 1 || !binding)) throw new Error("The manual merge smoke requires one task in a bound Desktop project");
   const originalHead = scenario ? command(["git", "rev-parse", "HEAD"], root).stdout : null;
   const expectation = scenario ? smokeFixtures[scenario.fixture].expectation : "The fixture matches its declared contract.";

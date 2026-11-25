@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, symlinkSync } from "node:fs";
+import { existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { desktopAgentProgram, desktopUp, bindDesktop, registeredDesktopBinding, showDesktopBinding, unbindDesktop, type DesktopClient, type DesktopTerminal } from "../scripts/lib/runtime/desktop.ts";
+import { desktopAgentProgram, desktopUp, bindDesktop, projectDesktopBinding, registeredDesktopBinding, showDesktopBinding, unbindDesktop, type DesktopClient, type DesktopTerminal } from "../scripts/lib/runtime/desktop.ts";
 import { callerSpace, managedContext } from "../scripts/lib/runtime/context.ts";
 import { loadProject } from "../scripts/lib/team/project.ts";
 import { makeProject, writeRole } from "./helpers.ts";
@@ -77,8 +77,10 @@ test("up binds persistently, reuses one resident, defers isolated roles and leav
     const project = loadProject(f.root);
     const initial = desktopUp(project, f.client, { space: "space-one" });
     expect(initial.roles.map(role => [role.role, role.action])).toEqual([["developer", "deferred"], ["lead", "started"]]);
-    const saved = JSON.parse(readFileSync(join(f.root, ".herdr/desktop.json"), "utf8"));
+    const saved = initial.binding;
     expect(showDesktopBinding(f.client, "space-one")).toEqual(saved);
+    expect(projectDesktopBinding(project, f.client)).toEqual(saved);
+    expect(existsSync(join(f.root, ".herdr/desktop.json"))).toBe(false);
     expect(f.terminals[0]!.argv).toContain("--no-daemon");
     const trust = f.terminals[0]!.argv.find(arg => arg.startsWith("projects="))!;
     expect(Bun.TOML.parse(trust)).toEqual({ projects: { [saved.root]: { trust_level: "trusted" } } });
@@ -97,6 +99,28 @@ test("up binds persistently, reuses one resident, defers isolated roles and leav
     unbindDesktop(project, f.client);
     expect(showDesktopBinding(f.client, "space-one")).toBeNull();
   } finally { f.cleanup(); }
+});
+
+test("different Cores bind clones independently even with a copied Desktop binding file", () => {
+  const f = fixture(), other = fixture();
+  try {
+    other.space.id = "space-two";
+    const first = bindDesktop(f, f.client, f.space.id);
+    const legacy = join(other.root, ".herdr/desktop.json");
+    const original = JSON.stringify(first);
+    writeFileSync(legacy, original);
+
+    expect(projectDesktopBinding(other, other.client)).toBeNull();
+    const second = bindDesktop(other, other.client, other.space.id);
+    expect(projectDesktopBinding(other, other.client)).toEqual(second);
+    expect(projectDesktopBinding(f, f.client)).toEqual(first);
+    expect(second.root).not.toBe(first.root);
+    expect(second.space).not.toBe(first.space);
+    unbindDesktop(other, other.client);
+    expect(projectDesktopBinding(other, other.client)).toBeNull();
+    expect(projectDesktopBinding(f, f.client)).toEqual(first);
+    expect(readFileSync(legacy, "utf8")).toBe(original);
+  } finally { f.cleanup(); other.cleanup(); }
 });
 
 test("Desktop up binds an initialized project with no roles and launches no agents", () => {

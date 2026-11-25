@@ -126,6 +126,7 @@ CLI 输出、错误和生成的默认指令保持英文，无需多语言支持�
 
 同一项目一个主 workspace，任务各有工作区；以项目 root、归属 token、checkout 身份和返回的 workspace ID 为准，
 侧栏名称相同不代表同一个项目。CLI 串行执行同项目 up，复用已有主 workspace 和运行中的角色。
+每台机器在自己的 Core 中绑定本机检出路径和 Space。跨机器协作用各自的绑定；从远程 Space 中的终端可用 `herdr-team space bind --core` 登记。
 归属冲突、重复候选或启动结果不明时先查看实际 workspace/pane 与原命令结果；保留现场，不重复创建或自行合并/关闭工作区。
 从任务 worktree 打开 Console 也必须落在主 workspace；主 workspace 不存在时先由协调会话 up，不把任务工作区临时改成主工作区。
 

@@ -31,7 +31,7 @@ import { canonicalKind, CARD_DISPOSITIONS, isRoleLifecycle, isTaskInactive, NAME
 import { confirmedFeatures, FeatureError, featureKey, finishFeature, scopeFor, validateFeature } from "./lib/team/features.ts";
 import { callerSpace, managedContext } from "./lib/runtime/context.ts";
 import { readProxyEnv } from "./lib/runtime/agent-env.ts";
-import { bindDesktop, desktopDown, desktopUp, DesktopError, realDesktop, registeredDesktopBinding, savedDesktopBinding, showDesktopBinding, unbindDesktop, type DesktopTerminal } from "./lib/runtime/desktop.ts";
+import { bindDesktop, desktopDown, desktopUp, DesktopError, realDesktop, registeredDesktopBinding, projectDesktopBinding, showDesktopBinding, unbindDesktop, type DesktopTerminal } from "./lib/runtime/desktop.ts";
 import { withTeamLock } from "./lib/runtime/state.ts";
 import { desktopTaskRuntime, syncDesktopTaskSpaces, type DesktopTaskRuntime } from "./lib/runtime/desktop-dispatch.ts";
 import { taskRuntime } from "./lib/dispatch/runtime.ts";
@@ -807,7 +807,7 @@ function cmdStatus(args: string[], name = "status"): number {
   const context = process.env["HC_TERMINAL_ID"] ? managedContext() : null;
   if (context?.kind === "desktop") {
     const client = realDesktop();
-    const binding = savedDesktopBinding(project);
+    const binding = projectDesktopBinding(project, client);
     if (!binding || showDesktopBinding(client, binding.space)?.root !== binding.root) throw new DesktopError("No valid project space binding; run up first");
     const agents = client.rpc<{ terminals: DesktopTerminal[] }>("terminal.list", { labels: { "team.project": binding.root, "team.owner_space": binding.space } }).terminals;
     const result = { binding, agents, tasks: project.tasks.filter(task => parsed.flags.has("all") || !isTaskInactive(task)).map(cardForJson) };
@@ -1123,7 +1123,7 @@ function cmdSpace(args: string[]): number {
   }
   const root = resolveRoot(parsed.values.get("root"));
   if (operation === "show") {
-    const saved = savedDesktopBinding({ root });
+    const saved = projectDesktopBinding({ root }, client);
     const binding = saved ? showDesktopBinding(client, saved.space) : null;
     const view = binding && isDesktopDemo(binding.root) ? { ...binding, demo: true } : binding;
     return out(parsed, { binding: view }, binding ? `${binding.space}  ${binding.root}` : "No team bound to this project.");
@@ -1228,7 +1228,7 @@ async function cmdDown(args: string[], name = "down"): Promise<number> {
     if (parsed.flags.has("workspace")) throw new DesktopError("Desktop down cannot close a space");
     const client = realDesktop();
     desktopTaskRuntime(project, client, context.caller);
-    const binding = savedDesktopBinding(project)!;
+    const binding = projectDesktopBinding(project, client)!;
     const demoService = join(root, ".herdr", "demo", "service");
     const endpoint = daemonEndpoint(context.kind);
     // The registration lock excludes a concurrent daemon pass or up until

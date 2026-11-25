@@ -3,7 +3,7 @@ import { closeSync, mkdirSync, openSync, realpathSync, unlinkSync } from "node:f
 import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 import { callerSpace, managedContext } from "../cli/scripts/lib/runtime/context.ts";
-import { realDesktop, savedDesktopBinding } from "../cli/scripts/lib/runtime/desktop.ts";
+import { realDesktop, projectDesktopBinding } from "../cli/scripts/lib/runtime/desktop.ts";
 import { runRelease } from "../cli/scripts/lib/demo/release.ts";
 import { selectSmokeScenario, smokeChecks, smokeFixtures } from "../cli/scripts/lib/demo/scenario.ts";
 import { command } from "../cli/scripts/lib/demo/shared.ts";
@@ -32,7 +32,7 @@ if (!version) throw new Error(usage);
 const root = realpathSync(process.cwd());
 const context = managedContext();
 if (basename(root) !== "herdr-team-test" || context.kind !== "desktop" ||
-    savedDesktopBinding({ root })?.space !== callerSpace(context.caller, realDesktop())) {
+    projectDesktopBinding({ root }, realDesktop())?.space !== callerSpace(context.caller, realDesktop())) {
   throw new Error("Run from the main Desktop Space of the registered herdr-team-test project");
 }
 if (command(["git", "branch", "--show-current"], root).stdout !== "main" ||

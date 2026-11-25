@@ -3,6 +3,7 @@ import { expect, mock, test } from "bun:test";
 const machines: (string | null)[] = [];
 const requests: string[][] = [];
 const respond: ((value: object) => void)[] = [];
+const folderWatches: { path: string; changed: (paths: string[]) => void }[] = [];
 const unused = () => { throw new Error("Unexpected host operation"); };
 
 mock.module("gpui-kit", () => ({ View: class {}, div: unused, image: unused, svg: unused }));
@@ -10,7 +11,13 @@ mock.module("gpui-base", () => ({ Button: {}, Link: {}, Popover: {}, TextView: {
 mock.module("herdr", () => ({
   checking: unused, closeOverlay: unused, focused: unused, knownAgents: unused, layout: unused, nextCommand: unused,
   openOverlay: unused, panes: unused, props: unused, run: unused, settings: unused, spaces: unused, terminals: unused,
-  theme: unused, watchFolder: unused, window: () => ({ platform: "macos" }),
+  theme: unused, window: () => ({ platform: "macos" }),
+  watchFolder(path: string) {
+    let changed!: (paths: string[]) => void;
+    const pending = new Promise<string[]>(resolve => { changed = resolve; });
+    folderWatches.push({ path, changed });
+    return Object.assign(pending, { cancel: () => changed([]) });
+  },
   exec(_program: string, args: string[], { on }: { on: string | null }) {
     machines.push(on);
     requests.push(args);
@@ -20,7 +27,37 @@ mock.module("herdr", () => ({
 
 const { default: TeamConsole } = await import("../../desktop/mods/herdr-team/main.js");
 
+test("Desktop Up refreshes its binding when Core setup registers the local daemon", async () => {
+  const index = respond.length, watchIndex = folderWatches.length;
+  const jobs: Promise<void>[] = [];
+  const cx = { spawn(job: (context: typeof cx) => Promise<void>) { jobs.push(job(cx)); }, notify() {} };
+  const panel = new TeamConsole();
+  panel.place = { id: "space" };
+  panel.target = () => ({ space: { id: "space" } });
+  panel.setup = { action: "up", root: "/repo", space: "space" };
+  let launched = false, refreshed = false;
+  panel.launchTeam = () => {
+    expect(folderWatches[watchIndex]?.path).toBe("/local/team-runtime");
+    launched = true;
+  };
+  panel.follow = (_cx, force) => {
+    refreshed = force;
+    panel.binding = { root: "/repo", space: "space", machine: null };
+  };
+  panel.setupAction(cx);
+  respond[index]!({});
+  await new Promise(resolve => setImmediate(resolve));
+  respond[index + 1]!({ directory: "/local/team-runtime" });
+  await jobs[0];
+  expect(launched).toBe(true);
+  folderWatches[watchIndex]!.changed(["/local/team-runtime/teams/project.json"]);
+  await jobs[1];
+  expect(refreshed).toBe(true);
+  expect(panel.setupWatch).toBeNull();
+});
+
 test("leaving a remote Space discards its pending Inbox response", async () => {
+  const index = respond.length;
   const jobs: Promise<void>[] = [];
   const cx = { spawn(job: (context: typeof cx) => Promise<void>) { jobs.push(job(cx)); }, notify() {} };
   const panel = new TeamConsole();
@@ -35,10 +72,10 @@ test("leaving a remote Space discards its pending Inbox response", async () => {
   panel.binding = { root: "/same/path", space: "sp", machine: null };
   panel.loadInbox(cx);
 
-  expect(machines).toEqual(["remote", null]);
-  respond[1]!([{ title: "Local Inbox" }]);
+  expect(machines.slice(index)).toEqual(["remote", null]);
+  respond[index + 1]!([{ title: "Local Inbox" }]);
   await jobs[1];
-  respond[0]!([{ title: "Remote Inbox" }]);
+  respond[index]!([{ title: "Remote Inbox" }]);
   await jobs[0];
   expect(panel.inboxRows).toEqual([{ title: "Local Inbox" }]);
 });

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, win32 } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { withTeamLock } from "./state.ts";
@@ -221,24 +221,22 @@ export function ensureDesktopTaskSpace(project: Pick<Project, "root">, client: D
   });
 }
 
-function bindingFile(root: string) { return join(root, ".herdr", "desktop.json"); }
+function bindingAtRoot(registry: Registry, root: string): DesktopBinding | null {
+  const records = Object.values(registry.spaces).filter(binding => binding.root === root);
+  if (records.length > 1) throw new DesktopError("Multiple Desktop spaces are bound to this project; inspect the Core registry");
+  return records[0] ?? null;
+}
 
-export function savedDesktopBinding(project: Pick<Project, "root">): DesktopBinding | null {
-  if (!existsSync(bindingFile(project.root))) return null;
-  const binding = JSON.parse(readFileSync(bindingFile(project.root), "utf8")) as DesktopBinding;
-  if (!binding || binding.root !== realpathSync(project.root) || binding.machine !== null || typeof binding.space !== "string" || !binding.space || binding.space.includes("/")) {
-    throw new DesktopError(`Invalid saved Desktop binding: ${bindingFile(project.root)}`);
-  }
-  return binding;
+export function projectDesktopBinding(project: Pick<Project, "root">, client: DesktopClient): DesktopBinding | null {
+  return bindingAtRoot(readRegistry(client).value, realpathSync(project.root));
 }
 
 /** Persist under a project lock and Core's document compare-and-swap; never bind by name/cwd. */
 export function bindDesktop(project: Pick<Project, "root">, client: DesktopClient, explicitSpace?: string, coreCaller?: DesktopTerminal): DesktopBinding {
   const root = realpathSync(project.root);
-  const saved = savedDesktopBinding(project);
   const registry = readRegistry(client);
-  const recorded = Object.values(registry.value.spaces).filter(binding => binding.root === root);
-  const id = coreCaller ? coreCaller.labels["herdr.space"] : explicitSpace ?? saved?.space ?? (recorded.length === 1 ? recorded[0]!.space : undefined);
+  const recorded = bindingAtRoot(registry.value, root);
+  const id = coreCaller ? coreCaller.labels["herdr.space"] : explicitSpace ?? recorded?.space;
   if (!id) throw new DesktopError("No space binding or verified caller space; run up from the project's Herdr terminal");
   // A remote Core may have no window process. Its verified caller has the
   // machine-local Space ID assigned by the Desktop window that opened it.
@@ -247,7 +245,7 @@ export function bindDesktop(project: Pick<Project, "root">, client: DesktopClien
       throw new DesktopError("Bind from a live terminal in the intended Space on this Core");
     }
   } else localSpace(client, id);
-  if (saved && saved.space !== id || recorded.some(binding => binding.space !== id)) {
+  if (recorded && recorded.space !== id) {
     throw new DesktopError("This project is already bound to another Desktop space; explicitly unbind it before moving the team");
   }
   const existing = registry.value.spaces[id];
@@ -258,28 +256,20 @@ export function bindDesktop(project: Pick<Project, "root">, client: DesktopClien
       ...registry.value, spaces: { ...registry.value.spaces, [id]: binding },
     } });
   }
-  // Core's registry is authoritative. A retry can repair a missing local convenience record.
-  if (!saved) {
-    const temporary = `${bindingFile(root)}.${process.pid}.tmp`;
-    writeFileSync(temporary, `${JSON.stringify(binding, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-    renameSync(temporary, bindingFile(root));
-  }
   return binding;
 }
 
 export function unbindDesktop(project: Pick<Project, "root">, client: DesktopClient): void {
-  const saved = savedDesktopBinding(project);
-  if (!saved) throw new DesktopError("No saved space binding for this project");
   const registry = readRegistry(client);
-  const current = registry.value.spaces[saved.space];
-  if (current && current.root !== saved.root) throw new DesktopError("Conflicting space binding; preserving both records");
+  const root = realpathSync(project.root);
+  const saved = bindingAtRoot(registry.value, root);
+  if (!saved) throw new DesktopError("No Core space binding for this project");
   const live = client.rpc<{ terminals: Terminal[] }>("terminal.list", { labels: { "team.project": saved.root, "team.owner_space": saved.space } }).terminals;
   if (live.some(terminal => terminal.state === "live")) throw new DesktopError("Team terminals are still live; refusing to orphan their space binding");
   const spaces = { ...registry.value.spaces };
   delete spaces[saved.space];
   const tasks = Object.fromEntries(Object.entries(registry.value.tasks ?? {}).filter(([, task]) => task.owner_space !== saved.space));
-  if (current) client.rpc("doc.set", { name: desktopDocument, version: registry.version, value: { ...registry.value, spaces, ...(registry.value.tasks ? { tasks } : {}) } });
-  unlinkSync(bindingFile(project.root));
+  client.rpc("doc.set", { name: desktopDocument, version: registry.version, value: { ...registry.value, spaces, ...(registry.value.tasks ? { tasks } : {}) } });
 }
 
 export function roleArgv(role: RoleCard, client: DesktopClient) {
@@ -353,7 +343,7 @@ export function desktopUp(project: Project, client: DesktopClient, options: { sp
   return withTeamLock(project, "desktop", () => {
     // Validate every resident launch before binding or starting any program.
     const commands = new Map(project.roles.filter(startsResident).map(role => [role.name, roleArgv(role, client)]));
-    const existingBinding = savedDesktopBinding(project);
+    const existingBinding = projectDesktopBinding(project, client);
     const binding = bindDesktop(project, client, existingBinding ? undefined : options.space);
     const live = client.rpc<{ terminals: Terminal[] }>("terminal.list", {}).terminals
       .filter(terminal => terminal.state === "live" && !terminal.address.includes("/"));

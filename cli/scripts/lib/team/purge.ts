@@ -5,7 +5,7 @@ import { acquireRunLock, isDesktopDemo } from "../demo/launch.ts";
 import { deliveryFor, deliveryState } from "../dispatch/delivery.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
 import { daemonDirectory, readDaemonTeam, withRegistration } from "../runtime/daemon-binding.ts";
-import { realDesktop, savedDesktopBinding } from "../runtime/desktop.ts";
+import { realDesktop, projectDesktopBinding } from "../runtime/desktop.ts";
 import { cleanDesktopTasksForPurge } from "../runtime/desktop-cleanup.ts";
 import { desktopWorktrees } from "../runtime/desktop-worktrees.ts";
 import { processAlive, runtimePath, withTeamLock } from "../runtime/state.ts";
@@ -95,17 +95,25 @@ function purgePlan(root: string, demo: string | undefined, dryRun: boolean, forc
   }
   if (unfinished.length) blockers.push(`Tasks with unfinished delivery or integration: ${unfinished.join(", ")}. Use --force to discard them after stopping the team.`);
   const reclaim = new Set<string>();
-  const binding = force && !blockers.length && project.tasks.length ? savedDesktopBinding(project) : null;
   let desktop: ReturnType<typeof realDesktop> | undefined;
+  if (force && !blockers.length && project.tasks.length) {
+    const mayOwnDesktop = readDaemonTeam(current, true)?.kind === "desktop" ||
+      project.tasks.some(task => deliveryFor(task)?.runtime === "desktop") ||
+      ["desktop/tasks", "desktop/features"].some(directory => {
+        const path = runtimePath(project, directory);
+        return ensurePath(path, "directory") && readdirSync(path).length > 0;
+      });
+    if (mayOwnDesktop) desktop = desktopClient();
+  }
+  const binding = desktop ? projectDesktopBinding(project, desktop) : null;
   if (force && !blockers.length) {
     const unverified = project.tasks.filter(task => {
       const delivery = deliveryFor(task);
       return delivery?.pane_id || delivery?.runtime === "desktop" && delivery.space !== binding?.space;
     });
     if (unverified.length) blockers.push(`Cannot verify the assignment runtime for ${unverified.map(task => `#${task.id}`).join(", ")}. Reconcile these deliveries in their original workspace.`);
-    if (binding && !blockers.length) {
+    if (desktop && binding && !blockers.length) {
       try {
-        desktop = desktopClient();
         for (const item of cleanDesktopTasksForPurge(project, desktop, binding, true)) {
           if (item.action !== "removed" && item.action !== "absent") blockers.push(`#${item.id} ${item.note}`);
           for (const path of item.paths ?? []) reclaim.add(path);

@@ -27,7 +27,7 @@ test("Windows Team bindings and file watches accept drive and UNC paths", () => 
   const binding = { space: "main", view_space: "worktree", task: "0001", machine: null, root, checkout: "\\\\server\\share\\worktree" };
   assert.deepEqual(consoleBinding(binding, space), { root, space: "main", machine: null });
   assert.throws(() => consoleBinding({ ...binding, checkout: "D:worktree" }, space), /Invalid project space binding/);
-  assert.equal(pathKey(childPath("C:/Dev Space/项目", ".herdr/desktop.json")), `${pathKey(root)}/.herdr/desktop.json`);
+  assert.equal(pathKey(childPath("C:/Dev Space/项目", ".herdr/tasks")), `${pathKey(root)}/.herdr/tasks`);
   assert.equal(pathKey("\\\\?\\UNC\\server\\share\\worktree"), pathKey(binding.checkout));
 });
 

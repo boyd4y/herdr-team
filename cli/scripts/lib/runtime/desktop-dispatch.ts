@@ -8,7 +8,7 @@ import { acceptanceFor, reviewFor, taskEnvironment, taskRepo, taskScoped, verify
 import { CORE_RECEIVER_CHANGED, CORE_START_UNCONFIRMED, completedDeliveries, deliveryFor, finishedAssignment, type Delivery } from "../dispatch/delivery.ts";
 import { DeliveryRejected, type DeliveryTarget, type Receiver, type TaskRuntime } from "../dispatch/runtime.ts";
 import type { CleanupResult } from "../dispatch/cleanup.ts";
-import { DesktopError, desktopAgentProgram, desktopLaunchArgv, desktopProgramMatches, desktopTaskSpaces, ensureDesktopTaskSpace, registeredDesktopBinding, roleArgv, savedDesktopBinding, showDesktopBinding, terminalMatchesWorkspace, type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
+import { DesktopError, desktopAgentProgram, desktopLaunchArgv, desktopProgramMatches, desktopTaskSpaces, ensureDesktopTaskSpace, registeredDesktopBinding, roleArgv, projectDesktopBinding, showDesktopBinding, terminalMatchesWorkspace, type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
 import { callerSpace } from "./context.ts";
 import { withTeamLock } from "./state.ts";
 import { findTask } from "../tasks/cards.ts";
@@ -119,9 +119,9 @@ export function closeFinishedDesktopTaskAgents(project: Project, client: Desktop
 export function desktopTaskRuntime(project: Project, client: DesktopClient, caller: DesktopTerminal | undefined,
   options: { registeredSpace?: string; proxyEnv?: Record<string, string> } = {}): DesktopTaskRuntime {
   const { registeredSpace, proxyEnv = {} } = options;
-  const binding = savedDesktopBinding(project);
+  const binding = projectDesktopBinding(project, client);
   if (!binding || (registeredSpace
-    ? registeredSpace !== binding.space || registeredDesktopBinding(client, binding.space)?.root !== binding.root
+    ? registeredSpace !== binding.space
     : showDesktopBinding(client, binding.space)?.root !== binding.root)) {
     throw new DesktopError("No valid project space binding; run herdr-team up first");
   }
@@ -311,7 +311,7 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
 /** Attach existing owned task terminals to native worktree spaces, without input or process changes. */
 export function syncDesktopTaskSpaces(project: Project, client: DesktopClient, id?: string) {
   return withTeamLock(project, "queue", () => {
-    const binding = savedDesktopBinding(project);
+    const binding = projectDesktopBinding(project, client);
     if (!binding || showDesktopBinding(client, binding.space)?.root !== binding.root) throw new DesktopError("No valid parent team binding; run up first");
     const tasks = id ? [findTask(project, id)] : project.tasks;
     const live = client.rpc<{ terminals: DesktopTerminal[] }>("terminal.list", { labels: { "team.project": binding.root, "team.owner_space": binding.space } }).terminals;

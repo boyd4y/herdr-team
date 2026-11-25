@@ -154,8 +154,8 @@ machine name and its qualified Space ID (`machine/space-id`).
 The Team Panel follows the selected Space's machine. With the shared `herdr-team`
 CLI installed on that machine, it reads Tasks, Issues, and Inbox for the bound
 project. On a remote host, run `herdr-team space bind --core` once from the project's
-terminal in that Space. This connects the view through that host's Core registry
-without requiring a Desktop window there. Remote task and issue views are read-only.
+terminal in that Space. Each Core stores the binding for its own checkout and
+Space, including when that host has no Desktop window. Remote task and issue views are read-only.
 The panel loads remote records on entry or **Refresh**, and opening an email records
 its read status on that machine. Local `.herdr/` changes use `watchFolder`, with
 **Refresh** also available. Core terminal status updates reactively on both.

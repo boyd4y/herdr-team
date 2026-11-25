@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { projectKey } from "../dispatch/team-scope.ts";
 import { featureWorkspace, workspaceKey, type Project } from "../shared/types.ts";
 import { realHerdr } from "./herdr.ts";
-import { realDesktop, registeredDesktopBinding, savedDesktopBinding } from "./desktop.ts";
+import { realDesktop, projectDesktopBinding } from "./desktop.ts";
 import type { ManagedContext } from "./context.ts";
 import { closeFinishedDesktopTaskAgents, desktopTaskRuntime } from "./desktop-dispatch.ts";
 import { cleanDesktopTasks } from "./desktop-cleanup.ts";
@@ -230,19 +230,14 @@ export function registeredRuntime(project: Project, team: DaemonTeam) {
     }
     return { ...herdr, envOk: () => true };
   }
-  const client = realDesktop();
-  const binding = savedDesktopBinding(project);
-  if (binding?.space !== team.space || binding.root !== team.root) throw new Error("Registered Desktop binding changed");
-  return desktopTaskRuntime(project, client, undefined, { registeredSpace: team.space, proxyEnv: team.proxyEnv });
+  return desktopTaskRuntime(project, realDesktop(), undefined, { registeredSpace: team.space, proxyEnv: team.proxyEnv });
 }
 
 export function closeRegisteredDesktopTaskAgents(project: Project, team: DaemonTeam): void {
   if (team.kind !== "desktop" || team.endpoint !== daemonEndpoint("desktop")) throw new Error("Registered Desktop Core instance changed");
   const client = realDesktop();
-  const binding = savedDesktopBinding(project);
-  const space = registeredDesktopBinding(client, team.space);
-  if (!binding || binding.space !== team.space || binding.root !== team.root ||
-      space?.root !== binding.root || space.space !== binding.space || space.view_space) {
+  const binding = projectDesktopBinding(project, client);
+  if (binding?.space !== team.space || binding.root !== team.root) {
     throw new Error("Registered Desktop binding changed");
   }
   closeFinishedDesktopTaskAgents(project, client, binding);
