@@ -11,7 +11,7 @@ import { changeDesktopService, listDesktopServices, reconcileDesktopServices } f
 import { featurePorts } from "../scripts/lib/runtime/service-ports.ts";
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, pumpQueue, queueRows } from "../scripts/lib/dispatch/queue.ts";
-import { editTask, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
+import { editTask, setTaskDisposition, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
 import { CORE_RECEIVER_CHANGED, CORE_START_UNCONFIRMED, deliveryFor } from "../scripts/lib/dispatch/delivery.ts";
 import { readInboxDelivery } from "../scripts/lib/dispatch/inbox.ts";
 import { handoff } from "../scripts/lib/tasks/handoff.ts";
@@ -224,7 +224,7 @@ test("Desktop shares one workspace per feature, serializes assignments and clean
     const ignored = join(first!.cwd, ".herdr");
     writeFileSync(ignored, "user file");
     closeFinishedDesktopTaskAgents(f.load(), f.client, binding);
-    expect(first!.state).toBe("live");
+    expect(first!.state).toBe("finished");
     expect(cleanDesktopTasks(load(), f.client, binding, undefined, ["0001"])[0]).toMatchObject({ action: "dirty" });
     expect(services.every(service => service.state === "live")).toBe(true);
     expect(f.appSpaces.some(space => space.id === first!.labels["herdr.space"])).toBe(true);
@@ -524,7 +524,7 @@ test("Desktop down reports an unconfirmed stop, keeps its caller alive, and can 
   } finally { f.cleanup(); }
 });
 
-test("Desktop closes only the confirmed feature iteration, preserving shared and resident sessions", () => {
+test("Desktop reclaims settled agents after task completion or archive, preserving other sessions and worktrees", () => {
   const f = fixture();
   try {
     writeRole(f.root, "lead", { kind: "codex", worktree: false });
@@ -533,8 +533,9 @@ test("Desktop closes only the confirmed feature iteration, preserving shared and
     const { binding } = desktopUp(f.load(), f.client);
     dispatch(f.load(), f.runtime(), "0001");
     dispatch(f.load(), f.runtime(), "0002");
-    const [, lead, finished, cancelled] = f.terminals;
-    for (const terminal of [finished!, cancelled!]) {
+    const [, lead, finished, archived] = f.terminals;
+    f.claim("0002", archived);
+    for (const terminal of [finished!, archived!]) {
       terminal.turn = 2;
       terminal.foreground = { cwd: terminal.cwd, argv: terminal.argv, pid: terminal.pid! };
     }
@@ -545,16 +546,15 @@ test("Desktop closes only the confirmed feature iteration, preserving shared and
     expect(f.calls.some(call => call.method === "terminal.kill")).toBe(false);
     finished!.status = { app: "codex", state: "done" };
     expect(finished!.labels).toMatchObject({ "team.feature": "search", "team.iteration": "v1.1" });
-    reconcile();
-    expect(f.calls.some(call => call.method === "terminal.kill")).toBe(false);
-    finishFeature(f.load(), "search", "v1.1");
     const otherDelivery = deliveryFor(f.task("0002"))!;
     writeTaskMeta(f.load(), f.task("0002"), { status: "doing",
       delivery: { ...otherDelivery, state: "claimed", terminal: finished!.address, process_id: finished!.pid } });
     reconcile();
     expect(f.calls.some(call => call.method === "terminal.kill")).toBe(false);
-    writeTaskMeta(f.load(), f.task("0002"), { status: "cancelled", delivery: null });
-    cancelled!.status = { app: "codex", state: "idle" };
+    writeTaskMeta(f.load(), f.task("0002"), { delivery: otherDelivery });
+    setTaskDisposition(f.load(), "0002", "archived", true);
+    expect(deliveryFor(f.task("0002"))).toEqual(otherDelivery);
+    archived!.status = { app: "codex", state: "idle" };
     f.terminals.push(
       { ...finished!, address: "unrelated", labels: { ...finished!.labels, "team.owner_space": "different" } },
       { ...finished!, address: "unreceipted", labels: { ...finished!.labels, "team.delivery": "not-completed" } },
@@ -572,15 +572,11 @@ test("Desktop closes only the confirmed feature iteration, preserving shared and
     const tasks = f.load().tasks, worktrees = desktopWorktrees(f.root);
     f.calls.length = 0;
     reconcile();
-    expect(f.calls.filter(call => call.method === "terminal.kill")).toEqual([]);
+    expect(f.calls.filter(call => call.method === "terminal.kill").map(call => call.params.terminal)).toEqual([archived!.address]);
     f.client.rpc = rpc;
     reconcile();
     reconcile();
-    expect(f.calls.filter(call => call.method === "terminal.kill").map(call => call.params.terminal)).toEqual([finished!.address]);
-    expect(cancelled!.state).toBe("live");
-    finishFeature(f.load(), "search", "v1.2");
-    reconcile();
-    expect(f.calls.filter(call => call.method === "terminal.kill").map(call => call.params.terminal)).toEqual([finished!.address, cancelled!.address]);
+    expect(f.calls.filter(call => call.method === "terminal.kill").map(call => call.params.terminal)).toEqual([archived!.address, finished!.address]);
     expect(f.calls.some(call => call.method === "terminal.send")).toBe(false);
     expect(lead!.state).toBe("live");
     expect(f.load().tasks).toEqual(tasks);
@@ -828,7 +824,7 @@ test("interrupted checkout creation is preserved and cannot be silently adopted"
   } finally { f.cleanup(); }
 });
 
-test("local review sends uncommitted Feature changes and returns to a new developer conversation", () => {
+test("local review sends uncommitted Feature changes and returns to the original developer conversation", () => {
   const f = fixture();
   try {
     writeTaskMeta(f.load(), f.task(), { feature: "search", iteration: "v1.2", handoff: ["qa", "dev"] });
@@ -847,15 +843,25 @@ test("local review sends uncommitted Feature changes and returns to a new develo
     expect(reviewer.cwd).toBe(checkout);
     expect(git(reviewer.cwd, "rev-parse", "HEAD")).toBe(base);
     expect(readFileSync(join(reviewer.cwd, "search.txt"), "utf8")).toBe("search\n");
+    const rpc = f.client.rpc;
+    f.client.rpc = <T>(method: string, params: Record<string, unknown>): T => {
+      if (method !== "terminal.list") return rpc<T>(method, params);
+      const { terminals } = rpc<{ terminals: DesktopTerminal[] }>(method, params);
+      return { terminals: terminals.filter(terminal => terminal.address !== developer.address) } as T;
+    };
     const result = handoff(f.load(), f.runtime(reviewer), "0001", new Date(), { delivery: second.id, summary: "Local changes approved." });
-    expect(result.prompted).toBe(true);
-    const returningDeveloper = f.terminals[3]!;
-    expect(returningDeveloper.cwd).toBe(checkout);
-    expect(returningDeveloper.address).not.toBe(first.terminal);
-    expect(developer.labels["team.delivery"]).toBe(first.id);
-    expect(f.calls.some(call => call.method === "terminal.send")).toBe(false);
+    expect(result.queueState).toBe("queued");
+    expect(result.note).toContain("previous conversation is unavailable");
+    expect(f.calls.filter(call => call.method === "terminal.run")).toHaveLength(2);
+    f.client.rpc = rpc;
+    expect(pumpQueue(f.load(), f.runtime())).toMatchObject([{ id: "0001", state: "submitted" }]);
     const third = deliveryFor(f.task())!; f.claim();
-    const finish = () => handoff(f.load(), f.runtime(returningDeveloper), "0001", new Date(),
+    expect(third.terminal).toBe(first.terminal);
+    expect(third.process_id).toBe(first.process_id);
+    expect(developer.labels["team.delivery"]).toBe(third.id);
+    expect(f.calls.filter(call => call.method === "terminal.send").map(call => call.params.terminal)).toEqual([developer.address]);
+    expect(f.calls.filter(call => call.method === "terminal.run")).toHaveLength(2);
+    const finish = () => handoff(f.load(), f.runtime(developer), "0001", new Date(),
       { delivery: third.id, summary: "Committed the approved changes." });
     expect(readInboxDelivery(f.load(), third.id)).toMatchObject({ sender: "qa", recipient: "dev", body: "Local changes approved." });
     expect(finish).toThrow("Commit feature work before completing this task");

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { TaskCard } from "../shared/types.ts";
+import { isTaskInactive, type TaskCard } from "../shared/types.ts";
 
 export const DELIVERY_STATES = ["queued", "sending", "submitted", "claimed", "uncertain", "failed"] as const;
 export class WorkspaceProvisionError extends Error {}
@@ -66,4 +66,13 @@ export function deliveryState(task: TaskCard): string | undefined {
 export function completedDeliveries(task: TaskCard): string[] {
   const value = task.meta["completed_deliveries"];
   return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+}
+
+/** A terminal task owns its completed assignments and its last, explicitly ended assignment. */
+export function finishedAssignment(task: TaskCard | undefined, id: string | undefined,
+  owns: (delivery: Delivery) => boolean): task is TaskCard {
+  if (!task || !id || !isTaskInactive(task) || task.meta.pending_history) return false;
+  if (completedDeliveries(task).includes(id)) return true;
+  const delivery = deliveryFor(task);
+  return Boolean(delivery?.id === id && owns(delivery));
 }

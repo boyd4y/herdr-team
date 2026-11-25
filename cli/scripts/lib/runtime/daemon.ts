@@ -242,7 +242,7 @@ export async function daemonPass(key: string, operation?: WorkerOperation): Prom
     }
     let cleanupPanes: string[] = [];
     try {
-      if (project.tasks.some(task => isTaskInactive(task)) && confirmedFeatures(project).size) {
+      if (project.tasks.some(task => isTaskInactive(task))) {
         if (team.kind === "desktop") closeRegisteredDesktopTaskAgents(project, team);
         else {
           const backend = registeredRuntime(project, team);

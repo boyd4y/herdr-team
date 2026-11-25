@@ -63,3 +63,29 @@ test("switching Feature Spaces discards the previous service list and uses the c
   expect(panel.servicePanel?.space).toBe("metrics");
   expect(panel.servicePanel?.rows).toEqual(rows);
 });
+
+test("Team panel archives tasks and issues through their own CLI operations", async () => {
+  const index = respond.length;
+  const jobs: Promise<void>[] = [];
+  const cx = { spawn(job: (context: typeof cx) => Promise<void>) { jobs.push(job(cx)); }, notify() {} };
+  const panel = new TeamConsole();
+  panel.binding = { root: "/same/path", space: "team", machine: null };
+  panel.load = () => {};
+  const task = { id: "0001", status: "doing", meta: { requirement: "R0001" } };
+  const issue = { id: "R0001", status: "open" };
+  panel.tasks = [task];
+  panel.requirements = [issue];
+  panel.changeTask(task, "archive", cx);
+  panel.changeIssue(issue, "archive", cx);
+
+  const [taskArgs, issueArgs] = requests.slice(index);
+  expect(taskArgs?.slice(taskArgs.indexOf("task"))).toEqual(["task", "archive", "0001", "--root", "/same/path", "--json", "--force"]);
+  expect(issueArgs?.slice(issueArgs.indexOf("issue"))).toEqual(["issue", "archive", "R0001", "--root", "/same/path", "--json"]);
+  respond[index]!({ ...task, meta: { ...task.meta, disposition: "archived" } });
+  await jobs[0];
+  expect(panel.requirements).toEqual([issue]);
+  respond[index + 1]!({ ...issue, disposition: "archived" });
+  await jobs[1];
+  expect(panel.tasks[0].meta).toMatchObject({ requirement: "R0001", disposition: "archived" });
+  expect(panel.requirements[0]).toMatchObject({ id: "R0001", disposition: "archived" });
+});

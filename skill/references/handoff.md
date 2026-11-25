@@ -11,20 +11,22 @@ lead 创建或调整任务、管理角色和会话、派活、核对 inbox 投�
 同一 Feature 和迭代的任务共用 worktree 与 Space。同一 Feature 每次只推进一张任务卡，独立 Feature 可以并行。每张卡仍按已记录的角色逐棒交接。
 常驻对话不占任务执行槽，lead 是唯一常驻串行编排者。测试/审查接手后，开发者暂停写入。
 显示名称可能与内部 agent 名不同，使用任务给出的 delivery ID 和团队 root，不用裸角色名跨项目发送。
-任务消息在对应的 `<role>-<task-id>` 会话中显示，常驻角色 tab 不占任务执行槽，也不会收到该任务的派活消息。
+任务型角色在任务专属会话中接收投递。常驻角色收到指派时继续使用自己的常驻会话。
 
 ## 拆分与分配
 
-需要独立跟踪验收结果时，用 `herdr-team issue create` 记录需求，缺陷加 `--type defect`。可通过 `--iteration` 填写版本号，字段留空即待排期。`backlog edit R0001 R0002 --iteration v1.1` 可为多条记录安排同一迭代。
+先找对应的需求或缺陷。需要建档时，用 `herdr-team issue create` 记录需求，缺陷加 `--type defect`。可通过 `--iteration` 填写版本号，字段留空即待排期。`backlog edit R0001 R0002 --iteration v1.1` 可为多条记录安排同一迭代。
 
-任务可独立派发，也可在创建时加 `--requirement R0001`，或用 `backlog link R0001 0007` 关联已有任务。用 `backlog show R0001` 查验收标准和关联任务。由 lead 检查交付结果并用 `backlog accept R0001` 明确验收。
+执行任务优先绑定具体 Issue。建卡用 `--requirement R0001`，已有任务用 `herdr-team issue link R0001 0007`。明确属于独立维护、没有对应需求或缺陷的工作可直接建卡。用 `herdr-team issue show R0001` 查验收标准和关联任务。由 lead 检查交付结果并用 `herdr-team issue accept R0001` 明确验收。
 
 派给 `lifecycle: temporary` 的角色前，用 `add` 或 `edit` 给任务设置 `--feature NAME --iteration VERSION`。任务可以继承关联 Issue 的迭代。同一批交付的多个 Issue 和 Task 共用同一个 Feature 与迭代。
 
-Skill 根据用户目标、TEAM.md 的角色步骤和现有角色，为每张任务确定负责人及必要验收角色。建卡前按[卡片描述](#卡片描述)写明执行范围和完成条件。代码任务需要本地 Review 时，在同一张卡写明评审人和评审范围，按[本地 Review 与交付](#本地-review-与交付)安排交接。已知信息直接写入卡片，只有确实影响执行的缺口才向用户确认。
+按能独立交付的结果拆卡，给每张卡一个持续负责的执行 agent，从实现、自测到修改和交付都沿用同一会话。把验收条件和验证记录放在原任务或关联 Issue 上，避免派发只负责“验收这项需求”的任务型 agent。需要独立评审时，在原卡写明评审人和范围，优先安排现有常驻角色或用户，按[本地 Review 与交付](#本地-review-与交付)交接。测试基础设施、回归套件等有独立产出的工作按实际范围建卡。
+
+建卡前按[卡片描述](#卡片描述)写明执行范围和完成条件。已知信息直接写入卡片，只有确实影响执行的缺口才向用户确认。
 
 ```sh
-herdr-team task create "Implement login" --role dev --body-file login-task.md
+herdr-team task create "Implement login" --role dev --requirement R0001 --body-file login-task.md
 herdr-team task dispatch <id>
 ```
 
@@ -80,7 +82,7 @@ Agent 新写或改写的描述使用以下章节。标题和正文沿用用户�
 
 人工评审由开发者在原会话通知用户，说明打开哪个 Feature Space，并等待用户回复。继续使用当前任务和已领取的 delivery；等待结论属于正常评审。
 
-由团队角色评审时，建卡将评审和返回开发者写入同一任务的交棒链，例如 `--role dev --handoff review,dev`。开发者用普通 `task handoff --summary` 发出本地评审请求，daemon 从 Inbox 投递给评审角色。评审人只读同一个 worktree，用普通交棒将结论或需修改项通过 Inbox 返回。收到退回的开发者先返工；lead 通过 `task update <id> --handoff review,dev --force` 补回待走的评审链，保留当前负责人和 delivery。已有后续阶段时保留在链尾。开发者用当前 delivery 再发出评审请求。
+由团队角色评审时，把评审和返回开发者写入同一任务的交棒链，例如 `--role dev --handoff review,dev`。开发者用普通 `task handoff --summary` 发出请求，daemon 从 Inbox 投递给评审角色。评审人只读同一个 worktree，通过交棒把结论或修改项送回原开发者会话。需要复审时，lead 通过 `task update <id> --handoff review,dev --force` 补回评审链，保留当前负责人、delivery 和已有后续阶段。开发者返工后用当前 delivery 再发出请求。
 
 ## 交付命令
 
@@ -144,12 +146,9 @@ inbox retry 分配新 delivery ID，旧 ID 失效，后续由投递服务推进�
 ## 会话与清理
 
 up 默认恢复已记录的常驻原生会话，运行中会话复用；fresh 只忽略待启动会话记录。
-任务会话按项目、任务、角色和 cwd 分开恢复。只使用 Herdr 官方 integration 上报的 agent_session，
-不额外装 session 识别 hook、不猜最近会话。恢复失败先读错误，不丢记录重派；恢复不解除 uncertain。
+任务会话随卡片保留，等待评审和退回修改时仍用原会话。会话异常退出时先核对卡片，再用 Herdr 原生会话能力恢复。恢复失败交给 lead 处理，保留旧交付记录和 uncertain 状态。
 
 角色正文更新不让运行中 agent 自动重读 Skill；下一次派活携带当前角色正文和 delivery 命令。
 旧已发出 delivery 继续原会话，未发出的队列可在投递前切到任务会话。
 
-最后一棒按 [delivery 的收尾步骤](delivery.md#最后一棒完成后收尾)保存交付证据。共享 Feature 的合并和资源回收统一在 Feature 层处理。
-CLI 不强制删除脏 checkout，保留现场与分支；不要用 down 代替单任务收尾。
-down 停止 agent，默认保留 workspace；不为刷新 CLI 或 Skill 而重启团队。
+最后一棒按 [delivery 的收尾步骤](delivery.md#最后一棒完成后收尾)保存交付证据。任务完成或归档后，daemon 在该任务的 agent 空闲时回收其会话。共享 Feature 的合并、worktree 和端口仍按 Feature 的生命周期处理。

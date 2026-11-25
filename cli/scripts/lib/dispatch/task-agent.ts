@@ -10,7 +10,8 @@ import { dispatchFeature } from "../team/features.ts";
 import { runtimePath } from "../runtime/state.ts";
 import { outsideRoot } from "../shared/paths.ts";
 import { readServiceCatalog, requiredFeatureServices } from "../team/services.ts";
-import { WorkspaceProvisionError } from "./delivery.ts";
+import { deliveryFor, WorkspaceProvisionError } from "./delivery.ts";
+import { inboxReceipts } from "./inbox.ts";
 
 /** Each new task owns its sessions; resident tabs are for conversation only. */
 export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: TaskCard): AgentInfo | undefined {
@@ -82,6 +83,9 @@ export function taskAgent(project: Project, herdr: Herdr, role: RoleCard, task: 
   if (!scoped) return live;
   const scope = { taskId: task.id, cwd: join(expected ?? checkout, offset) };
   const resume = savedResumeArgs(project, role, scope);
+  if (!resume && deliveryFor(task)?.phase === "handoff" && inboxReceipts(task).some(receipt => receipt.role === role.name)) {
+    throw new Error("The task's previous conversation is unavailable; restore it before retrying the handoff");
+  }
   const env = { ...role.env, ...taskEnvironment(project, task, role.name) };
   const label = `${role.name}-${task.id}`;
   const tab = herdr.tabList(workspaceId).find((t) => t.label === label);

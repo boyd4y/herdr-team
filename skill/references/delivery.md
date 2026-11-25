@@ -38,13 +38,13 @@
 herdr-team feature merge NAME --iteration VERSION --base develop --commit SHA
 ```
 
-`SHA` 是已验证的 Feature 分支头，`--base` 使用项目约定的目标分支。冲突在 Feature 工作区解决，重新验证新提交。成功后 daemon 按 Feature 关闭临时会话并回收干净的 worktree。用 daemon 日志核对保留原因，必要时用 `feature clean NAME --iteration VERSION` 重试。
+`SHA` 是已验证的 Feature 分支头，`--base` 使用项目约定的目标分支。冲突在 Feature 工作区解决，重新验证新提交。成功后 daemon 回收干净的 Feature worktree 及其端口。用 daemon 日志核对保留原因，必要时用 `feature clean NAME --iteration VERSION` 重试。
 
 此前已派发并拥有各自 worktree 的 Feature 继续用 `feature finish NAME --iteration VERSION` 确认交付，再按该范围执行 `feature clean`。
 
 独立任务使用下面的单任务清理流程。
 
-最后一棒负责让任务完成并释放其 worktree 和执行会话；不能只报告“完成”而把关闭操作留给用户。
+最后一棒负责完成任务并保留交付证据。daemon 自动回收已完成或归档任务的空闲执行会话。
 需要合并的任务，批准或进入合并队列还不算结束；必须等实际合并、本地同步及约定验证成功，任务为 done 后才收尾。
 由实际执行合并的 lead/协调会话负责这一步，无需再建收尾任务或增加验收角色。
 
@@ -61,4 +61,4 @@ herdr-team feature merge NAME --iteration VERSION --base develop --commit SHA
 4. `dirty`、`closed`、`foreign`、`retained`、`failed` 或 `not-terminal` 表示尚未完成清理。说明 CLI 返回的原因，条件满足后重试；
    不使用 force，不关闭常驻 lead、主 workspace、Console 或其他任务。分支和任务历史保留。
 
-显式 `clean` 用于工作树清理。Feature 交付确认用于结束有关联的临时会话。
+显式 `clean` 用于工作树清理。常驻会话由团队负责，随任务结束回收的只有该任务的执行会话。

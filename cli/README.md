@@ -237,7 +237,7 @@ herdr-team feature merge session-recovery --iteration v1.2 --base develop --comm
 
 常驻角色由 `up` 启动，`down` 关闭。临时角色在派发时启动，并按实际 Feature 和迭代标记该会话。任务可用 `edit <id> --feature NAME --iteration VERSION` 补排期，也可沿用所关联 Issue 的迭代。
 
-新派发的 Feature 在一个工作区内串行处理任务，各 Feature 并行。最后一次任务验收只确认共享分支中的指定提交。Feature 整体验收后，从目标分支执行 `feature merge`，daemon 负责关闭临时会话和回收干净的 worktree。已派发的旧任务保留原绑定，旧流程仍使用 `feature finish` 和 `feature clean`。
+新派发的 Feature 在一个工作区内串行处理任务，各 Feature 并行。同任务退回时复用原角色会话。任务完成或归档后，daemon 回收该任务已空闲的 agent。Feature 整体验收后，从目标分支执行 `feature merge`，daemon 回收干净的工作树和工作区资源。已派发的旧任务保留原绑定，旧流程仍使用 `feature finish` 和 `feature clean`。
 
 ### Feature 服务
 

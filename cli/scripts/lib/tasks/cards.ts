@@ -23,6 +23,7 @@ import { withTeamLock } from "../runtime/state.ts";
 import { requireIssueMetadata, RequirementError } from "../team/issue-store.ts";
 import { validateIteration } from "../team/requirements.ts";
 import { validateFeature } from "../team/features.ts";
+import { deliveryFor } from "../dispatch/delivery.ts";
 
 /** 元数据里键的顺序，写出去时保持稳定，diff 才好看。 */
 export const TASK_FIELD_ORDER = ["title", "priority", "status", "role", "handoff", "depends_on", "requirement", "feature", "iteration", "disposition"];
@@ -259,7 +260,10 @@ export function setTaskDisposition(project: Project, id: string, disposition?: C
         throw new TaskError(`Tasks ${dependents.map(task => "#" + task.id).join(", ")} depend on #${id}. Update their dependencies first.`);
       }
       if (card.status !== "todo" && !force) throw new TaskError(`#${id} is ${card.status}. Use --force to end its current assignment.`);
-      writeTaskMeta(fresh, card, { disposition, ...clearedAssignment });
+      // Preserve the assignment address so the daemon can verify and reclaim its agent.
+      const delivery = deliveryFor(card);
+      writeTaskMeta(fresh, card, { ...clearedAssignment, disposition,
+        ...(delivery?.terminal || delivery?.pane_id ? { delivery } : {}) });
     }
     return findTask(loadProject(project.root), id);
   });

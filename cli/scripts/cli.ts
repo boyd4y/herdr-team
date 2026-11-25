@@ -1479,7 +1479,7 @@ async function cmdTaskDisposition(args: string[], action: "archive" | "delete" |
   const root = resolveRoot(parsed.values.get("root"));
   const task = setTaskDisposition(loadValidated(root), id, disposition, parsed.flags.has("force"));
   logDaemon("task.edited", { project: root, task: id, state: disposition ?? task.status });
-  if (task.status !== "done") await wakeDaemon(root);
+  await wakeDaemon(root);
   return out(parsed, task, `${action === "archive" ? "Archived" : action === "delete" ? "Moved to Trash:" : "Restored"} task #${id}.`);
 }
 

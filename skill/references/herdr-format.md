@@ -177,7 +177,7 @@ Issue 列表读取元数据，根据关联任务的状态计算进度。详情�
 状态是 `review`。有 commit 验收的任务最后交棒进入合并队列，合入成功才变 `done`；
 未提交 commit 验收的纯调研/文档任务仍可由最后负责人交棒完成。
 
-`feature finish <name> --iteration <version>` 确认整个批次交付。daemon 只关闭属于该批次、没有在途工作的临时会话，并保留 worktree 和分支。
+`feature finish <name> --iteration <version>` 确认整个批次交付。任务完成或归档后，daemon 自动关闭已空闲且归属明确的任务会话。
 旧任务在 Herdr TUI 最后一次 `handoff` 到 `done` 时沿用原来的 worktree 回收流程。`clean <id>` 回收指定终态任务，不带 ID 时扫描所有
 终态任务。两者都在任务的 `repo`（缺省 `.`）中按
 `feat/<id>-<slug>` 查找 worktree，与卡片当前角色的 `worktree` 配置无关，
@@ -199,7 +199,7 @@ project workspace
 ```
 
 `lifecycle: resident` 的会话由 `team up` 启动、`team down` 关闭。
-`lifecycle: temporary` 的会话按需启动，归属该任务的 Feature 和迭代。同一任务的临时角色共享分支与 workspace，各自使用会话。
+`lifecycle: temporary` 的会话按需启动，归属该任务的 Feature 和迭代。同卡不同角色共享分支与 workspace，下一棒返回已参与的角色时复用其任务会话。
 同一临时角色可以同时执行多张任务。省略 `lifecycle` 的角色沿用原来的启动和执行方式。
 全局名字冲突时使用项目命名空间，侧栏保留职责与任务编号。
 

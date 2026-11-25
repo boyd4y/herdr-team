@@ -54,7 +54,7 @@ export function taskRuntime(runtime: Herdr | TaskRuntime): TaskRuntime {
       const target = { pane_id: agent.pane_id, ...(agent.agent_session?.value ? { session_id: agent.agent_session.value } : {}) };
       const status = agent.agent_status;
       return { target, status, canSubmit: status === "idle" || status === "done", submit(prompt) {
-        if (agent.tokens?.team_feature && agent.tokens.team_session === "task") {
+        if (agent.tokens?.team_session === "task") {
           runtime.reportMetadata(agent.pane_id!, "herdr-team", roleAgentLabel(role.name, task.id), { team_delivery: delivery.id });
         }
         runtime.agentPrompt(agent.pane_id!, prompt);

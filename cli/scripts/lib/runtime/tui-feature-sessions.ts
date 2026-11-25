@@ -1,7 +1,7 @@
-import { deliveryFor } from "../dispatch/delivery.ts";
+import { deliveryFor, finishedAssignment } from "../dispatch/delivery.ts";
 import { projectKey } from "../dispatch/team-scope.ts";
 import { isTaskInactive, type Project } from "../shared/types.ts";
-import { confirmedFeatures, deliveredTask } from "../team/features.ts";
+import { confirmedFeatures, deliveredTask, scopeFor } from "../team/features.ts";
 import { loadProject } from "../team/project.ts";
 import { logDaemon } from "./daemon-log.ts";
 import type { AgentInfo, Herdr } from "./herdr.ts";
@@ -12,7 +12,6 @@ export function closeDeliveredTuiAgents(project: Project, herdr: Herdr): string[
   return withTeamLock(project, "queue", () => {
     const fresh = loadProject(project.root);
     const confirmations = confirmedFeatures(fresh);
-    if (!confirmations.size) return [];
     const tasks = new Map(fresh.tasks.map(task => [task.id, task]));
     if (tasks.size !== fresh.tasks.length) throw new Error("Ambiguous task IDs");
     const owned = projectKey(fresh);
@@ -24,7 +23,12 @@ export function closeDeliveredTuiAgents(project: Project, herdr: Herdr): string[
       if (!pane || !agent.agent || !agent.name || activePanes.has(pane) || !spaces.has(agent.workspace_id ?? "") ||
           labels?.team_project !== owned || labels.team_session !== "task") return;
       const task = tasks.get(labels.team_task_id ?? "");
-      if (deliveredTask(task, labels.team_feature, labels.team_iteration, labels.team_delivery, confirmations)) return task;
+      const scope = task && scopeFor(fresh, task);
+      if (scope?.feature !== labels.team_feature || scope?.iteration !== labels.team_iteration) return;
+      const ended = finishedAssignment(task, labels.team_delivery, assignment => !assignment.runtime &&
+        assignment.pane_id === pane && assignment.role === labels.team_role &&
+        (!assignment.session_id || assignment.session_id === agent.agent_session?.value));
+      if (ended || deliveredTask(task, labels.team_feature, labels.team_iteration, labels.team_delivery, confirmations)) return task;
     };
     const settled = (agent: AgentInfo) => agent.agent_status === "idle" || agent.agent_status === "done";
     const waiting = new Set<string>();

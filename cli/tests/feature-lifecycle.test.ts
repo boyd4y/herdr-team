@@ -36,7 +36,7 @@ test("CLI confirms a feature iteration once and only after all work is recorded"
   } finally { f.cleanup(); }
 });
 
-test("TUI watches the confirmed task pane until it settles and closes only that pane", () => {
+test("TUI watches a completed task agent until it settles and closes only that pane", () => {
   const f = makeProject();
   try {
     writeRole(f.root, "dev", roleMeta());
@@ -51,8 +51,6 @@ test("TUI watches the confirmed task pane until it settles and closes only that 
       tokens: { team_project: key, team_root: "0" }, worktree: { repo_key: "repo", is_linked_worktree: true } }],
       agents: [temporary, pane("w2:p2", { ...labels, team_session: "resident" }),
         pane("w2:p3", { ...labels, team_iteration: "v1.3" })] });
-    expect(closeDeliveredTuiAgents(load(), herdr)).toEqual([]);
-    finishFeature(load(), "search", "v1.2");
     expect(closeDeliveredTuiAgents(load(), herdr)).toEqual(["w2:p1"]);
     temporary.agent_status = "done";
     const before = load();

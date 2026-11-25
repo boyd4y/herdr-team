@@ -5,7 +5,7 @@ import type { Project, RoleCard, TaskCard } from "../shared/types.ts";
 import { outsideRoot } from "../shared/paths.ts";
 import { featureWorkspace, isTaskInactive, workspaceKey, worktreeBranch } from "../shared/types.ts";
 import { acceptanceFor, reviewFor, taskEnvironment, taskRepo, taskScoped, verifyCheckout } from "../tasks/verification.ts";
-import { CORE_RECEIVER_CHANGED, CORE_START_UNCONFIRMED, deliveryFor, type Delivery } from "../dispatch/delivery.ts";
+import { CORE_RECEIVER_CHANGED, CORE_START_UNCONFIRMED, completedDeliveries, deliveryFor, finishedAssignment, type Delivery } from "../dispatch/delivery.ts";
 import { DeliveryRejected, type DeliveryTarget, type Receiver, type TaskRuntime } from "../dispatch/runtime.ts";
 import type { CleanupResult } from "../dispatch/cleanup.ts";
 import { DesktopError, desktopAgentProgram, desktopLaunchArgv, desktopProgramMatches, desktopTaskSpaces, ensureDesktopTaskSpace, registeredDesktopBinding, roleArgv, savedDesktopBinding, showDesktopBinding, terminalMatchesWorkspace, type DesktopBinding, type DesktopClient, type DesktopTerminal } from "./desktop.ts";
@@ -15,9 +15,10 @@ import { findTask } from "../tasks/cards.ts";
 import { desktopLaunchEnv } from "./agent-env.ts";
 import { loadProject } from "../team/project.ts";
 import { logDaemon } from "./daemon-log.ts";
-import { confirmedFeatures, deliveredTask, dispatchFeature } from "../team/features.ts";
+import { confirmedFeatures, deliveredTask, dispatchFeature, scopeFor } from "../team/features.ts";
 import { checkoutFor, desktopWorktrees } from "./desktop-worktrees.ts";
 import { cleanDesktopTasks } from "./desktop-cleanup.ts";
+import { inboxReceipts } from "../dispatch/inbox.ts";
 
 export interface DesktopTaskRuntime extends TaskRuntime {
   clean(...ids: string[]): CleanupResult[];
@@ -46,7 +47,6 @@ export function closeFinishedDesktopTaskAgents(project: Project, client: Desktop
   withTeamLock(project, "queue", () => {
     const fresh = loadProject(project.root);
     const deliveries = confirmedFeatures(fresh);
-    if (!deliveries.size) return;
     const tasks = new Map(fresh.tasks.map(task => [task.id, task]));
     if (tasks.size !== fresh.tasks.length) throw new DesktopError("Ambiguous task IDs");
     if (!fresh.tasks.some(task => isTaskInactive(task))) return;
@@ -71,16 +71,20 @@ export function closeFinishedDesktopTaskAgents(project: Project, client: Desktop
       const delivery = terminal.labels["team.delivery"];
       const role = terminal.labels["team.role"];
       const feature = terminal.labels["team.feature"], iteration = terminal.labels["team.iteration"];
-      if (!deliveredTask(task, feature, iteration, delivery, deliveries) || !space || !terminalMatchesWorkspace(space, terminal) || !role) return;
-      // Confirmed shared worktrees go through cleanup's resource preflight before stopping their agents.
-      if (space.feature && deliveries.get(space.feature)?.commit) return;
+      if (!space || !terminalMatchesWorkspace(space, terminal) || !role) return;
+      const scope = task && scopeFor(fresh, task);
+      if (scope?.feature !== feature || scope?.iteration !== iteration) return;
+      const ended = finishedAssignment(task, delivery, assignment => assignment.runtime === "desktop" &&
+        assignment.space === binding.space && assignment.terminal === terminal.address &&
+        assignment.process_id === terminal.pid && assignment.role === role);
+      if (!ended && !deliveredTask(task, feature, iteration, delivery, deliveries)) return;
       const program = desktopAgentProgram(terminal);
       if (!program || terminal.status?.app !== program ||
           !acceptsDelivery(terminal.status.state) ||
           typeof terminal.turn !== "number" || (task.status === "done" && terminal.turn < 1) ||
           !terminal.pid || terminal.foreground?.pid !== terminal.pid) return;
-      const offset = relative(space.checkout, terminal.foreground.cwd);
-      if (outsideRoot(offset)) return;
+      if (outsideRoot(relative(space.checkout, terminal.cwd)) ||
+          outsideRoot(relative(space.checkout, terminal.foreground.cwd))) return;
       return task;
     };
 
@@ -211,9 +215,18 @@ export function desktopTaskRuntime(project: Project, client: DesktopClient, call
       const current = matches.filter(terminal => terminal.labels["team.delivery"] === delivery.id);
       const active = matches.filter(terminal => terminal.status?.state !== "done");
       if (current.length > 1 || active.length > 1 || resident && matches.length > 1) throw new DesktopError(`Multiple task receivers for ${role.name}/${task.id}; inspect before retrying`);
-      // A later delivery to a temporary role gets its own native conversation.
-      const existing = resident ? matches[0] : current[0] ?? active[0];
+      // Return to the task's existing conversation even after its previous turn reports done.
+      const previousId = resident ? undefined : completedDeliveries(task).reverse()
+        .find(id => matches.some(terminal => terminal.labels["team.delivery"] === id));
+      const previous = previousId ? matches.filter(terminal => terminal.labels["team.delivery"] === previousId) : [];
+      const existing = resident ? matches[0] : current[0] ?? previous[0] ?? active[0];
+      if (!resident && (previous.length > 1 || active.some(terminal => terminal !== existing))) {
+        throw new DesktopError(`Multiple task receivers for ${role.name}/${task.id}; inspect before retrying`);
+      }
       if (resident && !existing) return;
+      if (!resident && !existing && delivery.phase === "handoff" && inboxReceipts(task).some(receipt => receipt.role === role.name)) {
+        throw new DesktopError("The task's previous conversation is unavailable; restore it before retrying the handoff");
+      }
       const repo = taskRepo(fresh, task);
       const offset = role.cwd ? relative(repo, resolve(fresh.root, role.cwd)) : "";
       if (outsideRoot(offset)) throw new DesktopError("Role cwd is outside the task repository");
