@@ -191,7 +191,8 @@ export function pumpQueue(project: Project, backend: Herdr | TaskRuntime, now = 
       const args = `${task.id} --delivery ${d.id} --root ${teamCliPath(fresh.root)}`;
       const claim = `herdr-team task claim ${args}`;
       const handoff = `herdr-team task handoff ${args}`;
-      const prompt = `${assignmentPrompt(team, role.body, task, fresh.root)}\nTeam root: ${fresh.root}\nTask file: ${join(fresh.herdrDir, task.dir, TASK_BODY)}\nDelivery ID: ${d.id}\nClaim command: ${claim}\nHandoff base command: ${handoff}\nThese commands identify this delivery; use the skill to choose the result options and next action.`;
+      const inbox = `herdr-team inbox read ${d.id} --root ${teamCliPath(fresh.root)}`;
+      const prompt = `${assignmentPrompt(team, role.body, task, fresh.root)}\nTeam root: ${fresh.root}\nTask file: ${join(fresh.herdrDir, task.dir, TASK_BODY)}\nDelivery ID: ${d.id}\nClaim command: ${claim}\nRead this delivery: ${inbox}\nHandoff base command: ${handoff}`;
       try {
         Object.assign(sending, receiver.submit(prompt));
       }

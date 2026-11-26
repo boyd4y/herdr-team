@@ -56,7 +56,7 @@ test("internal Inbox preserves the original message and marks it read only after
   expect(readInboxDelivery(f.load(), second)).toMatchObject({ ...message, read: true });
 }));
 
-test("dispatch and handoff carry the current root TEAM.md without executing its workflow", () => fixture((f) => {
+test("delivery references the current root agreement and reads only the current Inbox message", () => fixture((f) => {
   const agreement = join(f.root, "TEAM.md");
   writeFileSync(agreement, "# Team\nProject: public widget.\nWorkflow: dev to docs.\n");
   // These retained files must not compete with the shared agreement.
@@ -66,17 +66,25 @@ test("dispatch and handoff carry the current root TEAM.md without executing its 
   f.herdr.agentPrompt = (_pane, text) => { prompts.push(text); };
   dispatch(f.load(), f.herdr, "0001");
   expect(prompts).toHaveLength(1);
-  expect(prompts[0]).toContain(agreement);
-  expect(prompts[0]).toContain("Project: public widget.");
+  const revision = (prompt: string) => prompt.split("\n").find(line => line.startsWith(`Team agreement: ${agreement} (revision `));
+  expect(revision(prompts[0]!)).toBeDefined();
+  expect(prompts[0]).not.toContain("Project: public widget.");
   expect(prompts[0]).not.toContain("Obsolete");
   const delivery = claimCurrent(f.root);
   writeFileSync(agreement, "# Team\nUpdated shared context; future tasks use dev only.\n");
   handoff(f.load(), f.herdr, "0001", new Date(), { delivery, summary: "Ready for docs" });
   expect(prompts).toHaveLength(2);
-  expect(prompts[1]).toContain("Updated shared context");
-  expect(prompts[1]).not.toContain("public widget");
+  expect(revision(prompts[1]!)).toBeDefined();
+  expect(revision(prompts[1]!)).not.toBe(revision(prompts[0]!));
+  expect(prompts[1]).not.toContain("Updated shared context");
+  const docs = deliveryFor(f.task())!.id;
+  expect(prompts[1]).toContain(`herdr-team inbox read ${docs}`);
+  expect(readInboxDelivery(f.load(), docs)?.body).toBe("Ready for docs");
   expect(f.task().role).toBe("docs");
   expect(f.task().handoff).toEqual(["dev"]);
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery: claimCurrent(f.root), summary: "Docs complete" });
+  expect(prompts).toHaveLength(3);
+  expect(revision(prompts[2]!)).toBe(revision(prompts[1]!));
 }));
 
 test.each(["working", "blocked", "unknown"])("busy receiver %s waits on disk, then drains when idle", (status) => fixture((f) => {

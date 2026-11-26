@@ -7,7 +7,8 @@ description: 用项目根 TEAM.md 的团队约定、agents.json 的 agent 预设
 
 项目根 `TEAM.md` 保存角色的中文工作步骤，`agents.json` 保存可共享的 agent 预设；`.herdr/` 保存本地角色、任务与运行状态，Herdr 承载会话。
 通过统一的 `herdr-team` CLI 执行团队操作；运行环境识别、项目与会话绑定由 CLI 负责。CLI 无法确认归属或不支持当前操作时，保留现场并处理其返回的问题，不自行切换运行后端或绕过 CLI。
-每次运行入口，先定位团队项目，读取 AGENTS.md 和根目录 TEAM.md。CLI 从当前项目目录、子目录或 Git worktree 自动定位。遇到歧义或当前位置没有项目时，使用 `--root` 指定根目录，或用 `--project` 选择 `herdr-team project list` 里的项目 ID。
+首次在会话中处理某团队的工作时，确认项目根，加载本 Skill、适用的 AGENTS.md 和主检出的 TEAM.md。后续派活、交棒和退回修改直接复用会话已有规则。新会话、切换项目、收到更新提示（例如 TEAM.md 修订标记变化），或上下文缺失时，只补读缺失或有变动的内容。会话保留上下文的恢复也适用。
+CLI 从项目目录或 Git worktree 自动定位。归属有歧义时用 `--root`，或用 `--project` 选择 `herdr-team project list` 里的项目 ID。
 TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队约定-teammd) 初始化，再继续当前工作；
 每次创建或重建都按该节检查旧 identity/workflow，并提示迁移与清理选择。
 不要在子目录或任务 worktree 另建一份，也不从父目录其他仓库借用约定。不假设仓库名、角色或 harness。
@@ -21,14 +22,13 @@ TEAM.md 不存在时，先按 [setup：团队约定](references/setup.md#团队�
 
 ## Skill 工作入口
 
-每次收到任务，先读取本 Skill，再按当前工作读取参考；不要直接照 role prompt 或命令模板跳过引导。
-这些入口由 agent 理解与执行，不是 CLI 子命令；只读当前需要的参考。
-创建或改写 Issue、Task 描述前，按[卡片描述](references/handoff.md#卡片描述)写好简短的 Markdown 章节。
+按当前动作查阅尚未加载的参考章节。普通接棒从[收到任务](references/handoff.md#收到任务)开始，建卡查[卡片描述](references/handoff.md#卡片描述)。这些入口是工作指引。
 
 | 入口 | 用途 | 参考 |
 | --- | --- | --- |
 | setup（onboard） | 初始化、调整角色与本地配置、发现 Feature 开发服务、按用户要求更新共享工具 | [setup.md](references/setup.md) |
-| handoff | Inbox 消息处理、需求与缺陷、拆任务、领取、协作交付、PR、合并、收尾与会话恢复 | [handoff.md](references/handoff.md) |
+| handoff | Inbox、建卡、派活、交棒、验收与恢复 | [handoff.md](references/handoff.md) |
+| delivery | PR、合并与收尾 | [delivery.md](references/delivery.md) |
 | agents | 选择或维护完整 agent 配置预设 | [agents.md](references/agents.md) |
 | feedback | 回顾指定时间的执行，分析耗时、重复与职责交叉，生成报告、上游 issue 草稿和仓库改进建议 | [feedback.md](references/feedback.md) |
 

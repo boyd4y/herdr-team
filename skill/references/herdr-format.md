@@ -49,9 +49,9 @@
 ## `TEAM.md`
 
 根目录的纯 Markdown，只按实际角色列简短中文编号步骤，提交 Git 共享。
-每次运行 Skill 都先读取；缺失时由 Skill 按 [setup](setup.md#团队约定-teammd) 初始化；旧文件的迁移清理先提示用户选择。
+首次处理团队工作或发现更新时读取；缺失时由 Skill 按 [setup](setup.md#团队约定-teammd) 初始化。
 CLI init 只复制缺失模板，已有文件即使 force 也保留。CLI 不解析流程或自动生成 handoff。
-派活和交棒携带主项目根的 TEAM.md 内容与绝对路径，避免任务 checkout 内的过期副本。
+派活和交棒携带主项目根的 TEAM.md 路径及内容修订标记。同一会话复用该修订的约定。
 AGENTS.md 维护工程约束；交棒、协作、PR、队列与收尾属于 Skill，不复制到 TEAM.md。
 
 ## 角色 `roles/<name>/`

@@ -368,7 +368,7 @@ export function desktopUp(project: Project, client: DesktopClient, options: { sp
         }
       }
       const cwd = role.cwd ? resolve(binding.root, role.cwd) : binding.root;
-      const prompt = `Read the installed herdr-team skill before operating the team.\nProject root: ${binding.root}\nRole: ${role.name}\nRead ${join(binding.root, "AGENTS.md")} and ${join(binding.root, "TEAM.md")}.\n${role.body}\nStartup only: confirm your role and wait for an explicit assignment. Do not call up, dispatch tasks, create other agents, or change task records during startup.`;
+      const prompt = `Project root: ${binding.root}\nRole: ${role.name}\n${role.body}\nStartup only: confirm your role and wait for an explicit assignment. Load team instructions when work arrives if they are missing or updated. Do not call up, dispatch tasks, create other agents, or change task records during startup.`;
       const key = createHash("sha256").update(`${binding.root}\0${binding.space}\0${role.name}`).digest("hex").slice(0, 16);
       const baseName = `team-${key}`;
       let name = baseName;

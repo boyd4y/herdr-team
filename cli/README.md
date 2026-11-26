@@ -562,7 +562,7 @@ herdr-team task handoff <id> --delivery <delivery-id> --summary-file summary.md
 摘要可选，两个参数互斥；提供后由 CLI 追加到任务 `task.md` 的“交付”小节，再通知下游先读正文和引用产物。
 空摘要、文件读取失败在流转前报错；原有描述和历次交付保留。最终 done 或下游未在线时也会保存摘要。
 未进入队列的旧卡可裸 `handoff <id>`，回执和下游提示明确标记未提供摘要。JSON 包含 `summarySaved` 和绝对 `taskPath`。
-下游通过 `herdr-team task show <id>`（可加 `--json`）读取交付内容；`herdr agent read` 仅用于排障，不能替代任务产物。
+下游用投递消息中的 `herdr-team inbox read <delivery-id>` 读取本次任务描述或交接摘要。需要完整卡片时再用 `herdr-team task show <id>`，排查会话问题时才回读终端。
 
 最后一次 `handoff` 到 `done` 时会尝试回收 worktree；`clean <id>` 只回收指定的终态任务，省略 ID 则回收所有
 终态任务留下的 worktree。两者都在任务 `repo`（缺省 `.`）中

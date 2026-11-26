@@ -13,7 +13,7 @@ onboard 是 Skill 对话，不是 CLI 向导。复用已确认的选择与授权
 
 ## 团队约定 TEAM.md
 
-所有 Skill 入口先检查并读取团队项目根的 `TEAM.md`；它是可提交 Git 的角色工作清单。
+初始化团队时检查根目录的 `TEAM.md`。日常工作按 [Skill 入口](../SKILL.md) 复用已加载的团队约定。
 缺失时由 Skill 用 [TEAM.md 模板](../assets/TEAM.md) 结合 README、AGENTS.md、已有角色和用户已确认的约定初始化，
 按实际角色各写简短的中文编号步骤，通常 1、2、3 条；模板中的 dev/review 仅为示例，不自动新增角色。
 不添加背景、偏好、Workflow 或 Completion 章节，不复制交棒、CLI、协作、队列或 worktree 规则。
@@ -32,7 +32,7 @@ AGENTS.md 维护工程约束，TEAM.md 只写各角色的核心工作步骤；�
 ## 保存角色与项目约定
 
 Skill 按已确认角色维护 TEAM.md 中对应的简短步骤，不写跨角色流程配置。
-角色通过 CLI 保存，不手拼 YAML。`body` 只保留角色职责、边界、交付要求和先读 herdr-team Skill 的入口，
+角色通过 CLI 保存，不手拼 YAML。`body` 只保留角色职责、边界、交付要求和 herdr-team Skill 的入口，
 不复制 TEAM.md 已有步骤或命令清单、claim/handoff/PR 操作流程。角色 prompt 默认英文，TEAM.md 模板及生成内容使用中文；用户自带正文保留原语言。
 可复用职责模板按角色保存在 [assets/roles](../assets/roles)：lead、dev、test、search、docs、review；
 每个目录只有 `prompt.md`，通用职责放在 default。按当前职责选择、阅读并调整所需模板，不整套加载。
@@ -50,7 +50,7 @@ CLI 对未提供 body 的新角色按同名模板初始化，未知角色用 def
     "kind": "codex",
     "preset": "dev",
     "lifecycle": "temporary",
-    "body": "Read the installed herdr-team skill before starting. Implement and self-test the assigned change. Stay within the task checkout; lead owns team configuration and branch lifecycle."
+    "body": "Follow the herdr-team guidance already in the conversation. Load it when missing or updated. Implement and self-test the assigned change within its checkout. Lead owns team configuration and branch lifecycle."
   }
 ]
 ```
