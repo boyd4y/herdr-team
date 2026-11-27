@@ -5,15 +5,19 @@ import { TASK_BODY, type Project, type TaskCard } from "../shared/types.ts";
 const RECORD_HEADING = /^##\s*(?:History|\u6d41\u8f6c\u8bb0\u5f55)\s*$/m;
 export const HANDOFF_SUMMARY_LIMIT = 400;
 
-export function taskMessageBody(body: string, summaryRef?: string, summaryLength?: number): string {
+export function taskDescription(body: string): string {
   const heading = RECORD_HEADING.exec(body);
-  const description = body.slice(0, heading?.index ?? body.length).trim();
-  if (!heading || !summaryRef || !summaryLength || !Number.isSafeInteger(summaryLength) || summaryLength < 1) return description;
+  return body.slice(0, heading?.index ?? body.length).trim();
+}
+
+export function taskHandoffSummary(body: string, summaryRef: string, summaryLength: number): string | undefined {
+  const heading = RECORD_HEADING.exec(body);
+  if (!heading || !summaryRef || !Number.isSafeInteger(summaryLength) || summaryLength < 1) return;
   const history = body.slice(heading.index + heading[0].length);
   const end = history.lastIndexOf(`\n<!-- team-operation:handoff-${summaryRef} -->`);
-  if (end < 0) return description;
+  if (end < 0) return;
   const record = history.slice(0, end).trimEnd();
-  return record.length >= summaryLength ? record.slice(-summaryLength) : description;
+  if (record.length >= summaryLength) return record.slice(-summaryLength);
 }
 
 export function stamp(at: Date): string {

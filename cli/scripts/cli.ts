@@ -674,7 +674,7 @@ async function cmdEdit(args: string[], name = "edit"): Promise<number> {
   ];
   const parsed = parseArgs(args, values);
   if (parsed.flags.has("help")) {
-    process.stdout.write(`Usage: herdr-team ${name} ID [--title TITLE] [--role ROLE] [--handoff ROLES] [--depends-on IDS] [--priority Pn] [--status STATUS] [--feature NAME] [--iteration VERSION] [--force] [--root DIR | --project ID] [--json]\nUse --iteration '' to clear the override and inherit the issue’s iteration.\n`);
+    process.stdout.write(`Usage: herdr-team ${name} ID [--title TITLE] [--role ROLE] [--handoff ROLES] [--depends-on IDS] [--priority Pn] [--status STATUS] [--feature NAME] [--iteration VERSION] [--force] [--root DIR | --project ID] [--json]\n--handoff replaces the entire remaining chain. Include every role that should still receive the task.\nUse --iteration '' to clear the override and inherit the issue’s iteration.\n`);
     return 0;
   }
 
@@ -1383,7 +1383,7 @@ async function cmdInbox(args: string[]): Promise<number> {
     return out(parsed, result, `#${result.id} is waiting for automatic delivery.`);
   }
   const rows = trash ? [] : inboxDeliveries(project, all, role)
-    .map(({ summary_ref: _ref, summary_length: _length, ...row }) => row)
+    .map(({ summary_ref: _ref, summary_length: _length, phase: _phase, ...row }) => row)
     .sort((a, b) => b.received_at.localeCompare(a.received_at));
   const mailStates = { conflict: "Routing conflict", pending: "Waiting to notify", sending: "Notifying",
     notified: "Awaiting acknowledgment", uncertain: "Notification needs review", acknowledged: "Acknowledged" };

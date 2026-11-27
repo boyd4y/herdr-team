@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isTaskInactive, TASK_BODY, type Project, type TaskCard } from "../shared/types.ts";
-import { taskMessageBody } from "../tasks/records.ts";
+import { taskDescription, taskHandoffSummary } from "../tasks/records.ts";
 import { deliveryFor, deliveryReasonLabel, type Delivery } from "./delivery.ts";
 
 interface Receipt {
@@ -10,14 +10,15 @@ interface Receipt {
   sender?: string;
   subject: string;
   queued_at: string;
+  phase?: Delivery["phase"];
   summary_ref?: string;
   summary_length?: number;
 }
 
 export function inboxReceipt(task: TaskCard, delivery: Delivery): Receipt {
-  const { id, role, sender, queued_at, summary_ref, summary_length } = delivery;
-  const from = sender ?? (delivery.phase === "dispatch" ? "Project dispatch" : undefined);
-  return { id, role, subject: task.title, queued_at, ...(from ? { sender: from } : {}),
+  const { id, role, phase, sender, queued_at, summary_ref, summary_length } = delivery;
+  const from = sender ?? (phase === "dispatch" ? "Project dispatch" : undefined);
+  return { id, role, subject: task.title, queued_at, phase, ...(from ? { sender: from } : {}),
     ...(summary_ref && summary_length ? { summary_ref, summary_length } : {}) };
 }
 
@@ -36,6 +37,7 @@ export function inboxDeliveries(project: Project, includeRead: boolean, role?: s
       id: task.id, delivery: receipt.id, role: receipt.role, source: "task",
       sender: receipt.sender ?? null, recipient: receipt.role, subject: receipt.subject, title: receipt.subject,
       received_at: receipt.queued_at, read, summary_ref: receipt.summary_ref, summary_length: receipt.summary_length,
+      phase: receipt.phase,
     });
     const current = isTaskInactive(task) ? undefined : deliveryFor(task);
     return [
@@ -50,7 +52,20 @@ export function readInboxDelivery(project: Project, id: string) {
   const row = inboxDeliveries(project, true).find(item => item.delivery === id || item.id === id && !item.read);
   if (!row) return;
   const task = project.tasks.find(item => item.id === row.id)!;
-  const body = readFileSync(join(project.herdrDir, task.dir, TASK_BODY), "utf8");
-  const { summary_ref, summary_length, ...message } = row;
-  return { ...message, body: taskMessageBody(body, summary_ref, summary_length) };
+  const { summary_ref, summary_length, phase, ...message } = row;
+  const file = join(project.herdrDir, task.dir, TASK_BODY);
+  const openCard = `Open task #${task.id} for details.`;
+  // Older receipts recorded the sender before recording the delivery phase.
+  const handoff = phase === "handoff" || (!phase && message.sender && message.sender !== "Project dispatch");
+  if (!summary_ref && !summary_length && handoff) {
+    return { ...message, body: `No handoff summary was provided. ${openCard}` };
+  }
+  let contents = "";
+  try { contents = readFileSync(file, "utf8"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  if (summary_ref || summary_length) {
+    const summary = summary_ref && summary_length && taskHandoffSummary(contents, summary_ref, summary_length);
+    return { ...message, body: summary || `Handoff summary unavailable. ${openCard}` };
+  }
+  return { ...message, body: taskDescription(contents) };
 }

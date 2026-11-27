@@ -8,7 +8,7 @@ import { handoff } from "../scripts/lib/tasks/handoff.ts";
 import { dispatch } from "../scripts/lib/dispatch/launch.ts";
 import { claimTask, enqueueTask, flushTaskHistory, pumpQueue, queueRows, retryDelivery } from "../scripts/lib/dispatch/queue.ts";
 import { editTask, setTaskDisposition, writeTaskMeta } from "../scripts/lib/tasks/cards.ts";
-import { claimCurrent, makeProject, runningWorkspace, taskMeta, twoResidentRoles, writeTask } from "./helpers.ts";
+import { claimCurrent, makeProject, runningWorkspace, taskMeta, twoResidentRoles, writeRole, writeTask } from "./helpers.ts";
 
 function fixture(run: (f: ReturnType<typeof setup>) => void): void {
   const f = setup();
@@ -54,6 +54,46 @@ test("internal Inbox preserves the original message and marks it read only after
   expect(readInboxDelivery(f.load(), second)).toMatchObject(message);
   handoff(f.load(), f.herdr, "0001", new Date(), { delivery: second, summary: "Docs complete" });
   expect(readInboxDelivery(f.load(), second)).toMatchObject({ ...message, read: true });
+}));
+
+test("Inbox only shows the task description for dispatch, even if a handoff summary is unavailable", () => fixture(f => {
+  dispatch(f.load(), f.herdr, "0001");
+  const first = claimCurrent(f.root);
+  expect(readInboxDelivery(f.load(), first)?.body).toBe("任务描述");
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery: first });
+  const second = claimCurrent(f.root);
+  const noSummary = "No handoff summary was provided. Open task #0001 for details.";
+  expect(readInboxDelivery(f.load(), second)?.body).toBe(noSummary);
+  const cli = Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"), "inbox", "read", second, "--json"], { cwd: f.root });
+  expect(cli.exitCode).toBe(0);
+  expect(JSON.parse(cli.stdout.toString())).toMatchObject({ body: noSummary, id: "0001", read: false });
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery: second, summary: "Docs complete" });
+  expect(readInboxDelivery(f.load(), first)?.body).toBe("任务描述");
+  expect(readInboxDelivery(f.load(), second)).toMatchObject({ body: noSummary, read: true });
+  const third = deliveryFor(f.task())!;
+  writeTaskMeta(f.load(), f.task(), { delivery: { ...third, summary_ref: "missing-history-marker" } });
+  expect(readInboxDelivery(f.load(), third.id)?.body).toBe("Handoff summary unavailable. Open task #0001 for details.");
+}));
+
+test("the full chain for a re-review preserves the claimed delivery and later validators", () => fixture(f => {
+  writeRole(f.root, "test", { kind: "codex" });
+  writeRole(f.root, "lead", { kind: "codex" });
+  writeTaskMeta(f.load(), f.task(), { handoff: ["docs", "dev", "test", "lead"] });
+  dispatch(f.load(), f.herdr, "0001");
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery: claimCurrent(f.root), summary: "Ready for review" });
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery: claimCurrent(f.root), summary: "Rework requested" });
+  const current = claimCurrent(f.root);
+  const before = deliveryFor(f.task());
+  expect(f.task().handoff).toEqual(["test", "lead"]);
+  const cli = Bun.spawnSync([process.execPath, join(import.meta.dir, "../scripts/cli.ts"),
+    "task", "update", "0001", "--handoff", "docs,dev,test,lead", "--force", "--root", f.root], { cwd: f.root });
+  expect(cli.stderr.toString()).toBe("");
+  expect(cli.exitCode).toBe(0);
+  expect(f.task().role).toBe("dev");
+  expect(deliveryFor(f.task())).toEqual(before);
+  handoff(f.load(), f.herdr, "0001", new Date(), { delivery: current, summary: "Ready for re-review" });
+  expect(f.task().role).toBe("docs");
+  expect(f.task().handoff).toEqual(["dev", "test", "lead"]);
 }));
 
 test("delivery references the current root agreement and reads only the current Inbox message", () => fixture((f) => {

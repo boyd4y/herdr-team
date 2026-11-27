@@ -145,7 +145,7 @@ Issue 列表读取元数据，根据关联任务的状态计算进度。详情�
 
 当前 `delivery` 用 `id` 标识本次投递，`role` 是收件角色，`queued_at` 是入队时间，新交棒用 `sender` 记录发件角色。`state` 可为 `queued`、`sending`、`submitted`、`claimed` 或 `uncertain`。Inbox 根据该条投递是否已有处理回执显示 Unread 或 Read。
 
-每个 `inbox_receipts` 条目保存投递 `id`、`role`、`subject` 和 `queued_at`，有记录时还保存 `sender`。有交付摘要的投递和回执通过 `summary_ref` 定位 `task.md` 中的交棒记录，用 `summary_length` 保存摘要的 JavaScript 字符串长度。正文在打开消息时从 `task.md` 读取。无摘要引用时读取任务描述。旧记录可能只有 `completed_deliveries` 和 Markdown 历史。
+Inbox 回执保存投递 `id`、`role`、`subject`、`queued_at`、`phase` 和可用的 `sender`。首次派活显示任务描述。交棒通过 `summary_ref` 和 `summary_length`（JavaScript 字符串长度）定位摘要，摘要未提供或不可用时提示打开任务卡。旧回执可按发件人识别交棒。
 
 ### `task.md`
 

@@ -61,7 +61,7 @@ PR 发布、批准后合并必须有用户授权；没有既有决定且当前�
 复用会话已加载的流程和任务约束，用投递命令中的 root、task ID 和 delivery ID 操作。
 
 1. 只有收到投递的执行会话领取，每个 delivery ID 领取一次。使用消息中的 `herdr-team task claim <id> --delivery ID --root <team-root>`。收到成功回执就开始工作；收到 `duplicate` 就停止这次重复执行。领取结果不明时查一次原投递，确认未领取才重试。
-2. 用消息里的 `inbox read` 读本次内容：首次派活是任务描述，有交接摘要时是上一棒的结果。已有任务上下文时直接按新增信息继续；缺卡片范围、关联 Issue 或证据时才查对应详情。旧消息没有读取命令时可用 `herdr-team inbox read ID --root <team-root>`。
+2. 用消息里的 `inbox read` 读本次内容。首次派活显示任务描述，后续交棒只显示摘要或提示本次无摘要。已有任务上下文时按新增信息继续；缺范围、关联 Issue 或证据时再打开任务卡。
 3. 按本棒职责工作，完成后使用同一个 delivery ID 交棒。代码任务按[本地 Review 与交付](#本地-review-与交付)决定何时提交。下游明确时直接交接，不额外增加 lead 中转。
    需要改链或归属不明确时通知 lead；不要猜角色、跳验收或让用户人工转述。
 
@@ -72,7 +72,14 @@ PR 发布、批准后合并必须有用户授权；没有既有决定且当前�
 
 人工评审由开发者在原会话通知用户，说明打开哪个 Feature Space，并等待用户回复。继续使用当前任务和已领取的 delivery；等待结论属于正常评审。
 
-由团队角色评审时，把评审和返回开发者写入同一任务的交棒链，例如 `--role dev --handoff review,dev`。开发者用普通 `task handoff --summary` 发出请求，daemon 从 Inbox 投递给评审角色。评审人只读同一个 worktree，通过交棒把结论或修改项送回原开发者会话。需要复审时，lead 通过 `task update <id> --handoff review,dev --force` 补回评审链，保留当前负责人、delivery 和已有后续阶段。开发者返工后用当前 delivery 再发出请求。
+团队评审用普通 `task handoff --summary` 在同一卡片交接。评审人只读同一 worktree，再把结论交回原开发者。
+需要复审时，在开发者继续交棒前，lead 用 `task show <id> --json` 核对当前负责人和剩余链。把评审人、开发者加到剩余链前面，用 `task update --handoff` 写入**完整**的新链。一份原链为 `test,lead` 的卡应执行：
+
+```sh
+herdr-team task update <id> --handoff review,dev,test,lead --force --root <team-root>
+```
+
+`--handoff` 替换整条剩余链。仅在原链为空时写 `review,dev`。保持当前负责人和 delivery，开发者返工后继续用当前 delivery 交棒。
 
 ## 交付命令
 
