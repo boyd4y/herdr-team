@@ -83,7 +83,8 @@ herdr-team task handoff <id> --delivery ID --summary "Updated the login flow and
 herdr-team task handoff <id> --delivery ID --summary-file <file> --root <team-root>
 ```
 
-普通交棒用一到三条写结果、相关验证和需要跟进的事。必要时附 SHA 或产物链接，报告按需提供。多行摘要用 `--summary-file`。
+用一到三句交棒，通常 100–200 字符。写结果和关键验证，有阻塞或下一步才补一句。按需附 SHA、报告或证据链接，验证明细和实现过程放在原产物。所有新摘要最多 400 字符，包含链接和换行；`--summary-file` 使用同一上限。超长时压缩后用同一 delivery 重试。
+交棒成功后，在对话中用一句话说明任务状态、接手人或剩余阻塞。用户另要详细说明时再补充。
 交付以卡片和实际产物为准，不默认读取终端历史；agent read 仅用于诊断或补查旧任务缺失交付。
 
 任务卡的 `handoff` 为空时，当前角色是最后一棒。普通结果用 `--summary` 完成任务。以下 SHA 验收命令用于已指派的提交或明确约定的提交级验收，例如 PR。任务需要另做本地 Review 时，先取得本地评审结论，再提交并进入 SHA 验收。

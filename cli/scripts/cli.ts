@@ -21,7 +21,7 @@ import { inboxDeliveries, readInboxDelivery } from "./lib/dispatch/inbox.ts";
 import { dispatch, down, LaunchError, up, workspaceLabelFor } from "./lib/dispatch/launch.ts";
 import { agentStatusLabel, buildReport, formatReport, formatTaskDetail, formatTasks } from "./lib/ui/status.ts";
 import { createTask, editTask, findTask, linkRequirementTask, setTaskDisposition, TaskError } from "./lib/tasks/cards.ts";
-import { stamp } from "./lib/tasks/records.ts";
+import { HANDOFF_SUMMARY_LIMIT, stamp } from "./lib/tasks/records.ts";
 import { acceptRequirement, addRequirement, editRequirements, indexRequirementTasks, iterationRows, iterationVersion, matchesIteration,
   readHiddenIterations, REQUIREMENT_STATUSES, requirementDetail, requirementSummary, requirementType,
   setIterationState, setRequirementDisposition, taskIteration, validateIteration } from "./lib/team/requirements.ts";
@@ -829,7 +829,7 @@ async function cmdHandoff(args: string[], name = "handoff"): Promise<number> {
   const values = ["root", "summary", "summary-file", "delivery", "commit", "accept", "pr"];
   const parsed = parseArgs(args, values);
   if (parsed.flags.has("help")) {
-    process.stdout.write(`Usage: herdr-team ${name} ID [--delivery ID] [--summary TEXT | --summary-file FILE] [--commit SHA | --accept SHA [--pr URL] | --reject] [--root DIR | --project ID] [--json]\nUse --commit to submit a revision, --accept to approve it, or --reject to return it to the developer. Final approval queues integration.\n`);
+    process.stdout.write(`Usage: herdr-team ${name} ID [--delivery ID] [--summary TEXT | --summary-file FILE] [--commit SHA | --accept SHA [--pr URL] | --reject] [--root DIR | --project ID] [--json]\nSummaries may contain up to ${HANDOFF_SUMMARY_LIMIT} characters. Link to detailed evidence.\nUse --commit to submit a revision, --accept to approve it, or --reject to return it to the developer. Final approval queues integration.\n`);
     return 0;
   }
   checkOptions(parsed, values, ["reject"]);

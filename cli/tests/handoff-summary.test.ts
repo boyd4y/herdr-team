@@ -95,9 +95,14 @@ test("真实 CLI 支持 summary / summary-file，校验输入后才流转，并�
   expect(cli("handoff", "0001", "--summary", "x", "--summary-file", "missing.md").code).not.toBe(0);
   expect(cli("handoff", "0001", "--summary-file", "missing.md").code).not.toBe(0);
   expect(cli("handoff", "0001", "--summary", " ").code).not.toBe(0);
+  const summary = "完成实现；验证结果见 report.md。".padEnd(399, "字") + "🙂";
+  const long = summary + "长";
+  expect(cli("handoff", "0001", "--summary", long).stderr).toContain("exceeds 400 characters");
+  writeFileSync(join(root, "summary.md"), long);
+  expect(cli("handoff", "0001", "--summary-file", "summary.md").stderr).toContain("exceeds 400 characters");
   expect(loadProject(root).tasks).toEqual(before);
   herdrForSummary(root);
-  writeFileSync(join(root, "summary.md"), "完成实现；文件 src/a.ts；验证通过。\n\n风险：无。\n");
+  writeFileSync(join(root, "summary.md"), summary + "\n");
   const first = cli("handoff", "0001", "--summary-file", "summary.md");
   expect(first.code).toBe(0);
   expect(JSON.parse(first.stdout)).toMatchObject({ summarySaved: true, prompted: false, queueState: "queued" });
@@ -109,12 +114,12 @@ test("真实 CLI 支持 summary / summary-file，校验输入后才流转，并�
   expect(cli("queue").code).toBe(2);
   const task = JSON.parse(cli("tasks", "0001").stdout);
   expect(task.status).toBe("review");
-  expect(task.body).toContain("完成实现；文件 src/a.ts；验证通过。");
-  expect(task.body).toContain("风险：无。");
+  expect(task.body).toContain(summary);
+  expect(JSON.parse(cli("inbox", "read", delivery.id).stdout).body).toBe(summary);
   const log = readFileSync(join(root, "daemon-home", "daemon.log"), "utf8");
   expect(log).toContain('"event":"task.handoff"');
   expect(log).not.toContain("完成实现");
-  expect(log).not.toContain("风险：无");
+  expect(log).not.toContain("report.md");
 }));
 
 function herdrForSummary(root: string): void {

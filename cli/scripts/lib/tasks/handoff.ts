@@ -1,5 +1,5 @@
 import { acceptanceFor, reviewFor, commitId, git, integrationFor, taskRepo, verifyCheckout } from "./verification.ts";
-import { stamp } from "./records.ts";
+import { HANDOFF_SUMMARY_LIMIT, stamp } from "./records.ts";
 import { join } from "node:path";
 import type { CleanupResult } from "../dispatch/cleanup.ts";
 import { taskRuntime, type TaskRuntime } from "../dispatch/runtime.ts";
@@ -109,6 +109,9 @@ function handoffLocked(
 
   const summary = options.summary?.trim();
   if (summary !== undefined && !summary) throw new TaskError("Delivery summary cannot be empty; omit --summary to hand off without one");
+  if (summary !== undefined && Array.from(summary).length > HANDOFF_SUMMARY_LIMIT) {
+    throw new TaskError(`Delivery summary exceeds ${HANDOFF_SUMMARY_LIMIT} characters. Keep the result, key validation, and any next action. Link to detailed evidence, then retry the same delivery.`);
+  }
   const summaryReceipt = { summarySaved: summary !== undefined, taskPath: join(project.herdrDir, card.dir, TASK_BODY) };
   const deliveryNote = summary === undefined ? " No delivery summary supplied." : " Delivery summary appended to task.md.";
   const operation = currentDelivery?.id ?? randomUUID();

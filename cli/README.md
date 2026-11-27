@@ -559,7 +559,7 @@ herdr-team task handoff <id> --delivery <delivery-id> --summary "成果；产物
 herdr-team task handoff <id> --delivery <delivery-id> --summary-file summary.md
 ```
 
-摘要可选，两个参数互斥；提供后由 CLI 追加到任务 `task.md` 的“交付”小节，再通知下游先读正文和引用产物。
+普通交付摘要可选，两个参数互斥，最多 400 字符。简写结果、关键验证及待办，明细附链接。CLI 将摘要追加到任务的交付记录。
 空摘要、文件读取失败在流转前报错；原有描述和历次交付保留。最终 done 或下游未在线时也会保存摘要。
 未进入队列的旧卡可裸 `handoff <id>`，回执和下游提示明确标记未提供摘要。JSON 包含 `summarySaved` 和绝对 `taskPath`。
 下游用投递消息中的 `herdr-team inbox read <delivery-id>` 读取本次任务描述或交接摘要。需要完整卡片时再用 `herdr-team task show <id>`，排查会话问题时才回读终端。

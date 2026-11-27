@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { TASK_BODY, type Project, type TaskCard } from "../shared/types.ts";
 
 const RECORD_HEADING = /^##\s*(?:History|\u6d41\u8f6c\u8bb0\u5f55)\s*$/m;
+export const HANDOFF_SUMMARY_LIMIT = 400;
 
 export function taskMessageBody(body: string, summaryRef?: string, summaryLength?: number): string {
   const heading = RECORD_HEADING.exec(body);

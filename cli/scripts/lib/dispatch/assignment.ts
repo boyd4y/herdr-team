@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { pullRequestFor } from "../integration/pull-request.ts";
 import type { TaskCard } from "../shared/types.ts";
+import { HANDOFF_SUMMARY_LIMIT } from "../tasks/records.ts";
 import { reviewFor } from "../tasks/verification.ts";
 
 export function assignmentPrompt(team: string, roleBody: string, card: TaskCard, root?: string): string {
@@ -24,6 +25,7 @@ export function assignmentPrompt(team: string, roleBody: string, card: TaskCard,
     ] : []),
     `You now own task ${card.id}: ${card.title}`,
     `Current role: ${card.role}; remaining owners: ${card.handoff.join(" → ") || "none"}`,
+    `Handoff summary: at most ${HANDOFF_SUMMARY_LIMIT} characters. Give the result, key validation and next action. Link to details. After a successful handoff, give a short status update in chat.`,
     ...(!card.handoff.length && !review && !pr ? [
       "This is the final role for the recorded task. For ordinary delivery, use handoff with --summary to finish. If the task requires review of a commit, ask lead to assign a reviewer first.",
     ] : []),
